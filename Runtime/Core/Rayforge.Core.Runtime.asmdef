@@ -1,0 +1,11 @@
+{
+  "name": "Rayforge.Core.Runtime",
+  "references": [
+    "Unity.RenderPipelines.Core.Runtime",
+    "Unity.Mathematics",
+    "Unity.Burst"
+  ],
+  "allowUnsafeCode": true,
+  "autoReferenced": false,
+  "includePlatforms": []
+}

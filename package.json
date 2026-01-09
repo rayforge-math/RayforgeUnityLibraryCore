@@ -1,0 +1,24 @@
+{
+  "name": "com.rayforge.core",
+  "version": "1.0.0",
+  "displayName": "Rayforge Core Library",
+  "description": "Base utilities, wrappers, and data structures for Rayforge libraries.",
+  "unity": "6000.0",
+  "unityRelease": "58f2",
+  "keywords": [
+    "rayforge",
+    "core",
+    "utility",
+    "library"
+  ],
+  "author": {
+    "name": "Rayforge",
+    "email": "info@rayforge.eu",
+    "url": "http://rayforge.eu/"
+  },
+  "dependencies": {
+    "com.unity.render-pipelines.core": "17.0.4",
+    "com.unity.mathematics": "1.3.3",
+    "com.unity.burst": "1.8.27"
+  }
+}
