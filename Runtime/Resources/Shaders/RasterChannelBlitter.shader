@@ -12,7 +12,7 @@ Shader "Rayforge/RasterChannelBlitter"
             Cull Off ZWrite Off
 
         HLSLPROGRAM
-            #include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Blitter/RasterBlit.hlsl"
+            #include "../../ShaderLibrary/Blitter/RasterBlit.hlsl"
 
             #pragma vertex Vert
             #pragma fragment ChannelBlitterFrag

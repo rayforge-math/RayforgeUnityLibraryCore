@@ -1,7 +1,7 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel ChannelBlitter
 
-#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Blitter/ComputeBlit.hlsl"
+#include "../../ShaderLibrary/Blitter/ComputeBlit.hlsl"
 
 /// @brief Copies selected channels from a source texture to a destination texture.
 /// @details Uses the offsets in _BlitParams.xy as the starting pixel coordinate and

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
-#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Texture.hlsl"
+#include "../../ShaderLibrary/Texture.hlsl"
 
 TEXTURE2D_X(_BlitTexture);
 CBUFFER_START(UnityPerMaterial)

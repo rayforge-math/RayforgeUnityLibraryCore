@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Sampling.hlsl"
-#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Rendering/FullscreenTriangle.hlsl"
+#include "../../ShaderLibrary/Sampling.hlsl"
+#include "../../ShaderLibrary/Rendering/FullscreenTriangle.hlsl"
 
 void SetupBlitPipeline(uint id, out float4 positionCS, out float2 texcoord)
 {

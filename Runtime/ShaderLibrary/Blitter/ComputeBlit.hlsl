@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Blitter/Defines.hlsl"
-#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Blitter/Params.hlsl"
-#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Blitter/ComputeParams.hlsl"
-#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Blitter/ComputeBlitImpl.hlsl"
+#include "../../ShaderLibrary/Blitter/Defines.hlsl"
+#include "../../ShaderLibrary/Blitter/Params.hlsl"
+#include "../../ShaderLibrary/Blitter/ComputeParams.hlsl"
+#include "../../ShaderLibrary/Blitter/ComputeBlitImpl.hlsl"
