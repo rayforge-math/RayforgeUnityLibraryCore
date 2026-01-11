@@ -54,7 +54,7 @@ float3 MixColor(float3 color, float3 mixColor, int mixOption, float strength, bo
 float3 MixLut(TEXTURE2D(lut), float3 color, int mode, float strength)
 {
     float luminance = saturate(Luminance(color));
-    float3 lutColor = SAMPLE_TEXTURE2D(lut, sampler_LinearClampCustom, float2(luminance, 0.5)).rgb;
+    float3 lutColor = SAMPLE_TEXTURE2D(lut, sampler_LinearClamp, float2(luminance, 0.5)).rgb;
 
     color = MixColor(color, lutColor, mode, strength, true);
 
