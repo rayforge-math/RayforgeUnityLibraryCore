@@ -32,7 +32,10 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
     /// </summary>
     public static class RenderPassRecorder
     {
-        private static MaterialPropertyBlock s_PropertyBlock = new();
+        private static MaterialPropertyBlock s_PropertyBlock;
+
+        static RenderPassRecorder()
+            => s_PropertyBlock = new();
 
         /// <summary>
         /// Adds a custom RenderGraph pass executed using <see cref="UnsafeCommandBuffer"/>.
@@ -72,6 +75,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                         s_PropertyBlock.Clear();
                         propertyBlock = s_PropertyBlock;
                     }
+                    propertyBlock.SetVector(BlitParameters.BlitScaleBiasId, Vector2.one);
 
                     data.RenderFuncUpdate?.Invoke(ctx.cmd, propertyBlock, data);
 
@@ -82,7 +86,6 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                     {
                         propertyBlock.SetTexture(input.propertyId, input.handle);
                     }
-                    propertyBlock.SetVector(BlitParameters.BlitScaleBiasId, Vector2.one);
 
                     unsafeCmd.DrawProcedural(Matrix4x4.identity, passMeta.Material, passMeta.PassId, MeshTopology.Triangles, 3, 1, propertyBlock);
                 });
@@ -127,6 +130,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                         s_PropertyBlock.Clear();
                         propertyBlock = s_PropertyBlock;
                     }
+                    propertyBlock.SetVector(BlitParameters.BlitScaleBiasId, Vector2.one);
 
                     data.RenderFuncUpdate?.Invoke(ctx.cmd, propertyBlock, data);
 
@@ -134,7 +138,6 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                     {
                         propertyBlock.SetTexture(input.propertyId, input.handle);
                     }
-                    propertyBlock.SetVector(BlitParameters.BlitScaleBiasId, Vector2.one);
 
                     ctx.cmd.DrawProcedural(Matrix4x4.identity, passMeta.Material, passMeta.PassId, MeshTopology.Triangles, 3, 1, propertyBlock);
                 });
@@ -170,10 +173,9 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
 
                 builder.SetRenderFunc(static (TPassData data, ComputeGraphContext ctx) =>
                 {
-                    var passMeta = data.PassMeta;
-
                     data.RenderFuncUpdate?.Invoke(ctx.cmd, data);
 
+                    var passMeta = data.PassMeta;
                     while (data.TryPopInput(out var input))
                     {
                         ctx.cmd.SetComputeTextureParam(passMeta.Shader, passMeta.KernelIndex, input.propertyId, input.handle);

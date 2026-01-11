@@ -27,14 +27,6 @@ namespace Rayforge.Core.Rendering.Collections
         /// </returns>
         public delegate bool CreateFunction(ref THandle handle, RenderTextureDescriptor descriptor, int mipLevel, TData data = default);
 
-        /// <summary>
-        /// Delegate for generating mip maps between two handles.
-        /// </summary>
-        /// <param name="src">Source handle (previous level).</param>
-        /// <param name="dest">Destination handle (current level).</param>
-        /// <param name="mipLevel">The mip level index being generated.</param>
-        public delegate void GenerateFunction(THandle src, THandle dest, int mipLevel);
-
         protected THandle[] m_Handles;
         protected CreateFunction m_CreateFunc;
 
@@ -267,19 +259,28 @@ namespace Rayforge.Core.Rendering.Collections
         }
 
         /// <summary>
-        /// Generates mip maps for the chain using the provided delegate.
+        /// Enumerates all consecutive mip transitions in the chain.
+        /// Each iteration yields a pair where the source mip (i-1) is used
+        /// to generate the destination mip (i).
         /// </summary>
-        /// <param name="generateFunc">Function that generates a mip from source to destination.</param>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="generateFunc"/> is null.</exception>
-        public void GenerateMipMaps(GenerateFunction generateFunc)
+        /// <remarks>
+        /// The first yielded element always represents the transition
+        /// from mip level 0 (source) to mip level 1 (destination).
+        /// </remarks>
+        /// <returns>
+        /// An enumerable sequence of <see cref="MipPair{THandle}"/> describing
+        /// all mip generation steps in ascending order.
+        /// </returns>
+        public IEnumerable<MipPair<THandle>> EnumerateMipPairs()
         {
-            if (generateFunc == null)
-                throw new ArgumentNullException(nameof(generateFunc));
-
-            if (MipCount <= 1) return;
-            for (int i = 1; i < MipCount; i++)
+            // Mip 0 has no source; generation starts at mip 1
+            for (int mip = 1; mip < MipCount; ++mip)
             {
-                generateFunc(m_Handles[i - 1], m_Handles[i], i);
+                yield return new MipPair<THandle>(
+                    m_Handles[mip - 1],
+                    m_Handles[mip],
+                    mip
+                );
             }
         }
     }
