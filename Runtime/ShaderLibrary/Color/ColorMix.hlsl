@@ -4,7 +4,7 @@
 // 1. Includes
 // ============================================================================
 
-#include "Packages/com.rayforge.core/Runtime/Core/ShaderLibrary/Common.hlsl"
+#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Common.hlsl"
 
 // ============================================================================
 // 2. Utility Functions

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Packages/com.rayforge.core/Runtime/Core/ShaderLibrary/Common.hlsl"
+#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Common.hlsl"
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 

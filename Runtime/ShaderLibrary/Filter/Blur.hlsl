@@ -10,8 +10,8 @@
 // 1. Includes
 // ============================================================================
 
-#include "Packages/com.rayforge.core/Runtime/Core/ShaderLibrary/Common.hlsl"
-#include "Packages/com.rayforge.core/Runtime/Core/ShaderLibrary/Rendering/Uv.hlsl"
+#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Common.hlsl"
+#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Rendering/Uv.hlsl"
 
 // ============================================================================
 // 2. Utility Functions

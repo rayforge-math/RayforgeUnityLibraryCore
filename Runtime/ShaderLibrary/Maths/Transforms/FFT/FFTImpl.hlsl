@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Packages/com.rayforge.core/Runtime/Core/ShaderLibrary/Maths/Spaces/ComplexPlane.hlsl"
+#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Maths/Spaces/ComplexPlane.hlsl"
 
 // ============================================================================
 // 1. Prototypes - for abstracting the precise data layout
@@ -32,7 +32,7 @@ Complex GetFilter(int index);
 
 /// @brief Computes the twiddle factor e^(i * angle), a unit-magnitude complex number.
 /// @param angle Angle in radians.
-/// @return Complex number representing e^(i·angle).
+/// @return Complex number representing e^(iï¿½angle).
 Complex TwiddleFactor(float angle)
 {
     Polar p = (Polar) 0;

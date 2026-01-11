@@ -4,8 +4,8 @@
 // 1. Includes
 // ============================================================================
 
-#include "Packages/com.rayforge.core/Runtime/Core/ShaderLibrary/Maths/Statistics.hlsl"
-#include "Packages/com.rayforge.core/Runtime/Core/ShaderLibrary/Filter/DeviationFilter.hlsl"
+#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Maths/Statistics.hlsl"
+#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Filter/DeviationFilter.hlsl"
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 
