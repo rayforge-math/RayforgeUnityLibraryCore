@@ -1,9 +1,10 @@
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.ShaderExtensions.Blitter;
+using Rayforge.Core.Diagnostics;
+using Rayforge.Core.Utility.RenderGraphs.Rendering;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
-using UnityEngine.Windows;
 
 namespace Rayforge.Core.Utility.RenderGraphs.Rendering
 {
@@ -51,13 +52,17 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
 
             using (var builder = renderGraph.AddUnsafePass(passName, out TPassData data))
             {
-                data.CopyFrom(passData);
+                data.FetchFrom(passData);
+                data.CopyUserData(passData);
 
-                foreach (var input in data.PassInput)
+                for (int i = 0; i < data.InputCount; ++i)
                 {
-                    builder.UseTexture(input.handle, AccessFlags.Read);
+                    if (data.TryPeekInput(i, out var input))
+                    {
+                        builder.UseTexture(input.handle, AccessFlags.Read);
+                    }
                 }
-                builder.UseTexture(data.Destination, AccessFlags.Write);
+                builder.UseTexture(data.Destination.handle, AccessFlags.Write);
 
                 builder.SetRenderFunc(static (TPassData data, UnsafeGraphContext ctx) =>
                 {
@@ -70,12 +75,12 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                         propertyBlock = s_PropertyBlock;
                     }
 
-                    data.UpdateCallback?.Invoke(ctx.cmd, propertyBlock, data);
+                    data.RenderFuncUpdate?.Invoke(ctx.cmd, propertyBlock, data);
 
                     CommandBuffer unsafeCmd = CommandBufferHelpers.GetNativeCommandBuffer(ctx.cmd);
-                    unsafeCmd.SetRenderTarget(data.Destination, 0, CubemapFace.Unknown, 0);
+                    unsafeCmd.SetRenderTarget(data.Destination.handle, 0, CubemapFace.Unknown, 0);
 
-                    foreach (var input in data.PassInput)
+                    while (data.TryPopInput(out var input))
                     {
                         propertyBlock.SetTexture(input.propertyId, input.handle);
                     }
@@ -102,13 +107,17 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
 
             using (var builder = renderGraph.AddRasterRenderPass(passName, out TPassData data))
             {
-                data.CopyFrom(passData);
+                data.FetchFrom(passData);
+                data.CopyUserData(passData);
 
-                foreach (var input in data.PassInput)
+                for (int i = 0; i < data.InputCount; ++i)
                 {
-                    builder.UseTexture(input.handle, AccessFlags.Read);
+                    if (data.TryPeekInput(i, out var input))
+                    {
+                        builder.UseTexture(input.handle, AccessFlags.Read);
+                    }
                 }
-                builder.SetRenderAttachment(data.Destination, 0, AccessFlags.Write);
+                builder.SetRenderAttachment(data.Destination.handle, 0, AccessFlags.Write);
 
                 builder.SetRenderFunc(static (TPassData data, RasterGraphContext ctx) =>
                 {
@@ -121,9 +130,9 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                         propertyBlock = s_PropertyBlock;
                     }
 
-                    data.UpdateCallback?.Invoke(ctx.cmd, propertyBlock, data);
+                    data.RenderFuncUpdate?.Invoke(ctx.cmd, propertyBlock, data);
 
-                    foreach (var input in data.PassInput)
+                    while (data.TryPopInput(out var input))
                     {
                         propertyBlock.SetTexture(input.propertyId, input.handle);
                     }
@@ -149,11 +158,15 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
 
             using (var builder = renderGraph.AddComputePass(passName, out TPassData data))
             {
-                data.CopyFrom(passData);
+                data.FetchFrom(passData);
+                data.CopyUserData(passData);
 
-                foreach (var input in data.PassInput)
+                for (int i = 0; i < data.InputCount; ++i)
                 {
-                    builder.UseTexture(input.handle, AccessFlags.Read);
+                    if (data.TryPeekInput(i, out var input))
+                    {
+                        builder.UseTexture(input.handle, AccessFlags.Read);
+                    }
                 }
                 builder.UseTexture(data.Destination.handle, AccessFlags.Write);
 
@@ -161,15 +174,15 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                 {
                     var passMeta = data.PassMeta;
 
-                    data.UpdateCallback?.Invoke(ctx.cmd, data);
+                    data.RenderFuncUpdate?.Invoke(ctx.cmd, data);
 
-                    foreach (var input in data.PassInput)
+                    while (data.TryPopInput(out var input))
                     {
                         ctx.cmd.SetComputeTextureParam(passMeta.Shader, passMeta.KernelIndex, input.propertyId, input.handle);
                     }
                     var dest = data.Destination;
                     ctx.cmd.SetComputeTextureParam(passMeta.Shader, passMeta.KernelIndex, dest.propertyId, dest.handle);
-                    
+
                     ctx.cmd.DispatchCompute(
                         passMeta.Shader,
                         passMeta.KernelIndex,

@@ -17,7 +17,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
     /// 
     /// Extensions should remain data-only and must not introduce execution logic.
     /// 
-    /// Any per-dispatch logic should instead be implemented via <see cref="UpdateCallback"/>,
+    /// Any per-dispatch logic should instead be implemented via <see cref="RenderFuncUpdate"/>,
     /// which receives the fully populated pass data instance and allows binding of resources
     /// and constants without capturing external state.
     /// 
@@ -28,7 +28,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
     /// <typeparam name="TDerived">
     /// Concrete pass data type (CRTP) enabling type-safe callbacks and extensions without allocations.
     /// </typeparam>
-    public abstract partial class ComputePassData<TDerived> : PassDataBase<TDerived, ComputePassMeta, TextureMeta>
+    public abstract partial class ComputePassData<TDerived> : PassDataBase<TDerived, ComputePassMeta>
         where TDerived : ComputePassData<TDerived>
     {
         /// <summary>
@@ -46,46 +46,24 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
         /// logic is value-type-based and heap-free, ensuring predictable frame timings and zero GC overhead.
         /// </para>
         /// </summary>
-        public Action<ComputeCommandBuffer, TDerived> UpdateCallback { get; set; }
+        public Action<ComputeCommandBuffer, TDerived> RenderFuncUpdate { get; set; }
 
         /// <summary>
-        /// Sets the destination texture using a RenderGraph handle and optional shader property ID.
+        /// Fetches all data from another raster pass instance.
+        /// <para>
+        /// Base inputs, destination, and metadata are fetched via <see cref="PassDataBase{TDerived, TMeta}.FetchFrom"/>.
+        /// Child-specific fields such as <see cref="RenderFuncUpdate"/> are then transferred.
+        /// </para>
+        /// <para>
+        /// Inputs and destination in <paramref name="other"/> are consumed and reset.
+        /// </para>
         /// </summary>
-        /// <param name="handle">The texture handle to write into.</param>
-        /// <param name="propertyId">Optional shader property ID to bind the texture to.</param>
-        public void SetDestination(TextureHandle handle, int propertyId = 0)
-            => SetDestination(new TextureMeta { handle = handle, propertyId = propertyId });
+        /// <param name="other">The source raster pass data instance to fetch from.</param>
+        public void FetchFrom(ComputePassData<TDerived> other)
+        {
+            base.FetchFrom(other);
 
-        /// <summary>
-        /// Sets an input texture at the specified index using a handle and optional shader property ID.
-        /// </summary>
-        /// <param name="index">Zero-based input index.</param>
-        /// <param name="handle">The texture handle to assign.</param>
-        /// <param name="propertyId">Optional shader property ID to bind the texture to.</param>
-        public void SetInput(int index, TextureHandle handle, int propertyId = 0)
-            => SetInput(index, new TextureMeta { handle = handle, propertyId = propertyId });
-
-        /// <summary>
-        /// Sets the first input texture (index 0) using a handle and optional shader property ID.
-        /// </summary>
-        /// <param name="handle">The texture handle to assign.</param>
-        /// <param name="propertyId">Optional shader property ID to bind the texture to.</param>
-        public void SetInput(TextureHandle handle, int propertyId = 0)
-            => SetInput(0, handle, propertyId);
-
-        /// <summary>
-        /// Gets the destination texture handle stored in this pass.
-        /// </summary>
-        /// <returns>The destination <see cref="TextureHandle"/>.</returns>
-        public TextureHandle GetDestinationHandle()
-            => Destination.handle;
-
-        /// <summary>
-        /// Gets the input texture handle at the specified index.
-        /// </summary>
-        /// <param name="index">Zero-based input index.</param>
-        /// <returns>The <see cref="TextureHandle"/> at the specified input slot.</returns>
-        public TextureHandle GetInputHandle(int index)
-            => GetInput(index).handle;
+            RenderFuncUpdate = other.RenderFuncUpdate;
+        }
     }
 }

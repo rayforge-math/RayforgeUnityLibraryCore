@@ -18,7 +18,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
     /// 
     /// Extensions should remain data-only and must not introduce execution logic.
     /// 
-    /// Any per-dispatch logic should instead be implemented via <see cref="UpdateCallback"/>,
+    /// Any per-dispatch logic should instead be implemented via <see cref="RenderFuncUpdate"/>,
     /// which receives the fully populated pass data instance and allows binding of resources
     /// and constants without capturing external state.
     /// </remarks>
@@ -28,7 +28,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
     /// <typeparam name="TCmd">
     /// Command buffer type used to record rendering commands for this pass.
     /// </typeparam>
-    public abstract partial class RasterPassDataBase<TDerived, TCmd> : PassDataBase<TDerived, RasterPassMeta, TextureHandle>
+    public abstract partial class RasterPassDataBase<TDerived, TCmd> : PassDataBase<TDerived, RasterPassMeta>
         where TDerived : RasterPassDataBase<TDerived, TCmd>
         where TCmd : BaseCommandBuffer
     {
@@ -47,7 +47,25 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
         /// logic is value-type-based and heap-free, ensuring predictable frame timings and zero GC overhead.
         /// </para>
         /// </summary>
-        public Action<TCmd, MaterialPropertyBlock, TDerived> UpdateCallback { get; set; }
+        public Action<TCmd, MaterialPropertyBlock, TDerived> RenderFuncUpdate { get; set; }
+
+        /// <summary>
+        /// Fetches all data from another raster pass instance.
+        /// <para>
+        /// Base inputs, destination, and metadata are fetched via <see cref="PassDataBase{TDerived, TMeta}.FetchFrom"/>.
+        /// Child-specific fields such as <see cref="RenderFuncUpdate"/> are then transferred.
+        /// </para>
+        /// <para>
+        /// Inputs and destination in <paramref name="other"/> are consumed and reset.
+        /// </para>
+        /// </summary>
+        /// <param name="other">The source raster pass data instance to fetch from.</param>
+        public void FetchFrom(RasterPassDataBase<TDerived, TCmd> other)
+        {
+            base.FetchFrom(other);
+
+            RenderFuncUpdate = other.RenderFuncUpdate;
+        }
     }
 
     /// <summary>
@@ -67,7 +85,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
     /// <typeparam name="TDerived">
     /// Concrete raster pass data type enabling type-safe callbacks without allocations.
     /// </typeparam>
-    public abstract partial class UnsafeRasterPassData<TDerived> : RasterPassDataBase<TDerived, UnsafeCommandBuffer> 
+    public abstract partial class UnsafeRasterPassData<TDerived> : RasterPassDataBase<TDerived, UnsafeCommandBuffer>
         where TDerived : UnsafeRasterPassData<TDerived>
     { }
 }
