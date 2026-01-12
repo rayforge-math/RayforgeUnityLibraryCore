@@ -1,5 +1,6 @@
 {
   "name": "Rayforge.Core.Runtime",
+  "rootNamespace": "Rayforge.Core",
   "references": [
     "Unity.RenderPipelines.Core.Runtime",
     "Unity.Mathematics",
@@ -7,5 +8,5 @@
   ],
   "allowUnsafeCode": true,
   "autoReferenced": false,
-  "includePlatforms": []
+  "noEngineReferences": false
 }

@@ -1,20 +1,15 @@
 {
-    "name": "Rayforge.Core.Editor",
-    "rootNamespace": "Rayforge.Core",
-    "references": [
-        "Rayforge.Core.Runtime",
-        "Unity.RenderPipelines.Core.Editor",
-        "Unity.RenderPipelines.Core.Runtime"
-    ],
-    "includePlatforms": [
-        "Editor"
-    ],
-    "excludePlatforms": [],
-    "allowUnsafeCode": true,
-    "overrideReferences": false,
-    "precompiledReferences": [],
-    "autoReferenced": true,
-    "defineConstraints": [],
-    "versionDefines": [],
-    "noEngineReferences": false
+  "name": "Rayforge.Core.Editor",
+  "rootNamespace": "Rayforge.Core.Editor",
+  "references": [
+    "Rayforge.Core.Runtime",
+    "Unity.RenderPipelines.Core.Runtime",
+    "Unity.RenderPipelines.Core.Editor"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "allowUnsafeCode": true,
+  "autoReferenced": true,
+  "noEngineReferences": false
 }
