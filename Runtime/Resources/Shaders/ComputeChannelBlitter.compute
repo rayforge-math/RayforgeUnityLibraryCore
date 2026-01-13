@@ -10,9 +10,9 @@
 [numthreads(8,8,1)]
 void ChannelBlitter (uint3 id : SV_DispatchThreadID)
 {
-    if (id.x < (uint) _BlitParams.z && id.y < (uint) _BlitParams.w)
+    if (id.x < _BlitDest_Res.x && id.y < _BlitDest_Res.y)
     {
-        _BlitDestination[id.xy] = SampleBlitTexture(uint2(_BlitParams.xy), id.xy);
+        _BlitDestination[id.xy] = SampleBlitTextures(id.xy);
     }
 }
 

@@ -1,24 +1,47 @@
 #pragma once
 
-uint4 SampleBlitTexture(uint2 baseOffset, uint2 windowOffset)
+uint4 SampleBlitTextures(uint2 pixelCoords)
 {
-    uint2 coords = baseOffset + windowOffset;
-    uint4 sample = _BlitTexture[coords];
-        
-    uint4 dest = (uint4) 0;
-    if (_R != BLIT_CHANNEL_NONE)
-        dest.r = sample[_R];
-    if (_G != BLIT_CHANNEL_NONE)
-        dest.g = sample[_G];
-    if (_B != BLIT_CHANNEL_NONE)
-        dest.b = sample[_B];
-    if (_A != BLIT_CHANNEL_NONE)
-        dest.a = sample[_A];
-    
-    return dest;
-}
+    bool useTex0 = (_ChannelSource.r == 0) || (_ChannelSource.g == 0) || (_ChannelSource.b == 0) || (_ChannelSource.a == 0);
+    bool useTex1 = (_ChannelSource.r == 1) || (_ChannelSource.g == 1) || (_ChannelSource.b == 1) || (_ChannelSource.a == 1);
+    bool useTex2 = (_ChannelSource.r == 2) || (_ChannelSource.g == 2) || (_ChannelSource.b == 2) || (_ChannelSource.a == 2);
+    bool useTex3 = (_ChannelSource.r == 3) || (_ChannelSource.g == 3) || (_ChannelSource.b == 3) || (_ChannelSource.a == 3);
 
-uint4 SampleBlitTexture()
-{
-    return SampleBlitTexture(uint2(_BlitParams.xy), uint2(_BlitParams.zw));
+    uint4 samples[4];
+
+    if (useTex0)
+        samples[0] = _BlitTexture0[uint2(pixelCoords * _BlitScaleBias.xy + _BlitTexture0_TexelSize.zw * _BlitScaleBias.zw)];
+    if (useTex1)
+        samples[1] = _BlitTexture1[uint2(pixelCoords * _BlitScaleBias.xy + _BlitTexture1_TexelSize.zw * _BlitScaleBias.zw)];
+    if (useTex2)
+        samples[2] = _BlitTexture2[uint2(pixelCoords * _BlitScaleBias.xy + _BlitTexture2_TexelSize.zw * _BlitScaleBias.zw)];
+    if (useTex3)
+        samples[3] = _BlitTexture3[uint2(pixelCoords * _BlitScaleBias.xy + _BlitTexture3_TexelSize.zw * _BlitScaleBias.zw)];
+
+    uint4 dest;
+    dest.r = 
+        (_ChannelSource.r == 0) ? samples[0][_ChannelMapping.r] :
+        (_ChannelSource.r == 1) ? samples[1][_ChannelMapping.r] :
+        (_ChannelSource.r == 2) ? samples[2][_ChannelMapping.r] :
+        (_ChannelSource.r == 3) ? samples[3][_ChannelMapping.r] : 0;
+
+    dest.g = 
+        (_ChannelSource.g == 0) ? samples[0][_ChannelMapping.g] :
+        (_ChannelSource.g == 1) ? samples[1][_ChannelMapping.g] :
+        (_ChannelSource.g == 2) ? samples[2][_ChannelMapping.g] :
+        (_ChannelSource.g == 3) ? samples[3][_ChannelMapping.g] : 0;
+
+    dest.b = 
+        (_ChannelSource.b == 0) ? samples[0][_ChannelMapping.b] :
+        (_ChannelSource.b == 1) ? samples[1][_ChannelMapping.b] :
+        (_ChannelSource.b == 2) ? samples[2][_ChannelMapping.b] :
+        (_ChannelSource.b == 3) ? samples[3][_ChannelMapping.b] : 0;
+
+    dest.a = 
+        (_ChannelSource.a == 0) ? samples[0][_ChannelMapping.a] :
+        (_ChannelSource.a == 1) ? samples[1][_ChannelMapping.a] :
+        (_ChannelSource.a == 2) ? samples[2][_ChannelMapping.a] :
+        (_ChannelSource.a == 3) ? samples[3][_ChannelMapping.a] : 0;
+
+    return dest;
 }

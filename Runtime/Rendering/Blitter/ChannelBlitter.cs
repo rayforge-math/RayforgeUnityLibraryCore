@@ -10,7 +10,8 @@ namespace Rayforge.Core.Rendering.Blitter
 {
     /// <summary>
     /// Utility class for performing channel-wise blits from a source texture
-    /// to a destination render target. Supports both compute shader and rasterization pipelines.
+    /// to a destination render target, supporting per-channel remapping and
+    /// scale/bias based sub-rect blits via compute or rasterization pipelines.
     /// </summary>
     public static class ChannelBlitter
     {
@@ -25,6 +26,48 @@ namespace Rayforge.Core.Rendering.Blitter
             Raster
         }
 
+        public static class ChannelShaderIds
+        {
+            private const string ChannelMapping = "_ChannelMapping";
+            private const string ChannelSource = "_ChannelSource";
+            private const string ChannelBlitterParams = "_ChannelBlitterParams";
+
+            public static readonly int ChannelMappingId = Shader.PropertyToID(ChannelMapping);
+            public static readonly int ChannelSourceId = Shader.PropertyToID(ChannelSource);
+            public static readonly int ChannelBlitterParamsId = Shader.PropertyToID(ChannelBlitterParams);
+
+            public static readonly int BlitTextureId = BlitParameters.BlitTextureId;
+            public static readonly int BlitDestinationId = BlitParameters.BlitDestinationId;
+            public static readonly int BlitScaleBiasId = BlitParameters.BlitScaleBiasId;
+        }
+
+        public static class ComputeBlitShaderIds
+        {
+            private const string ComputeBlitParams = "_ComputeBlitParams";
+            public static readonly int ComputeBlitParamsId = Shader.PropertyToID(ComputeBlitParams);
+
+            public const string BlitTexture0 = "_BlitTexture0";
+            public const string BlitTexture1 = "_BlitTexture1";
+            public const string BlitTexture2 = "_BlitTexture2";
+            public const string BlitTexture3 = "_BlitTexture3";
+
+            public static readonly int BlitTexture0Id = Shader.PropertyToID(BlitTexture0);
+            public static readonly int BlitTexture1Id = Shader.PropertyToID(BlitTexture1);
+            public static readonly int BlitTexture2Id = Shader.PropertyToID(BlitTexture2);
+            public static readonly int BlitTexture3Id = Shader.PropertyToID(BlitTexture3);
+
+            public const string BlitTexture0_TexelSize = "_BlitTexture0_TexelSize";
+            public const string BlitTexture1_TexelSize = "_BlitTexture1_TexelSize";
+            public const string BlitTexture2_TexelSize = "_BlitTexture2_TexelSize";
+            public const string BlitTexture3_TexelSize = "_BlitTexture3_TexelSize";
+
+            public static readonly int BlitTexture0_TexelSizeId = Shader.PropertyToID(BlitTexture0_TexelSize);
+            public static readonly int BlitTexture1_TexelSizeId = Shader.PropertyToID(BlitTexture1_TexelSize);
+            public static readonly int BlitTexture2_TexelSizeId = Shader.PropertyToID(BlitTexture2_TexelSize);
+            public static readonly int BlitTexture3_TexelSizeId = Shader.PropertyToID(BlitTexture3_TexelSize);
+        }
+
+
         /// <summary>
         /// Name of the compute shader inside the Resources folder.
         /// Used for channel-wise blitting via compute shader.
@@ -38,34 +81,11 @@ namespace Rayforge.Core.Rendering.Blitter
         /// </summary>
         private const string k_RasterBlitShaderName = "RasterChannelBlitter";
 
-        /// <summary>Shader property ID for the red channel mapping.</summary>
-        public static int ChannelRId => k_ChannelRId;
-        private static readonly int k_ChannelRId = Shader.PropertyToID("_R");
-        /// <summary>Shader property ID for the green channel mapping.</summary>
-        public static int ChannelGId => k_ChannelGId;
-        private static readonly int k_ChannelGId = Shader.PropertyToID("_G");
-        /// <summary>Shader property ID for the blue channel mapping.</summary>
-        public static int ChannelBId => k_ChannelBId;
-        private static readonly int k_ChannelBId = Shader.PropertyToID("_B");
-        /// <summary>Shader property ID for the alpha channel mapping.</summary>
-        public static int ChannelAId => k_ChannelAId;
-        private static readonly int k_ChannelAId = Shader.PropertyToID("_A");
-
-        /// <summary>Shader property ID for the blit parameter vector.</summary>
-        public static int BlitParamsId => k_BlitParamsId;
-        private static readonly int k_BlitParamsId = Shader.PropertyToID("_BlitParams");
-
-        /// <summary>Shader property ID for the entire parameter cbuffer block <see cref="ChannelBlitterParams"/>.</summary>
-        public static int ChannelBlitterParamsId => k_ChannelBlitterParamsId;
-        private static readonly int k_ChannelBlitterParamsId = Shader.PropertyToID("_ChannelBlitterParams");
-
         /// <summary>Compute shader used for compute pipeline blits.</summary>
         private static readonly ComputeShader k_ComputeBlitShader;
-        public static ComputeShader ComputeBlitShader => k_ComputeBlitShader;
 
         /// <summary>Material used for rasterization pipeline blits (fullscreen triangle).</summary>
         private static readonly Material k_RasterBlitMaterial;
-        public static Material RasterBlitMaterial => k_RasterBlitMaterial;
 
         /// <summary>Reusable MaterialPropertyBlock for raster blits.</summary>
         private static readonly MaterialPropertyBlock k_PropertyBlock;
@@ -93,7 +113,8 @@ namespace Rayforge.Core.Rendering.Blitter
         }
 
         /// <summary>
-        /// Blits a source texture to a destination render target using the specified pipeline type.
+        /// Blits a source texture to a destination render target using the specified pipeline type,
+        /// applying channel remapping and scale/bias based coordinate transformation.
         /// </summary>
         /// <param name="source">Source texture to read from.</param>
         /// <param name="dest">Destination render texture.</param>
@@ -103,7 +124,7 @@ namespace Rayforge.Core.Rendering.Blitter
         /// <exception cref="ArgumentOutOfRangeException">
         /// Thrown if <paramref name="type"/> is unknown or if <paramref name="param"/> has non-positive size.
         /// </exception>
-        public static void Blit(Texture source, RenderTexture dest, BlitType type, ChannelBlitterParams param)
+        public static void Blit(Texture source, RenderTexture dest, BlitType type, ChannelBlitParams param)
         {
             switch (type)
             {
@@ -119,7 +140,8 @@ namespace Rayforge.Core.Rendering.Blitter
         }
 
         /// <summary>
-        /// Rasterization blit using ChannelBlitterParams cbuffer.
+        /// Rasterization blit using a ChannelBlitParams cbuffer.
+        /// The offset specifies the struct offset within the constant buffer.
         /// </summary>
         /// <param name="source">Source texture.</param>
         /// <param name="dest">Destination render target.</param>
@@ -131,28 +153,23 @@ namespace Rayforge.Core.Rendering.Blitter
             if (param == null) 
                 throw new ArgumentNullException(nameof(param));
 
-            k_PropertyBlock.SetCBuffer(k_ChannelBlitterParamsId, param, offset);
+            k_PropertyBlock.SetCBuffer(ChannelShaderIds.ChannelBlitterParamsId, param, offset);
             RasterBlit(source, dest, k_PropertyBlock);
         }
 
         /// <summary>
-        /// Rasterization blit using ChannelBlitterParams struct.
-        /// Converts parameters into a MaterialPropertyBlock and invokes the raster blit.
+        /// Rasterization blit using ChannelBlitParams.
+        /// Applies scale/bias for source UV transformation and per-channel remapping,
+        /// converts parameters into a MaterialPropertyBlock, and invokes the raster blit.
         /// </summary>
         /// <param name="source">Source texture.</param>
         /// <param name="dest">Destination render target.</param>
         /// <param name="param">Channel mapping and offset/size rectangle.</param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown if param.size is non-positive.</exception>
-        public static void RasterBlit(Texture source, RenderTexture dest, ChannelBlitterParams param)
+        public static void RasterBlit(Texture source, RenderTexture dest, ChannelBlitParams param)
         {
-            if (param.size.x <= 0 || param.size.y <= 0)
-                throw new ArgumentOutOfRangeException(nameof(param), "Size must be positive.");
-
-            k_PropertyBlock.SetVector(k_BlitParamsId, new Vector4(param.offset.x, param.offset.y, param.size.x, param.size.y));
-            k_PropertyBlock.SetInteger(k_ChannelRId, (int)param.R);
-            k_PropertyBlock.SetInteger(k_ChannelGId, (int)param.G);
-            k_PropertyBlock.SetInteger(k_ChannelBId, (int)param.B);
-            k_PropertyBlock.SetInteger(k_ChannelAId, (int)param.A);
+            k_PropertyBlock.SetVector(ChannelShaderIds.BlitScaleBiasId, new Vector4(param.scale.x, param.scale.y, param.bias.x, param.bias.y));
+            k_PropertyBlock.SetVector(ChannelShaderIds.ChannelMappingId, new Vector4((int)param.R, (int)param.G, (int)param.B, (int)param.A));
 
             RasterBlit(source, dest, k_PropertyBlock);
         }
@@ -173,45 +190,120 @@ namespace Rayforge.Core.Rendering.Blitter
             if (mpb == null)
                 throw new ArgumentNullException(nameof(mpb));
 
-            mpb.SetTexture(BlitParameters.BlitTextureId, source);
+            mpb.SetTexture(ChannelShaderIds.BlitTextureId, source);
             Graphics.SetRenderTarget(dest);
             Graphics.DrawProcedural(k_RasterBlitMaterial, new Bounds(Vector2.zero, Vector2.one), MeshTopology.Triangles, 3, 1, null, mpb);
             Graphics.SetRenderTarget(null);
         }
 
         /// <summary>
-        /// Performs a compute-based blit operation using <see cref="ChannelBlitterParams"/>.
-        /// This path is intended for non-interpolated, non-normalized pixel data where
-        /// bit-accurate transfer is required (e.g., bitfields, masks, integer-packed channels) or 
-        /// as a slightly more performant blit operation where no interpolation is needed without
-        /// invoking the entire rasterizer pipeline.
-        ///
-        /// The compute pipeline ensures that the source values are copied 1:1 without 
-        /// filtering or normalization, allowing precise preservation of bit-level information.
+        /// Single-source compute blit using <see cref="ChannelBlitParams"/>.
+        /// Internally calls the multi-source ComputeBlit with all channels pointing to Texture0.
         /// </summary>
         /// <param name="source">Source texture containing raw pixel data.</param>
         /// <param name="dest">Destination render texture.</param>
-        /// <param name="param">Channel mapping and offset/size rectangle.</param>
-        public static void ComputeBlit(Texture source, RenderTexture dest, ChannelBlitterParams param)
+        /// <param name="param">Channel mapping and per-channel scale/bias.</param>
+        public static void ComputeBlit(Texture source, RenderTexture dest, ChannelBlitParams param)
         {
             if (source == null)
                 throw new ArgumentNullException(nameof(source));
             if (dest == null)
                 throw new ArgumentNullException(nameof(dest));
-            if (param.size.x <= 0 || param.size.y <= 0)
-                throw new ArgumentOutOfRangeException(nameof(param), "Size must be positive.");
 
-            k_ComputeBlitShader.SetVector(k_BlitParamsId, new Vector4(param.offset.x, param.offset.y, param.size.x, param.size.y));
-            k_ComputeBlitShader.SetInt(k_ChannelRId, (int)param.R);
-            k_ComputeBlitShader.SetInt(k_ChannelGId, (int)param.G);
-            k_ComputeBlitShader.SetInt(k_ChannelBId, (int)param.B);
-            k_ComputeBlitShader.SetInt(k_ChannelAId, (int)param.A);
+            param.RSource = SourceTexture.Texture0;
+            param.GSource = SourceTexture.Texture0;
+            param.BSource = SourceTexture.Texture0;
+            param.ASource = SourceTexture.Texture0;
 
-            k_ComputeBlitShader.SetTexture(0, BlitParameters.BlitTextureId, source);
-            k_ComputeBlitShader.SetTexture(0, BlitParameters.BlitDestinationId, dest);
+            var computeParam = new ComputeBlitParams
+            {
+                BlitTexture0_TexelSize = new Vector4(1f / source.width, 1f / source.height, source.width, source.height),
+                BlitTexture1_TexelSize = Vector4.zero,
+                BlitTexture2_TexelSize = Vector4.zero,
+                BlitTexture3_TexelSize = Vector4.zero,
+                BlitDest_Res = new Vector2Int(dest.width, dest.height)
+            };
 
-            var numGroups = new Vector2Int(Mathf.CeilToInt(param.size.x / 8.0f), Mathf.CeilToInt(param.size.y / 8.0f));
-            k_ComputeBlitShader.Dispatch(0, numGroups.x, numGroups.y, 1);
+            ComputeBlit(source, null, null, null, dest, param, computeParam);
         }
+
+
+        /// <summary>
+        /// Performs a compute-based blit using up to 4 source textures.
+        /// Automatically binds the textures to the shader and sets <see cref="ChannelBlitParams"/> source slots.
+        /// Supports per-channel remapping and scale/bias for sub-region blitting.
+        /// </summary>
+        /// <param name="tex0">Source texture 0 (used if any channel references Texture0).</param>
+        /// <param name="tex1">Source texture 1 (used if any channel references Texture1).</param>
+        /// <param name="tex2">Source texture 2 (used if any channel references Texture2).</param>
+        /// <param name="tex3">Source texture 3 (used if any channel references Texture3).</param>
+        /// <param name="dest">Destination render texture.</param>
+        /// <param name="channelParam">Per-channel mapping and source selection.</param>
+        /// <param name="computeParam">Compute shader parameters including texel sizes.</param>
+        public static void ComputeBlit(
+            Texture tex0,
+            Texture tex1,
+            Texture tex2,
+            Texture tex3,
+            RenderTexture dest,
+            ChannelBlitParams channelParam,
+            ComputeBlitParams computeParam)
+        {
+            if (dest == null)
+                throw new ArgumentNullException(nameof(dest));
+
+            // Bind only textures that exist and are actually referenced
+            if (tex0 != null &&
+                (channelParam.RSource == SourceTexture.Texture0 ||
+                 channelParam.GSource == SourceTexture.Texture0 ||
+                 channelParam.BSource == SourceTexture.Texture0 ||
+                 channelParam.ASource == SourceTexture.Texture0))
+                k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture0, tex0);
+
+            if (tex1 != null &&
+                (channelParam.RSource == SourceTexture.Texture1 ||
+                 channelParam.GSource == SourceTexture.Texture1 ||
+                 channelParam.BSource == SourceTexture.Texture1 ||
+                 channelParam.ASource == SourceTexture.Texture1))
+                k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture1, tex1);
+
+            if (tex2 != null &&
+                (channelParam.RSource == SourceTexture.Texture2 ||
+                 channelParam.GSource == SourceTexture.Texture2 ||
+                 channelParam.BSource == SourceTexture.Texture2 ||
+                 channelParam.ASource == SourceTexture.Texture2))
+                k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture2, tex2);
+
+            if (tex3 != null &&
+                (channelParam.RSource == SourceTexture.Texture3 ||
+                 channelParam.GSource == SourceTexture.Texture3 ||
+                 channelParam.BSource == SourceTexture.Texture3 ||
+                 channelParam.ASource == SourceTexture.Texture3))
+                k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture3, tex3);
+
+            k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture0_TexelSizeId, computeParam.BlitTexture0_TexelSize);
+            k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture1_TexelSizeId, computeParam.BlitTexture1_TexelSize);
+            k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture2_TexelSizeId, computeParam.BlitTexture2_TexelSize);
+            k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture3_TexelSizeId, computeParam.BlitTexture3_TexelSize);
+
+            k_ComputeBlitShader.SetVector(
+                ChannelShaderIds.BlitScaleBiasId,
+                new Vector4(channelParam.scale.x, channelParam.scale.y, channelParam.bias.x, channelParam.bias.y));
+
+            k_ComputeBlitShader.SetVector(
+                ChannelShaderIds.ChannelMappingId,
+                new Vector4((int)channelParam.R, (int)channelParam.G, (int)channelParam.B, (int)channelParam.A));
+
+            k_ComputeBlitShader.SetVector(
+                ChannelShaderIds.ChannelSourceId,
+                new Vector4((int)channelParam.RSource, (int)channelParam.GSource, (int)channelParam.BSource, (int)channelParam.ASource));
+
+            k_ComputeBlitShader.SetTexture(0, ChannelShaderIds.BlitDestinationId, dest);
+
+            int threadGroupX = Mathf.CeilToInt(dest.width / 8.0f);
+            int threadGroupY = Mathf.CeilToInt(dest.height / 8.0f);
+            k_ComputeBlitShader.Dispatch(0, threadGroupX, threadGroupY, 1);
+        }
+
     }
 }
