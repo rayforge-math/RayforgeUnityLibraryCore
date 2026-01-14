@@ -286,8 +286,8 @@ namespace Rayforge.Core.Rendering.Blitter
             k_ComputeBlitShader.SetVector(ChannelShaderIds.ChannelOpsId, new Vector4((int)channelParam.ROps, (int)channelParam.GOps, (int)channelParam.BOps, (int)channelParam.AOps));
             k_ComputeBlitShader.SetVector(ChannelShaderIds.ChannelMultsId, new Vector4(channelParam.RMultiplier, channelParam.GMultiplier, channelParam.BMultiplier, channelParam.AMultiplier));
 
-            k_ComputeBlitShader.SetTexture(0, ChannelShaderIds.BlitDestinationId, dest);
-            k_ComputeBlitShader.SetVector(0, )
+            k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitDestinationId, dest);
+            k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitDestResId, new Vector2(dest.width, dest.height));
 
             int threadGroupX = Mathf.CeilToInt(dest.width / 8f);
             int threadGroupY = Mathf.CeilToInt(dest.height / 8f);
