@@ -1,6 +1,7 @@
-using UnityEngine;
 using Rayforge.Core.ManagedResources.Abstractions;
+using System;
 using System.Runtime.InteropServices;
+using UnityEngine;
 
 namespace Rayforge.Core.Rendering.Blitter
 {
@@ -76,5 +77,51 @@ namespace Rayforge.Core.Rendering.Blitter
         /// Returns data as raw compute data struct.
         /// </summary>
         public ChannelBlitParams RawData => this;
+
+        /// <summary>
+        /// Sets the mapping for a specific target channel in the blit parameters.
+        /// </summary>
+        /// <param name="target">The target channel to set (R, G, B, A).</param>
+        /// <param name="source">The source channel to map from.</param>
+        /// <param name="sourceTexture">The source texture to use for this channel.</param>
+        /// <param name="ops">Operations to apply to the channel after sampling (e.g., invert, multiply).</param>
+        /// <param name="multiplier">Multiplier applied if the operations include Multiply.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if the target channel is not R, G, B, or A.</exception>
+        public void SetChannel(Channel target, Channel source, SourceTexture sourceTexture, ChannelOps ops, float multiplier)
+        {
+            switch (target)
+            {
+                case Channel.R:
+                    R = source;
+                    RSource = sourceTexture;
+                    ROps = ops;
+                    RMultiplier = multiplier;
+                    break;
+
+                case Channel.G:
+                    G = source;
+                    GSource = sourceTexture;
+                    GOps = ops;
+                    GMultiplier = multiplier;
+                    break;
+
+                case Channel.B:
+                    B = source;
+                    BSource = sourceTexture;
+                    BOps = ops;
+                    BMultiplier = multiplier;
+                    break;
+
+                case Channel.A:
+                    A = source;
+                    ASource = sourceTexture;
+                    AOps = ops;
+                    AMultiplier = multiplier;
+                    break;
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(target), "Unknown channel");
+            }
+        }
     }
 }
