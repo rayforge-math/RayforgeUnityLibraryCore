@@ -72,9 +72,11 @@ namespace Rayforge.Core.Rendering.Blitter
             public const string BlitDestRes = "_BlitDest_Res";
             public static readonly int BlitDestResId = Shader.PropertyToID(BlitDestRes);
 
+            public const string BlitStretchToFit = "_BlitStretchToFit";
+            public static readonly int BlitStretchToFitId = Shader.PropertyToID(BlitStretchToFit);
+
             public static readonly int BlitDestinationId = BlitParameters.BlitDestinationId;
         }
-
 
         /// <summary>
         /// Name of the compute shader inside the Resources folder.
@@ -98,6 +100,9 @@ namespace Rayforge.Core.Rendering.Blitter
         /// <summary>Reusable MaterialPropertyBlock for raster blits.</summary>
         private static readonly MaterialPropertyBlock k_PropertyBlock;
 
+        /// <summary>Dummy texture for compute dispatch.</summary>
+        private static readonly Texture2D k_DummyTex2D;
+
         /// <summary>
         /// Static constructor: loads shaders and initializes the raster blit material and property block.
         /// Throws exceptions if shaders cannot be found or loaded.
@@ -108,16 +113,20 @@ namespace Rayforge.Core.Rendering.Blitter
         /// </exception>
         static ChannelBlitter()
         {
-            k_ComputeBlitShader = Load<ComputeShader>(k_ComputeBlitShaderName);
+            string computePath = ResourcePaths.ShaderResourceFolder + k_ComputeBlitShaderName;
+            k_ComputeBlitShader = Load<ComputeShader>(computePath);
             if (k_ComputeBlitShader == null)
-                throw new InvalidOperationException($"Compute shader '{k_ComputeBlitShaderName}' could not be loaded.");
+                throw new InvalidOperationException($"Compute shader '{computePath}' could not be loaded.");
 
-            var shader = Shader.Find(ResourcePaths.ShaderNamespace + k_RasterBlitShaderName);
+            string shaderNamespacePath = ResourcePaths.ShaderNamespace + k_RasterBlitShaderName;
+            var shader = Shader.Find(shaderNamespacePath);
             if (shader == null)
-                throw new InvalidOperationException($"Raster shader '{k_RasterBlitShaderName}' could not be found.");
+                throw new InvalidOperationException($"Raster shader '{shaderNamespacePath}' could not be found.");
 
             k_RasterBlitMaterial = new Material(shader);
             k_PropertyBlock = new MaterialPropertyBlock();
+
+            k_DummyTex2D = Texture2D.whiteTexture;
         }
 
         /// <summary>
@@ -158,7 +167,7 @@ namespace Rayforge.Core.Rendering.Blitter
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="source"/>, <paramref name="dest"/>, or <paramref name="param"/> is null.</exception>
         public static void RasterBlit(Texture source, RenderTexture dest, ManagedComputeBuffer param, int offset = 0)
         {
-            if (param == null) 
+            if (param == null)
                 throw new ArgumentNullException(nameof(param));
 
             k_PropertyBlock.SetCBuffer(ChannelShaderIds.ChannelBlitterParamsId, param, offset);
@@ -213,7 +222,11 @@ namespace Rayforge.Core.Rendering.Blitter
         /// <param name="source">Source texture containing raw pixel data.</param>
         /// <param name="dest">Destination render texture.</param>
         /// <param name="param">Channel mapping and per-channel scale/bias.</param>
-        public static void ComputeBlit(Texture source, RenderTexture dest, ChannelBlitParams param)
+        /// <param name="stretchToFit">
+        /// If true, the source texture will be automatically scaled to fit the destination resolution.
+        /// If false, <paramref name="param"/>'s scale and bias values are applied directly.
+        /// </param>
+        public static void ComputeBlit(Texture source, RenderTexture dest, ChannelBlitParams param, bool stretchToFit = true)
         {
             if (source == null)
                 throw new ArgumentNullException(nameof(source));
@@ -225,9 +238,8 @@ namespace Rayforge.Core.Rendering.Blitter
             param.BSource = SourceTexture.Texture0;
             param.ASource = SourceTexture.Texture0;
 
-            ComputeBlit(source, null, null, null, dest, param);
+            ComputeBlit(source, null, null, null, dest, param, stretchToFit);
         }
-
 
         /// <summary>
         /// Performs a compute-based blit using up to 4 source textures.
@@ -240,13 +252,18 @@ namespace Rayforge.Core.Rendering.Blitter
         /// <param name="tex3">Source texture 3 (used if any channel references Texture3).</param>
         /// <param name="dest">Destination render texture.</param>
         /// <param name="channelParam">Per-channel mapping and source selection.</param>
+        /// <param name="stretchToFit">
+        /// If true, each source texture will be automatically stretched to fit the destination resolution.
+        /// If false, the scale/bias values from <paramref name="channelParam"/> are applied instead.
+        /// </param>
         public static void ComputeBlit(
             Texture tex0,
             Texture tex1,
             Texture tex2,
             Texture tex3,
             RenderTexture dest,
-            ChannelBlitParams channelParam)
+            ChannelBlitParams channelParam,
+            bool stretchToFit = true)
         {
             if (dest == null)
                 throw new ArgumentNullException(nameof(dest));
@@ -259,32 +276,30 @@ namespace Rayforge.Core.Rendering.Blitter
             Vector4 TexelSize(Texture tex) =>
                 tex != null ? new Vector4(1f / tex.width, 1f / tex.height, tex.width, tex.height) : Vector4.zero;
 
-            if (ValidTexture(tex0, channelParam, SourceTexture.Texture0))
-            {
-                k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture0, tex0);
-                k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture0_TexelSizeId, TexelSize(tex0));
-            }
-            if (ValidTexture(tex1, channelParam, SourceTexture.Texture1))
-            {
-                k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture1, tex1);
-                k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture1_TexelSizeId, TexelSize(tex1));
-            }
-            if (ValidTexture(tex2, channelParam, SourceTexture.Texture2))
-            {
-                k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture2, tex2);
-                k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture2_TexelSizeId, TexelSize(tex2));
-            }
-            if (ValidTexture(tex3, channelParam, SourceTexture.Texture3))
-            {
-                k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture3, tex3);
-                k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture3_TexelSizeId, TexelSize(tex3));
-            }
+            var finalTex0 = ValidTexture(tex0, channelParam, SourceTexture.Texture0) ? tex0 : k_DummyTex2D;
+            var finalTex1 = ValidTexture(tex1, channelParam, SourceTexture.Texture1) ? tex1 : k_DummyTex2D;
+            var finalTex2 = ValidTexture(tex2, channelParam, SourceTexture.Texture2) ? tex2 : k_DummyTex2D;
+            var finalTex3 = ValidTexture(tex3, channelParam, SourceTexture.Texture3) ? tex3 : k_DummyTex2D;
+
+            k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture0, finalTex0);
+            k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture0_TexelSizeId, TexelSize(finalTex0));
+
+            k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture1, finalTex1);
+            k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture1_TexelSizeId, TexelSize(finalTex1));
+
+            k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture2, finalTex2);
+            k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture2_TexelSizeId, TexelSize(finalTex2));
+
+            k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture3, finalTex3);
+            k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture3_TexelSizeId, TexelSize(finalTex3));
 
             k_ComputeBlitShader.SetVector(ChannelShaderIds.BlitScaleBiasId, new Vector4(channelParam.scale.x, channelParam.scale.y, channelParam.bias.x, channelParam.bias.y));
             k_ComputeBlitShader.SetVector(ChannelShaderIds.ChannelMappingId, new Vector4((int)channelParam.R, (int)channelParam.G, (int)channelParam.B, (int)channelParam.A));
             k_ComputeBlitShader.SetVector(ChannelShaderIds.ChannelSourceId, new Vector4((int)channelParam.RSource, (int)channelParam.GSource, (int)channelParam.BSource, (int)channelParam.ASource));
             k_ComputeBlitShader.SetVector(ChannelShaderIds.ChannelOpsId, new Vector4((int)channelParam.ROps, (int)channelParam.GOps, (int)channelParam.BOps, (int)channelParam.AOps));
             k_ComputeBlitShader.SetVector(ChannelShaderIds.ChannelMultsId, new Vector4(channelParam.RMultiplier, channelParam.GMultiplier, channelParam.BMultiplier, channelParam.AMultiplier));
+
+            k_ComputeBlitShader.SetInt(ComputeBlitShaderIds.BlitStretchToFitId, stretchToFit ? 1 : 0);
 
             k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitDestinationId, dest);
             k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitDestResId, new Vector2(dest.width, dest.height));

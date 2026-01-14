@@ -18,6 +18,16 @@ namespace Rayforge.Core.Rendering.Blitter
         public Vector2Int BlitDest_Res;
 
         /// <summary>
+        /// Makes sure the source and destination textures properly align.
+        /// </summary>
+        public int BlitStretchToFit;
+
+        /// <summary>
+        /// Ensures 64 byte alignment for CBuffer usage.
+        /// </summary>
+        private int _padding;
+
+        /// <summary>
         /// Texel size of source textures:
         /// xy = 1/width, 1/height for normalized coordinates.
         /// zw = width, height for pixel-based calculations.
