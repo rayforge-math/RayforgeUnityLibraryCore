@@ -1,4 +1,5 @@
 using Rayforge.Core.Common;
+using Rayforge.Core.Diagnostics;
 using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.ManagedResources.NativeMemory.Helpers;
 using Rayforge.Core.ShaderExtensions.Blitter;
@@ -266,20 +267,35 @@ namespace Rayforge.Core.Rendering.Blitter
             bool stretchToFit = true)
         {
             if (dest == null)
-                throw new ArgumentNullException(nameof(dest));
+                throw new ArgumentNullException($"ComputeBlit aborted: target texture {nameof(dest)} is null");
 
             // Helper to check if a texture is actually used by any channel
-            static bool ValidTexture(Texture tex, ChannelBlitParams param, SourceTexture src) =>
-                tex != null &&
-                (param.RSource == src || param.GSource == src || param.BSource == src || param.ASource == src);
+            static bool ValidTexture(Texture tex, ChannelBlitParams param, SourceTexture src)
+            {
+                var referenced = param.RSource == src || param.GSource == src || param.BSource == src || param.ASource == src;
+                var notNull = tex != null;
+
+                if (referenced)
+                    Assertions.NotNull(tex);
+
+                return referenced && notNull;
+            };
 
             Vector4 TexelSize(Texture tex) =>
                 tex != null ? new Vector4(1f / tex.width, 1f / tex.height, tex.width, tex.height) : Vector4.zero;
 
-            var finalTex0 = ValidTexture(tex0, channelParam, SourceTexture.Texture0) ? tex0 : k_DummyTex2D;
-            var finalTex1 = ValidTexture(tex1, channelParam, SourceTexture.Texture1) ? tex1 : k_DummyTex2D;
-            var finalTex2 = ValidTexture(tex2, channelParam, SourceTexture.Texture2) ? tex2 : k_DummyTex2D;
-            var finalTex3 = ValidTexture(tex3, channelParam, SourceTexture.Texture3) ? tex3 : k_DummyTex2D;
+            bool tex0valid = ValidTexture(tex0, channelParam, SourceTexture.Texture0);
+            bool tex1valid = ValidTexture(tex1, channelParam, SourceTexture.Texture1);
+            bool tex2valid = ValidTexture(tex2, channelParam, SourceTexture.Texture2);
+            bool tex3valid = ValidTexture(tex3, channelParam, SourceTexture.Texture3);
+
+            if (!(tex0valid || tex1valid || tex2valid || tex3valid))
+                throw new InvalidOperationException("ComputeBlit aborted: no valid source texture is referenced by any channel mapping.");
+
+            var finalTex0 = tex0valid ? tex0 : k_DummyTex2D;
+            var finalTex1 = tex1valid ? tex1 : k_DummyTex2D;
+            var finalTex2 = tex2valid ? tex2 : k_DummyTex2D;
+            var finalTex3 = tex3valid ? tex3 : k_DummyTex2D;
 
             k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture0, finalTex0);
             k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture0_TexelSizeId, TexelSize(finalTex0));
