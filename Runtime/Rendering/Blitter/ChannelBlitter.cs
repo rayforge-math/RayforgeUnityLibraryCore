@@ -126,7 +126,7 @@ namespace Rayforge.Core.Rendering.Blitter
             k_RasterBlitMaterial = new Material(shader);
             k_PropertyBlock = new MaterialPropertyBlock();
 
-            k_DummyTex2D = Texture2D.whiteTexture;
+            k_DummyTex2D = Texture2D.blackTexture;
         }
 
         /// <summary>
