@@ -68,6 +68,23 @@ namespace Rayforge.Core.Rendering.Blitter
         };
 
         /// <summary>
+        /// Sets the parameters for a specific target channel using a <see cref="ChannelData"/> struct.
+        /// </summary>
+        /// <param name="ch">Target channel to set (R, G, B, A).</param>
+        /// <param name="data">The <see cref="ChannelData"/> containing source channel, source texture, ops, and multiplier.</param>
+        public void SetChannelData(Channel ch, ChannelData data)
+        {
+            switch (ch)
+            {
+                case Channel.R: R = data; break;
+                case Channel.G: G = data; break;
+                case Channel.B: B = data; break;
+                case Channel.A: A = data; break;
+                default: throw new ArgumentOutOfRangeException(nameof(ch));
+            }
+        }
+
+        /// <summary>
         /// Bias applied to source coordinates after scaling.
         /// Shifts the sampling window.
         /// </summary>
