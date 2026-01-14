@@ -28,8 +28,8 @@
 CBUFFER_START(_ChannelBlitterParams)
 int4 _ChannelMapping;
 int4 _ChannelSource;
-float4 _BlitScaleBias;
 int4 _ChannelOps;
 float4 _ChannelMults;
+float4 _BlitScaleBias;
 CBUFFER_END
 

@@ -6,42 +6,43 @@ using UnityEngine;
 namespace Rayforge.Core.Rendering.Blitter
 {
     /// <summary>
+    /// Represents all data needed for a single target channel in a blit operation.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ChannelData
+    {
+        /// <summary>Source channel to map from.</summary>
+        public Channel Source;
+
+        /// <summary>Source texture to use.</summary>
+        public SourceTexture Texture;
+
+        /// <summary>Operations to apply after sampling (e.g., invert, multiply).</summary>
+        public ChannelOps Ops;
+
+        /// <summary>Multiplier applied if Ops includes Multiply.</summary>
+        public float Multiplier;
+    }
+
+    /// <summary>
     /// Parameter struct for channel blitting operations.
     /// Used to specify per-channel mapping and source rectangle within the source texture.
     /// Layout is sequential to match GPU cbuffer layout.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public struct ChannelBlitParams : IComputeData<ChannelBlitParams>
+    public struct ChannelBlitParams
     {
-        /// <summary>Target red channel is mapped from this source channel.</summary>
-        public Channel R;
-        /// <summary>Target green channel is mapped from this source channel.</summary>
-        public Channel G;
-        /// <summary>Target blue channel is mapped from this source channel.</summary>
-        public Channel B;
-        /// <summary>Target alpha channel is mapped from this source channel.</summary>
-        public Channel A;
+        /// <summary>Red channel parameters.</summary>
+        public ChannelData R;
 
-        /// <summary>
-        /// Source texture to use for target red channel.
-        /// Only relevant for ComputeBlit. Raster blits always use the single source texture.
-        /// </summary>
-        public SourceTexture RSource;
-        /// <summary>
-        /// Source texture to use for target green channel.
-        /// Only relevant for ComputeBlit. Raster blits always use the single source texture.
-        /// </summary>
-        public SourceTexture GSource;
-        /// <summary>
-        /// Source texture to use for target blue channel.
-        /// Only relevant for ComputeBlit. Raster blits always use the single source texture.
-        /// </summary>
-        public SourceTexture BSource;
-        /// <summary>
-        /// Source texture to use for target alpha channel.
-        /// Only relevant for ComputeBlit. Raster blits always use the single source texture.
-        /// </summary>
-        public SourceTexture ASource;
+        /// <summary>Green channel parameters.</summary>
+        public ChannelData G;
+
+        /// <summary>Blue channel parameters.</summary>
+        public ChannelData B;
+
+        /// <summary>Alpha channel parameters.</summary>
+        public ChannelData A;
 
         /// <summary>
         /// Scale applied to source coordinates before bias.
@@ -54,74 +55,49 @@ namespace Rayforge.Core.Rendering.Blitter
         /// Shifts the sampling window.
         /// </summary>
         public Vector2 bias;
+    }
 
-        /// <summary>Operations to apply to the red channel after sampling (e.g., invert, multiply).</summary>
-        public ChannelOps ROps;
-        /// <summary>Operations to apply to the green channel after sampling (e.g., invert, multiply).</summary>
-        public ChannelOps GOps;
-        /// <summary>Operations to apply to the blue channel after sampling (e.g., invert, multiply).</summary>
-        public ChannelOps BOps;
-        /// <summary>Operations to apply to the alpha channel after sampling (e.g., invert, multiply).</summary>
-        public ChannelOps AOps;
+    [StructLayout(LayoutKind.Sequential)]
+    struct ChannelBlitterCB : IComputeData<ChannelBlitterCB>
+    {
+        public Vector4 ChannelMapping;
+        public Vector4 ChannelSource;
+        public Vector4 ChannelOps;
+        public Vector4 ChannelMults;
+        public Vector4 ScaleBias;
 
-        /// <summary>Red multiplier (used only if ROps has Multiply flag).</summary>
-        public float RMultiplier;
-        /// <summary>Green multiplier (used only if GOps has Multiply flag).</summary>
-        public float GMultiplier;
-        /// <summary>Blue multiplier (used only if BOps has Multiply flag).</summary>
-        public float BMultiplier;
-        /// <summary>Alpha multiplier (used only if AOps has Multiply flag).</summary>
-        public float AMultiplier;
+        public ChannelBlitterCB RawData => this;
 
-        /// <summary>
-        /// Returns data as raw compute data struct.
-        /// </summary>
-        public ChannelBlitParams RawData => this;
-
-        /// <summary>
-        /// Sets the mapping for a specific target channel in the blit parameters.
-        /// </summary>
-        /// <param name="target">The target channel to set (R, G, B, A).</param>
-        /// <param name="source">The source channel to map from.</param>
-        /// <param name="sourceTexture">The source texture to use for this channel.</param>
-        /// <param name="ops">Operations to apply to the channel after sampling (e.g., invert, multiply).</param>
-        /// <param name="multiplier">Multiplier applied if the operations include Multiply.</param>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown if the target channel is not R, G, B, or A.</exception>
-        public void SetChannel(Channel target, Channel source, SourceTexture sourceTexture, ChannelOps ops, float multiplier)
+        public ChannelBlitterCB(ChannelBlitParams param)
         {
-            switch (target)
-            {
-                case Channel.R:
-                    R = source;
-                    RSource = sourceTexture;
-                    ROps = ops;
-                    RMultiplier = multiplier;
-                    break;
-
-                case Channel.G:
-                    G = source;
-                    GSource = sourceTexture;
-                    GOps = ops;
-                    GMultiplier = multiplier;
-                    break;
-
-                case Channel.B:
-                    B = source;
-                    BSource = sourceTexture;
-                    BOps = ops;
-                    BMultiplier = multiplier;
-                    break;
-
-                case Channel.A:
-                    A = source;
-                    ASource = sourceTexture;
-                    AOps = ops;
-                    AMultiplier = multiplier;
-                    break;
-
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(target), "Unknown channel");
-            }
+            ChannelMapping = new Vector4(
+                (int)param.R.Source,
+                (int)param.G.Source,
+                (int)param.B.Source,
+                (int)param.A.Source
+            );
+            ChannelSource = new Vector4(
+                (int)param.R.Texture,
+                (int)param.G.Texture,
+                (int)param.B.Texture,
+                (int)param.A.Texture
+            );
+            ChannelOps = new Vector4(
+                (int)param.R.Ops,
+                (int)param.G.Ops,
+                (int)param.B.Ops,
+                (int)param.A.Ops
+            );
+            ChannelMults = new Vector4(
+                param.R.Multiplier,
+                param.G.Multiplier,
+                param.B.Multiplier,
+                param.A.Multiplier
+            );
+            ScaleBias = new Vector4(
+                param.scale.x, param.scale.y,
+                param.bias.x, param.bias.y
+            );
         }
     }
 }

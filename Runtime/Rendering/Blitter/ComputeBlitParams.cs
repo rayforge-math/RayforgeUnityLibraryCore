@@ -23,7 +23,7 @@ namespace Rayforge.Core.Rendering.Blitter
         public int BlitStretchToFit;
 
         /// <summary>
-        /// Ensures 64 byte alignment for CBuffer usage.
+        /// Ensures 16 byte alignment for CBuffer usage.
         /// </summary>
         private int _padding;
 
