@@ -1,4 +1,4 @@
-namespace Rayforge.Core.Rendering.Blitter
+namespace Rayforge.Core.Rendering.Blitter.Helpers
 {
     public static class ChannelExtensions
     {
