@@ -14,6 +14,10 @@
 /// Each component specifies which source texture to sample from
 /// (e.g. 0–3 for up to four bound textures).
 ///
+/// @param _ChannelOps
+/// Per-output-channel operations to apply after sampling (RGBA).
+/// Each component is a bitmask or enum specifying operations like invert, multiply, etc.
+///
 /// @param _BlitScaleBias
 /// Affine transformation applied to source texture coordinates:
 /// - xy = scale (scales the sampling region down)
@@ -25,5 +29,7 @@ CBUFFER_START(_ChannelBlitterParams)
 int4 _ChannelMapping;
 int4 _ChannelSource;
 float4 _BlitScaleBias;
+int4 _ChannelOps;
+float4 _ChannelMults;
 CBUFFER_END
 

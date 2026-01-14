@@ -23,5 +23,15 @@ float4 SampleBlitTexture(float2 texcoord)
     if (_ChannelMapping.a != BLIT_CH_NONE)
         dest.a = sample[_ChannelMapping.a];
     
+    dest.r = (_ChannelOps.r & BLIT_CHOP_INV) != 0 ? (1.0 - dest.r) : dest.r;
+    dest.g = (_ChannelOps.g & BLIT_CHOP_INV) != 0 ? (1.0 - dest.g) : dest.g;
+    dest.b = (_ChannelOps.b & BLIT_CHOP_INV) != 0 ? (1.0 - dest.b) : dest.b;
+    dest.a = (_ChannelOps.a & BLIT_CHOP_INV) != 0 ? (1.0 - dest.a) : dest.a;
+    
+    dest.r *= (_ChannelOps.r & BLIT_CHOP_MULT) != 0 ? _ChannelMults.r : 1.0;
+    dest.g *= (_ChannelOps.g & BLIT_CHOP_MULT) != 0 ? _ChannelMults.g : 1.0;
+    dest.b *= (_ChannelOps.b & BLIT_CHOP_MULT) != 0 ? _ChannelMults.b : 1.0;
+    dest.a *= (_ChannelOps.a & BLIT_CHOP_MULT) != 0 ? _ChannelMults.a : 1.0;
+    
     return dest;
 }

@@ -30,10 +30,14 @@ namespace Rayforge.Core.Rendering.Blitter
         {
             private const string ChannelMapping = "_ChannelMapping";
             private const string ChannelSource = "_ChannelSource";
+            private const string ChannelOps = "_ChannelOps";
+            private const string ChannelMults = "_ChannelMults";
             private const string ChannelBlitterParams = "_ChannelBlitterParams";
 
             public static readonly int ChannelMappingId = Shader.PropertyToID(ChannelMapping);
             public static readonly int ChannelSourceId = Shader.PropertyToID(ChannelSource);
+            public static readonly int ChannelOpsId = Shader.PropertyToID(ChannelOps);
+            public static readonly int ChannelMultsId = Shader.PropertyToID(ChannelMults);
             public static readonly int ChannelBlitterParamsId = Shader.PropertyToID(ChannelBlitterParams);
 
             public static readonly int BlitTextureId = BlitParameters.BlitTextureId;
@@ -170,6 +174,8 @@ namespace Rayforge.Core.Rendering.Blitter
         {
             k_PropertyBlock.SetVector(ChannelShaderIds.BlitScaleBiasId, new Vector4(param.scale.x, param.scale.y, param.bias.x, param.bias.y));
             k_PropertyBlock.SetVector(ChannelShaderIds.ChannelMappingId, new Vector4((int)param.R, (int)param.G, (int)param.B, (int)param.A));
+            k_PropertyBlock.SetVector(ChannelShaderIds.ChannelOpsId, new Vector4((int)param.ROps, (int)param.GOps, (int)param.BOps, (int)param.AOps));
+            k_PropertyBlock.SetVector(ChannelShaderIds.ChannelMultsId, new Vector4(param.RMultiplier, param.GMultiplier, param.BMultiplier, param.AMultiplier));
 
             RasterBlit(source, dest, k_PropertyBlock);
         }
@@ -252,33 +258,22 @@ namespace Rayforge.Core.Rendering.Blitter
             if (dest == null)
                 throw new ArgumentNullException(nameof(dest));
 
+            Func<Texture, ChannelBlitParams, SourceTexture, bool> ValidTexture = static (tex, param, src) =>
+                tex != null &&
+                (param.RSource == src || param.GSource == src || param.BSource == src || param.ASource == src);
+
+
             // Bind only textures that exist and are actually referenced
-            if (tex0 != null &&
-                (channelParam.RSource == SourceTexture.Texture0 ||
-                 channelParam.GSource == SourceTexture.Texture0 ||
-                 channelParam.BSource == SourceTexture.Texture0 ||
-                 channelParam.ASource == SourceTexture.Texture0))
+            if (ValidTexture.Invoke(tex0, channelParam, SourceTexture.Texture0))
                 k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture0, tex0);
 
-            if (tex1 != null &&
-                (channelParam.RSource == SourceTexture.Texture1 ||
-                 channelParam.GSource == SourceTexture.Texture1 ||
-                 channelParam.BSource == SourceTexture.Texture1 ||
-                 channelParam.ASource == SourceTexture.Texture1))
+            if (ValidTexture.Invoke(tex1, channelParam, SourceTexture.Texture1))
                 k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture1, tex1);
 
-            if (tex2 != null &&
-                (channelParam.RSource == SourceTexture.Texture2 ||
-                 channelParam.GSource == SourceTexture.Texture2 ||
-                 channelParam.BSource == SourceTexture.Texture2 ||
-                 channelParam.ASource == SourceTexture.Texture2))
+            if (ValidTexture.Invoke(tex2, channelParam, SourceTexture.Texture2))
                 k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture2, tex2);
 
-            if (tex3 != null &&
-                (channelParam.RSource == SourceTexture.Texture3 ||
-                 channelParam.GSource == SourceTexture.Texture3 ||
-                 channelParam.BSource == SourceTexture.Texture3 ||
-                 channelParam.ASource == SourceTexture.Texture3))
+            if (ValidTexture.Invoke(tex3, channelParam, SourceTexture.Texture3))
                 k_ComputeBlitShader.SetTexture(0, ComputeBlitShaderIds.BlitTexture3, tex3);
 
             k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture0_TexelSizeId, computeParam.BlitTexture0_TexelSize);
@@ -286,17 +281,11 @@ namespace Rayforge.Core.Rendering.Blitter
             k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture2_TexelSizeId, computeParam.BlitTexture2_TexelSize);
             k_ComputeBlitShader.SetVector(ComputeBlitShaderIds.BlitTexture3_TexelSizeId, computeParam.BlitTexture3_TexelSize);
 
-            k_ComputeBlitShader.SetVector(
-                ChannelShaderIds.BlitScaleBiasId,
-                new Vector4(channelParam.scale.x, channelParam.scale.y, channelParam.bias.x, channelParam.bias.y));
-
-            k_ComputeBlitShader.SetVector(
-                ChannelShaderIds.ChannelMappingId,
-                new Vector4((int)channelParam.R, (int)channelParam.G, (int)channelParam.B, (int)channelParam.A));
-
-            k_ComputeBlitShader.SetVector(
-                ChannelShaderIds.ChannelSourceId,
-                new Vector4((int)channelParam.RSource, (int)channelParam.GSource, (int)channelParam.BSource, (int)channelParam.ASource));
+            k_ComputeBlitShader.SetVector(ChannelShaderIds.BlitScaleBiasId, new Vector4(channelParam.scale.x, channelParam.scale.y, channelParam.bias.x, channelParam.bias.y));
+            k_ComputeBlitShader.SetVector(ChannelShaderIds.ChannelMappingId, new Vector4((int)channelParam.R, (int)channelParam.G, (int)channelParam.B, (int)channelParam.A));
+            k_ComputeBlitShader.SetVector(ChannelShaderIds.ChannelSourceId, new Vector4((int)channelParam.RSource, (int)channelParam.GSource, (int)channelParam.BSource, (int)channelParam.ASource));
+            k_ComputeBlitShader.SetVector(ChannelShaderIds.ChannelOpsId, new Vector4((int)channelParam.ROps, (int)channelParam.GOps, (int)channelParam.BOps, (int)channelParam.AOps));
+            k_ComputeBlitShader.SetVector(ChannelShaderIds.ChannelMultsId, new Vector4(channelParam.RMultiplier, channelParam.GMultiplier, channelParam.BMultiplier, channelParam.AMultiplier));
 
             k_ComputeBlitShader.SetTexture(0, ChannelShaderIds.BlitDestinationId, dest);
 

@@ -10,3 +10,6 @@
 #define BLIT_SRC_1      1
 #define BLIT_SRC_2      2
 #define BLIT_SRC_3      3
+
+#define BLIT_CHOP_INV   1
+#define BLIT_CHOP_MULT  2

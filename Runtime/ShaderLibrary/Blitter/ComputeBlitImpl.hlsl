@@ -7,7 +7,12 @@ uint4 SampleBlitTextures(uint2 pixelCoords)
     bool useTex2 = (_ChannelSource.r == 2) || (_ChannelSource.g == 2) || (_ChannelSource.b == 2) || (_ChannelSource.a == 2);
     bool useTex3 = (_ChannelSource.r == 3) || (_ChannelSource.g == 3) || (_ChannelSource.b == 3) || (_ChannelSource.a == 3);
 
-    uint4 samples[4];
+    uint4 samples[4] = {
+        uint4(0, 0, 0, 0),
+        uint4(0, 0, 0, 0),
+        uint4(0, 0, 0, 0),
+        uint4(0, 0, 0, 0)
+    };
 
     if (useTex0)
         samples[0] = _BlitTexture0[uint2(pixelCoords * _BlitScaleBias.xy + _BlitTexture0_TexelSize.zw * _BlitScaleBias.zw)];
@@ -42,6 +47,11 @@ uint4 SampleBlitTextures(uint2 pixelCoords)
         (_ChannelSource.a == 1) ? samples[1][_ChannelMapping.a] :
         (_ChannelSource.a == 2) ? samples[2][_ChannelMapping.a] :
         (_ChannelSource.a == 3) ? samples[3][_ChannelMapping.a] : 0;
+    
+    dest.r = (_ChannelOps.r & BLIT_CHOP_INV) != 0 ? ~dest.r : dest.r;
+    dest.g = (_ChannelOps.g & BLIT_CHOP_INV) != 0 ? ~dest.g : dest.g;
+    dest.b = (_ChannelOps.b & BLIT_CHOP_INV) != 0 ? ~dest.b : dest.b;
+    dest.a = (_ChannelOps.a & BLIT_CHOP_INV) != 0 ? ~dest.a : dest.a;
 
     return dest;
 }

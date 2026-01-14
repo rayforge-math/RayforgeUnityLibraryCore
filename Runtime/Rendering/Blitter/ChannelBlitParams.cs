@@ -54,6 +54,24 @@ namespace Rayforge.Core.Rendering.Blitter
         /// </summary>
         public Vector2 bias;
 
+        /// <summary>Operations to apply to the red channel after sampling (e.g., invert, multiply).</summary>
+        public ChannelOps ROps;
+        /// <summary>Operations to apply to the green channel after sampling (e.g., invert, multiply).</summary>
+        public ChannelOps GOps;
+        /// <summary>Operations to apply to the blue channel after sampling (e.g., invert, multiply).</summary>
+        public ChannelOps BOps;
+        /// <summary>Operations to apply to the alpha channel after sampling (e.g., invert, multiply).</summary>
+        public ChannelOps AOps;
+
+        /// <summary>Red multiplier (used only if ROps has Multiply flag).</summary>
+        public float RMultiplier;
+        /// <summary>Green multiplier (used only if GOps has Multiply flag).</summary>
+        public float GMultiplier;
+        /// <summary>Blue multiplier (used only if BOps has Multiply flag).</summary>
+        public float BMultiplier;
+        /// <summary>Alpha multiplier (used only if AOps has Multiply flag).</summary>
+        public float AMultiplier;
+
         /// <summary>
         /// Returns data as raw compute data struct.
         /// </summary>
