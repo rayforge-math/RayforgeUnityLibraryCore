@@ -13,3 +13,8 @@
 
 #define BLIT_CHOP_INV   1
 #define BLIT_CHOP_MULT  2
+
+#define TEX_0           0
+#define TEX_1           1
+#define TEX_2           2
+#define TEX_3           3

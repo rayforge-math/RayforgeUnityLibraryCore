@@ -15,10 +15,10 @@ uint2 GetCoords(float2 pixelCoords, float4 texelSize, int stretch, float2 output
 
 uint4 SampleBlitTextures(uint2 pixelCoords)
 {
-    bool useTex0 = (_ChannelSource.r == 0) || (_ChannelSource.g == 0) || (_ChannelSource.b == 0) || (_ChannelSource.a == 0);
-    bool useTex1 = (_ChannelSource.r == 1) || (_ChannelSource.g == 1) || (_ChannelSource.b == 1) || (_ChannelSource.a == 1);
-    bool useTex2 = (_ChannelSource.r == 2) || (_ChannelSource.g == 2) || (_ChannelSource.b == 2) || (_ChannelSource.a == 2);
-    bool useTex3 = (_ChannelSource.r == 3) || (_ChannelSource.g == 3) || (_ChannelSource.b == 3) || (_ChannelSource.a == 3);
+    bool useTex0 = (_SrcTextures.r == TEX_0) || (_SrcTextures.g == TEX_0) || (_SrcTextures.b == TEX_0) || (_SrcTextures.a == TEX_0);
+    bool useTex1 = (_SrcTextures.r == TEX_1) || (_SrcTextures.g == TEX_1) || (_SrcTextures.b == TEX_1) || (_SrcTextures.a == TEX_1);
+    bool useTex2 = (_SrcTextures.r == TEX_2) || (_SrcTextures.g == TEX_2) || (_SrcTextures.b == TEX_2) || (_SrcTextures.a == TEX_2);
+    bool useTex3 = (_SrcTextures.r == TEX_3) || (_SrcTextures.g == TEX_3) || (_SrcTextures.b == TEX_3) || (_SrcTextures.a == TEX_3);
 
     uint4 samples[4] = {
         uint4(0, 0, 0, 0),
@@ -33,38 +33,38 @@ uint4 SampleBlitTextures(uint2 pixelCoords)
     uint2 coords3 = GetCoords(pixelCoords, _BlitTexture3_TexelSize, _BlitStretchToFit, _BlitDest_Res);
 
     if (useTex0)
-        samples[0] = _BlitTexture0[coords0];
+        samples[TEX_0] = _BlitTexture0[coords0];
     if (useTex1)
-        samples[1] = _BlitTexture1[coords1];
+        samples[TEX_1] = _BlitTexture1[coords1];
     if (useTex2)
-        samples[2] = _BlitTexture2[coords2];
+        samples[TEX_2] = _BlitTexture2[coords2];
     if (useTex3)
-        samples[3] = _BlitTexture3[coords3];
+        samples[TEX_3] = _BlitTexture3[coords3];
 
     uint4 dest;
     dest.r = 
-        (_ChannelSource.r == 0) ? samples[0][_ChannelMapping.r] :
-        (_ChannelSource.r == 1) ? samples[1][_ChannelMapping.r] :
-        (_ChannelSource.r == 2) ? samples[2][_ChannelMapping.r] :
-        (_ChannelSource.r == 3) ? samples[3][_ChannelMapping.r] : 0;
+        (_SrcTextures.r == TEX_0) ? samples[TEX_0][_SrcChannels.r] :
+        (_SrcTextures.r == TEX_1) ? samples[TEX_1][_SrcChannels.r] :
+        (_SrcTextures.r == TEX_2) ? samples[TEX_2][_SrcChannels.r] :
+        (_SrcTextures.r == TEX_3) ? samples[TEX_3][_SrcChannels.r] : 0;
 
     dest.g = 
-        (_ChannelSource.g == 0) ? samples[0][_ChannelMapping.g] :
-        (_ChannelSource.g == 1) ? samples[1][_ChannelMapping.g] :
-        (_ChannelSource.g == 2) ? samples[2][_ChannelMapping.g] :
-        (_ChannelSource.g == 3) ? samples[3][_ChannelMapping.g] : 0;
+        (_SrcTextures.g == TEX_0) ? samples[TEX_0][_SrcChannels.g] :
+        (_SrcTextures.g == TEX_1) ? samples[TEX_1][_SrcChannels.g] :
+        (_SrcTextures.g == TEX_2) ? samples[TEX_2][_SrcChannels.g] :
+        (_SrcTextures.g == TEX_3) ? samples[TEX_3][_SrcChannels.g] : 0;
 
     dest.b = 
-        (_ChannelSource.b == 0) ? samples[0][_ChannelMapping.b] :
-        (_ChannelSource.b == 1) ? samples[1][_ChannelMapping.b] :
-        (_ChannelSource.b == 2) ? samples[2][_ChannelMapping.b] :
-        (_ChannelSource.b == 3) ? samples[3][_ChannelMapping.b] : 0;
+        (_SrcTextures.b == TEX_0) ? samples[TEX_0][_SrcChannels.b] :
+        (_SrcTextures.b == TEX_1) ? samples[TEX_1][_SrcChannels.b] :
+        (_SrcTextures.b == TEX_2) ? samples[TEX_2][_SrcChannels.b] :
+        (_SrcTextures.b == TEX_3) ? samples[TEX_3][_SrcChannels.b] : 0;
 
     dest.a = 
-        (_ChannelSource.a == 0) ? samples[0][_ChannelMapping.a] :
-        (_ChannelSource.a == 1) ? samples[1][_ChannelMapping.a] :
-        (_ChannelSource.a == 2) ? samples[2][_ChannelMapping.a] :
-        (_ChannelSource.a == 3) ? samples[3][_ChannelMapping.a] : 0;
+        (_SrcTextures.a == TEX_0) ? samples[TEX_0][_SrcChannels.a] :
+        (_SrcTextures.a == TEX_1) ? samples[TEX_1][_SrcChannels.a] :
+        (_SrcTextures.a == TEX_2) ? samples[TEX_2][_SrcChannels.a] :
+        (_SrcTextures.a == TEX_3) ? samples[TEX_3][_SrcChannels.a] : 0;
     
     dest.r = (_ChannelOps.r & BLIT_CHOP_INV) != 0 ? ~dest.r : dest.r;
     dest.g = (_ChannelOps.g & BLIT_CHOP_INV) != 0 ? ~dest.g : dest.g;

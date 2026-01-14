@@ -12,10 +12,10 @@ namespace Rayforge.Core.Rendering.Blitter
     public struct ChannelData
     {
         /// <summary>Source channel to map from.</summary>
-        public Channel Source;
+        public Channel SrcChannel;
 
         /// <summary>Source texture to use.</summary>
-        public SourceTexture Texture;
+        public SourceTexture SrcTexture;
 
         /// <summary>Operations to apply after sampling (e.g., invert, multiply).</summary>
         public ChannelOps Ops;
@@ -51,6 +51,23 @@ namespace Rayforge.Core.Rendering.Blitter
         public Vector2 scale;
 
         /// <summary>
+        /// Allows indexed access to the channel parameters (R, G, B, A) using a <see cref="Channel"/> enum.
+        /// </summary>
+        /// <param name="ch">The target channel to access (R, G, B, or A).</param>
+        /// <returns>The <see cref="ChannelData"/> corresponding to the specified channel.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// Thrown if <paramref name="ch"/> is not one of the valid channels (R, G, B, A).
+        /// </exception>
+        public ChannelData this[Channel ch] => ch switch
+        {
+            Channel.R => R,
+            Channel.G => G,
+            Channel.B => B,
+            Channel.A => A,
+            _ => throw new ArgumentOutOfRangeException(nameof(ch))
+        };
+
+        /// <summary>
         /// Bias applied to source coordinates after scaling.
         /// Shifts the sampling window.
         /// </summary>
@@ -60,8 +77,8 @@ namespace Rayforge.Core.Rendering.Blitter
     [StructLayout(LayoutKind.Sequential)]
     struct ChannelBlitterCB : IComputeData<ChannelBlitterCB>
     {
-        public Vector4 ChannelMapping;
-        public Vector4 ChannelSource;
+        public Vector4 SrcChannels;
+        public Vector4 SrcTextures;
         public Vector4 ChannelOps;
         public Vector4 ChannelMults;
         public Vector4 ScaleBias;
@@ -70,17 +87,17 @@ namespace Rayforge.Core.Rendering.Blitter
 
         public ChannelBlitterCB(ChannelBlitParams param)
         {
-            ChannelMapping = new Vector4(
-                (int)param.R.Source,
-                (int)param.G.Source,
-                (int)param.B.Source,
-                (int)param.A.Source
+            SrcChannels = new Vector4(
+                (int)param.R.SrcChannel,
+                (int)param.G.SrcChannel,
+                (int)param.B.SrcChannel,
+                (int)param.A.SrcChannel
             );
-            ChannelSource = new Vector4(
-                (int)param.R.Texture,
-                (int)param.G.Texture,
-                (int)param.B.Texture,
-                (int)param.A.Texture
+            SrcTextures = new Vector4(
+                (int)param.R.SrcTexture,
+                (int)param.G.SrcTexture,
+                (int)param.B.SrcTexture,
+                (int)param.A.SrcTexture
             );
             ChannelOps = new Vector4(
                 (int)param.R.Ops,

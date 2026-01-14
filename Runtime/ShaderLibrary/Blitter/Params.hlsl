@@ -4,12 +4,12 @@
 
 /// @brief Parameters controlling channel remapping and source coordinate transformation.
 ///
-/// @param _ChannelMapping
+/// @param _SrcChannels
 /// Per-output-channel source channel selection (RGBA).
 /// Each component specifies which source channel to copy:
 /// 0 = R, 1 = G, 2 = B, 3 = A.
 ///
-/// @param _ChannelSource
+/// @param _SrcTextures
 /// Per-output-channel source texture selection (RGBA).
 /// Each component specifies which source texture to sample from
 /// (e.g. 0–3 for up to four bound textures).
@@ -26,8 +26,8 @@
 /// Source coordinates are computed as:
 ///     srcCoord = dstCoord * _BlitScaleBias.xy + _BlitScaleBias.zw
 CBUFFER_START(_ChannelBlitterParams)
-int4 _ChannelMapping;
-int4 _ChannelSource;
+int4 _SrcChannels;
+int4 _SrcTextures;
 int4 _ChannelOps;
 float4 _ChannelMults;
 float4 _BlitScaleBias;

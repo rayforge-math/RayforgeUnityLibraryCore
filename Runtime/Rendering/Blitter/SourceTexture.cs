@@ -9,6 +9,7 @@ namespace Rayforge.Core.Rendering.Blitter
         Texture0 = 0,
         Texture1 = 1,
         Texture2 = 2,
-        Texture3 = 3
+        Texture3 = 3,
+        None = 4
     }
 }

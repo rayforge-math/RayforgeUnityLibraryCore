@@ -15,7 +15,7 @@ namespace Rayforge.Core.Rendering.Blitter
         /// Resolution of the destination render texture in pixels (width, height).
         /// Corresponds to `_BlitDest_Res` in the CBUFFER.
         /// </summary>
-        public Vector2Int BlitDest_Res;
+        public Vector2Int BlitDestRes;
 
         /// <summary>
         /// Makes sure the source and destination textures properly align.
