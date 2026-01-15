@@ -25,7 +25,7 @@
 ///
 /// Source coordinates are computed as:
 ///     srcCoord = dstCoord * _BlitScaleBias.xy + _BlitScaleBias.zw
-CBUFFER_START(_ChannelBlitterParams)
+CBUFFER_START(_ChannelBlitParams)
 int4 _SrcChannels;
 int4 _SrcTextures;
 int4 _ChannelOps;
