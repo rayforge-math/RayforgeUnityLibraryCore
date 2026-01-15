@@ -32,6 +32,6 @@
 /// @param texcoord Output: UV coordinates in the range 0..2
 void FullscreenTriangle(uint id, out float4 positionCS, out float2 texcoord)
 {
-    texcoord = float2((id << 1) & 2, id & 2);
+    texcoord = float2((id << 1) & 2, 2 - (id & 2));
     positionCS = float4(texcoord * 2 - 1, 0, 1);
 }
