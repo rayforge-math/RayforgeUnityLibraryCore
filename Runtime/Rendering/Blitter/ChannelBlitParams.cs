@@ -22,6 +22,11 @@ namespace Rayforge.Core.Rendering.Blitter
 
         /// <summary>Multiplier applied if Ops includes Multiply.</summary>
         public float Multiplier;
+
+        /// <summary>
+        /// Returns true if this channel contributes any data (has a source texture and channel).
+        /// </summary>
+        public bool IsActive => SrcChannel != Channel.None && SrcTexture != SourceTexture.None;
     }
 
     /// <summary>
