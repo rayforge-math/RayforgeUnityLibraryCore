@@ -547,13 +547,12 @@ namespace Rayforge.Core.Rendering.Blitter
         }
 
         /// <summary>
-        /// Performs an internal compute-based blit.
+        /// Placeholder for a compute-based blit implementation.
         /// </summary>
         /// <remarks>
         /// Technical debt:
-        /// This method currently relies on a per-dispatch constant buffer.
-        /// A future revision should evaluate batching or persistent parameter buffers
-        /// to reduce buffer updates and improve dispatch throughput.
+        /// Compute-side constant buffer support is not implemented yet.
+        /// A future revision may introduce a parameter buffer to match the raster path.
         /// </remarks>
         private static void ComputeBlit() { }
     }
