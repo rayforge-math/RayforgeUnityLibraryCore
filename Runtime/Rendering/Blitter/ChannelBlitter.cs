@@ -230,7 +230,7 @@ namespace Rayforge.Core.Rendering.Blitter
         /// <param name="param">Channel mapping and scale/bias rectangle.</param>
         /// <param name="onComplete">Optional callback invoked when the GPU operation is complete, with <paramref name="dest"/> ready to use.</param>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="source"/> or <paramref name="dest"/> is null.</exception>
-        public static void RasterBlit(Texture source, RenderTexture dest, ChannelBlitParams param, Action<RenderTexture> onComplete = null)
+        public static void RasterBlit(Texture source, RenderTexture dest, ChannelBlitParams param, Action<AsyncGPUReadbackRequest> onComplete = null)
         {
             var mpb = k_PropertyBlock;
             mpb.Clear();
@@ -263,7 +263,7 @@ namespace Rayforge.Core.Rendering.Blitter
         /// <param name="mpb">Pre-filled <see cref="MaterialPropertyBlock"/> containing all blit parameters.</param>
         /// <param name="onComplete">Callback invoked when the GPU operation is complete, with <paramref name="dest"/> ready to use.</param>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="source"/>, <paramref name="dest"/>, or <paramref name="mpb"/> is null.</exception>
-        public static void RasterBlit(Texture source, RenderTexture dest, MaterialPropertyBlock mpb, Action<RenderTexture> onComplete)
+        public static void RasterBlit(Texture source, RenderTexture dest, MaterialPropertyBlock mpb, Action<AsyncGPUReadbackRequest> onComplete)
         {
             k_Cmd.Clear();
             RasterBlit(k_Cmd, source, dest, mpb);
@@ -271,15 +271,7 @@ namespace Rayforge.Core.Rendering.Blitter
 
             if (onComplete != null)
             {
-                AsyncGPUReadback.Request(dest, 0, TextureFormat.RGBA32, request =>
-                {
-                    if (request.hasError)
-                    {
-                        Debug.LogError("RasterBlitAsync: AsyncGPUReadback failed.");
-                        return;
-                    }
-                    onComplete.Invoke(dest);
-                });
+                AsyncGPUReadback.Request(dest, 0, TextureFormat.RGBA32, onComplete);
             }
         }
 
@@ -339,7 +331,7 @@ namespace Rayforge.Core.Rendering.Blitter
             RenderTexture dest,
             ChannelBlitParams param,
             bool stretchToFit = true,
-            Action<RenderTexture> onComplete = null)
+            Action<AsyncGPUReadbackRequest> onComplete = null)
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
             if (dest == null) throw new ArgumentNullException(nameof(dest));
@@ -463,7 +455,7 @@ namespace Rayforge.Core.Rendering.Blitter
             RenderTexture dest,
             ChannelBlitParams channelParam,
             bool stretchToFit = true,
-            Action<RenderTexture> onComplete = null)
+            Action<AsyncGPUReadbackRequest> onComplete = null)
         {
             k_Cmd.Clear();
             ComputeBlit(k_Cmd, tex0, tex1, tex2, tex3, dest, channelParam, stretchToFit);
@@ -471,15 +463,7 @@ namespace Rayforge.Core.Rendering.Blitter
 
             if (onComplete != null)
             {
-                AsyncGPUReadback.Request(dest, 0, TextureFormat.RGBA32, request =>
-                {
-                    if (request.hasError)
-                    {
-                        Debug.LogError("ComputeBlitAsync: AsyncGPUReadback failed.");
-                        return;
-                    }
-                    onComplete.Invoke(dest);
-                });
+                AsyncGPUReadback.Request(dest, 0, TextureFormat.RGBA32, onComplete);
             }
         }
 
