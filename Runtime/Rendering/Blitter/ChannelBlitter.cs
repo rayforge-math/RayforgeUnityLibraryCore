@@ -2,6 +2,8 @@ using Rayforge.Core.Common;
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.ManagedResources.NativeMemory.Helpers;
+using Rayforge.Core.Rendering.;
+using Rayforge.Core.Rendering.Helpers;
 using Rayforge.Core.ShaderExtensions.Blitter;
 using System;
 using System.Runtime.InteropServices;
@@ -419,10 +421,10 @@ namespace Rayforge.Core.Rendering.Blitter
             if (!(ch0Valid || ch1Valid || ch2Valid || ch3Valid))
                 throw new InvalidOperationException("ComputeBlit aborted: no valid source texture is referenced by any channel mapping.");
 
-            tex0 = tex0 ?? Texture2D.blackTexture;
-            tex1 = tex1 ?? Texture2D.blackTexture;
-            tex2 = tex2 ?? Texture2D.blackTexture;
-            tex3 = tex3 ?? Texture2D.blackTexture;
+            tex0 = tex0 ?? FallbackTextures.Black;
+            tex1 = tex1 ?? FallbackTextures.Black;
+            tex2 = tex2 ?? FallbackTextures.Black;
+            tex3 = tex3 ?? FallbackTextures.Black;
         }
 
         /// <summary>
