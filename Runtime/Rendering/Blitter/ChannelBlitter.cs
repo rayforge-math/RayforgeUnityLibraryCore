@@ -383,10 +383,10 @@ namespace Rayforge.Core.Rendering.Blitter
         /// <param name="tex3">Source texture 3 (used if any channel references Texture3).</param>
         /// <param name="channelParam">Per-channel mapping and source selection.</param>
         private static void PrepareComputeBlitData(
-            ref Texture tex0,
-            ref Texture tex1,
-            ref Texture tex2,
-            ref Texture tex3,
+            Texture tex0,
+            Texture tex1,
+            Texture tex2,
+            Texture tex3,
             ChannelBlitParams channelParam)
         {
             static bool ValidateChannel(ChannelData ch, Texture tex0, Texture tex1, Texture tex2, Texture tex3)
@@ -416,11 +416,6 @@ namespace Rayforge.Core.Rendering.Blitter
 
             if (!(ch0Valid || ch1Valid || ch2Valid || ch3Valid))
                 throw new InvalidOperationException("ComputeBlit aborted: no valid source texture is referenced by any channel mapping.");
-
-            tex0 = tex0 ?? FallbackTextures.Black;
-            tex1 = tex1 ?? FallbackTextures.Black;
-            tex2 = tex2 ?? FallbackTextures.Black;
-            tex3 = tex3 ?? FallbackTextures.Black;
         }
 
         /// <summary>
@@ -491,7 +486,12 @@ namespace Rayforge.Core.Rendering.Blitter
             if (dest == null)
                 throw new ArgumentNullException(nameof(dest), "ComputeBlitCommandBuffer: Destination RenderTexture cannot be null. Provide a valid RenderTexture as the target for the blit.");
 
-            PrepareComputeBlitData(ref tex0, ref tex1, ref tex2, ref tex3, channelParam);
+            PrepareComputeBlitData(tex0, tex1, tex2, tex3, channelParam);
+
+            if (tex0 == null || !tex0) tex0 = FallbackTextures.Black;
+            if (tex1 == null || !tex1) tex1 = FallbackTextures.Black;
+            if (tex2 == null || !tex2) tex2 = FallbackTextures.Black;
+            if (tex3 == null || !tex3) tex3 = FallbackTextures.Black;
 
             static Vector4 TexelSize(Texture tex) => new Vector4(1f / tex.width, 1f / tex.height, tex.width, tex.height);
 
