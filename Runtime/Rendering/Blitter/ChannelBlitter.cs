@@ -106,9 +106,6 @@ namespace Rayforge.Core.Rendering.Blitter
         /// <summary>Reusable CommandBuffer for blits.</summary>
         private static readonly CommandBuffer k_Cmd;
 
-        /// <summary>Dummy texture for compute dispatch.</summary>
-        private static readonly Texture2D k_DummyTex2D;
-
         /// <summary>
         /// Static constructor: loads shaders and initializes the raster blit material and property block.
         /// Throws exceptions if shaders cannot be found or loaded.
@@ -132,8 +129,6 @@ namespace Rayforge.Core.Rendering.Blitter
             k_RasterBlitMaterial = new Material(shader);
             k_PropertyBlock = new MaterialPropertyBlock();
             k_Cmd = new CommandBuffer();
-
-            k_DummyTex2D = Texture2D.blackTexture;
         }
 
         /// <summary>
@@ -424,10 +419,10 @@ namespace Rayforge.Core.Rendering.Blitter
             if (!(ch0Valid || ch1Valid || ch2Valid || ch3Valid))
                 throw new InvalidOperationException("ComputeBlit aborted: no valid source texture is referenced by any channel mapping.");
 
-            tex0 = tex0 ?? k_DummyTex2D;
-            tex1 = tex1 ?? k_DummyTex2D;
-            tex2 = tex2 ?? k_DummyTex2D;
-            tex3 = tex3 ?? k_DummyTex2D;
+            tex0 = tex0 ?? Texture2D.blackTexture;
+            tex1 = tex1 ?? Texture2D.blackTexture;
+            tex2 = tex2 ?? Texture2D.blackTexture;
+            tex3 = tex3 ?? Texture2D.blackTexture;
         }
 
         /// <summary>
