@@ -10,7 +10,7 @@
 // 1. Includes
 // ============================================================================
 
-#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Maths/Statistics.hlsl"
+#include "../Maths/Statistics.hlsl"
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
 

@@ -6,7 +6,7 @@
 // Description: pipeline independant bright filter functionality
 // ============================================================================
 
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "../Common.hlsl"
 
 // ============================================================================
 // 1. Constants
