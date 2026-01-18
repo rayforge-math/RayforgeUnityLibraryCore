@@ -1,5 +1,4 @@
-using System.Numerics;
-using UnityEngine;
+﻿using UnityEngine;
 using Unity.Mathematics;
 using Rayforge.Core.Maths.Spaces;
 using Unity.Burst;
@@ -43,6 +42,31 @@ namespace Rayforge.Core.Maths.Helpers
         {
             var polar = new Polar(1.0f, rad);
             return polar.ToCartesian();
+        }
+
+        /// <summary>
+        /// Converts a 2D vector direction into an angle in radians using complex number math.
+        /// </summary>
+        /// <param name="vector">The direction vector (x, y).</param>
+        /// <returns>
+        /// The angle (Phase) in radians, typically in the range (-π, π]. 
+        /// (0 is right/East on the unit circle).
+        /// </returns>
+        public static float VectorToRad(float2 vector)
+        {
+            var complex = new Complex(vector.x, vector.y);
+            return complex.Phase();
+        }
+
+        /// <summary>
+        /// Converts a 2D vector direction into an angle in degrees.
+        /// </summary>
+        /// <param name="vector">The direction vector (x, y).</param>
+        /// <returns>The angle in degrees, ranging from -180° to 180°.</returns>
+        public static float VectorToDeg(float2 vector)
+        {
+            var rad = VectorToRad(vector);
+            return rad * Mathf.Rad2Deg;
         }
     }
 }
