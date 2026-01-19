@@ -535,7 +535,7 @@ float4 RadialBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord
 /// @return float3 containing mid-frequency (band-pass) filtered result
 float3 BandPass(TEXTURE2D(BlitTexture), SAMPLER(samplerState), int blurMode, float2 texcoord, float2 texelSize, float shortKernel[BLUR_BUFFER_SIZE], int shortRadius, float longKernel[BLUR_BUFFER_SIZE], int longRadius)
 {
-    float3 blurShort = SeparableBlurApprox(BlitTexture, samplerState, texcoord, 1, blurMode, texelSize, true, shortKernel, shortRadius).rgb;
-    float3 blurLong = SeparableBlurApprox(BlitTexture, samplerState, texcoord, 1, blurMode, texelSize, true, longKernel, longRadius).rgb;
+    float3 blurShort = SeparableBlurApprox(BlitTexture, samplerState, texcoord, blurMode, texelSize, true, shortKernel, shortRadius).rgb;
+    float3 blurLong = SeparableBlurApprox(BlitTexture, samplerState, texcoord, blurMode, texelSize, true, longKernel, longRadius).rgb;
     return max((float3) 0, blurShort - blurLong);
 }
