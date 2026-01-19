@@ -1,7 +1,7 @@
 #pragma once
 
 // ============================================================================
-// CustomUnityLibrary - Common Shader Include
+// Rayforge Unity Library Core - Blur Shader Include
 // Author: Matthew
 // Description: pipeline independant HLSL blur functions
 // ============================================================================
@@ -14,7 +14,25 @@
 #include "../Rendering/Uv.hlsl"
 
 // ============================================================================
-// 2. Utility Functions
+// 2. Defines
+// ============================================================================
+
+/// MAX_RADIUS defines the static upper bound for the loop unrolling.
+///    
+///    PERFORMANCE NOTE: 
+///    Keep this value as low as possible. The compiler uses this constant to 
+///    allocate registers. Setting this to an unnecessarily high value (e.g., 128) 
+///    can lead to "Register Spilling," significantly degrading GPU performance.
+///
+///    USAGE:
+///    #define MAX_RADIUS 8
+///    #include "<path>/Blur.hlsl"
+#ifndef MAX_RADIUS
+    #define MAX_RADIUS 16
+#endif
+
+// ============================================================================
+// 3. Utility Functions
 // ============================================================================
 
 /// @brief Applies a 1D box blur along a given direction.
@@ -22,19 +40,22 @@
 /// @param BlitTexture The input texture to read from
 /// @param samplerState The sampler state used for texture access
 /// @param texcoord UV coordinate of the current pixel
-/// @param radius Number of samples taken to each side of the center pixel
 /// @param direction Blur direction, e.g., (1,0) for horizontal or (0,1) for vertical
 /// @param texelSize Size of a single texel in UV space
 /// @param cutoff If true, samples outside UV range are discarded to avoid leaking colors
+/// @param radius Number of samples taken to each side of the center pixel
 /// @return The averaged result of all valid samples in the 1D box kernel
-float4 BoxBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, int radius, float2 direction, float2 texelSize, bool cutoff)
+float4 BoxBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius)
 {
     float4 result = (float4) 0;
-            //float weight = 1.0 / (2 * radius + 1);
+    //float weight = 1.0 / (2 * radius + 1);
     float count = 0;
 
-    for (int i = -radius; i <= radius; ++i)
+    [unroll(MAX_RADIUS * 2 + 1)]
+    for (int i = -MAX_RADIUS; i <= MAX_RADIUS; ++i)
     {
+        if (abs(i) > radius) continue;
+
         float2 offset = direction * float(i) * texelSize;
         float2 uv = texcoord + offset;
 
@@ -54,16 +75,15 @@ float4 BoxBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, i
 /// @param BlitTexture Texture being blurred
 /// @param samplerState Sampler used for texture reads
 /// @param texcoord Current pixel UV
-/// @param radius Kernel radius for each 1D blur pass
-/// @param scatter Scaling factor applied to sampling offsets, controlling blur spread
 /// @param texelSize UV size of one texel
 /// @param cutoff If enabled, prevents sampling outside valid UV bounds
+/// @param radius Kernel radius for each 1D blur pass
 /// @return The average of horizontal and vertical box-blur passes, approximating a 2D box blur
-float4 BoxBlurSeparableApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, int radius, float scatter, float2 texelSize, bool cutoff)
+float4 BoxBlurSeparableApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
 {
     float4 result = (float4) 0;
-    result += BoxBlur(BlitTexture, samplerState, texcoord, radius, float2(1, 0) * scatter, texelSize, cutoff);
-    result += BoxBlur(BlitTexture, samplerState, texcoord, radius, float2(0, 1) * scatter, texelSize, cutoff);
+    result += BoxBlur(BlitTexture, samplerState, texcoord, float2(1, 0), texelSize, cutoff, radius);
+    result += BoxBlur(BlitTexture, samplerState, texcoord, float2(0, 1), texelSize, cutoff, radius);
     return result * 0.5;
 }
 
@@ -73,22 +93,27 @@ float4 BoxBlurSeparableApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), flo
 /// @param BlitTexture Texture that will be blurred
 /// @param samplerState Sampler state for texture access
 /// @param texcoord UV of the current pixel
-/// @param radius Box kernel radius in both dimensions
-/// @param scatter Scaling factor for sampling offsets (affects blur size)
 /// @param texelSize UV size of a texel
 /// @param cutoff If true, samples outside UV range are ignored
+/// @param radius Box kernel radius in both dimensions
 /// @return Normalized sum of all box-filter samples within the square kernel
-float4 BoxBlur2d(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, int radius, float scatter, float2 texelSize, bool cutoff)
+float4 BoxBlur2d(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
 {
     float4 result = 0;
-            //float weight = 1.0 / pow(2.0 * radius + 1.0, 2.0);
+    //float weight = 1.0 / pow(2.0 * radius + 1.0, 2.0);
     float count = 0;
 
-    for (int y = -radius; y <= radius; y++)
+    [unroll(MAX_RADIUS * 2 + 1)]
+    for (int y = -MAX_RADIUS; y <= MAX_RADIUS; y++)
     {
-        for (int x = -radius; x <= radius; x++)
+        if (abs(y) > radius) continue;
+
+        [unroll(MAX_RADIUS * 2 + 1)]
+        for (int x = -MAX_RADIUS; x <= MAX_RADIUS; x++)
         {
-            float2 uv = texcoord + float2(x, y) * texelSize * scatter;
+            if (abs(x) > radius) continue;
+
+            float2 uv = texcoord + float2(x, y) * texelSize;
             if (UvInBounds(uv, cutoff))
             {
                 result += SAMPLE_TEXTURE2D(BlitTexture, samplerState, uv); // * weight;
@@ -105,19 +130,22 @@ float4 BoxBlur2d(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord,
 /// @param BlitTexture Source texture
 /// @param samplerState Sampler used when reading texels
 /// @param texcoord UV coordinate of the pixel
-/// @param kernel Precomputed Gaussian kernel values for offsets 0..radius
-/// @param radius Number of Gaussian samples to each side
 /// @param direction Direction of blur (e.g., horizontal or vertical)
 /// @param texelSize UV size of a texel
 /// @param cutoff If true, samples outside valid UV area are excluded
+/// @param kernel Precomputed Gaussian kernel values for offsets 0..radius
+/// @param radius Number of Gaussian samples to each side
 /// @return Gaussian-filtered pixel value normalized by sum of valid weights
-float4 GaussianBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, StructuredBuffer<float> kernel, int radius, float2 direction, float2 texelSize, bool cutoff)
+float4 GaussianBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, float kernel[MAX_RADIUS + 1], int radius)
 {
     float sum = kernel[0];
     float4 result = SAMPLE_TEXTURE2D(BlitTexture, samplerState, texcoord) * sum;
 
-    for (int i = 1; i <= radius; ++i)
+    [unroll(MAX_RADIUS)]
+    for (int i = 1; i <= MAX_RADIUS; ++i)
     {
+        if (i > radius) continue;
+
         float w = kernel[i];
         float2 offset = direction * float(i) * texelSize;
 
@@ -142,17 +170,16 @@ float4 GaussianBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoo
 /// @param BlitTexture Texture to blur
 /// @param samplerState Sampler for texture access
 /// @param texcoord UV of the processed pixel
-/// @param kernel Gaussian kernel containing weights for 0..radius
-/// @param radius Blur radius
-/// @param scatter Scaling factor for sample offsets
 /// @param texelSize Size of a texel in UV coordinates
 /// @param cutoff Prevents reading outside UV boundaries if true
+/// @param kernel Gaussian kernel containing weights for 0..radius
+/// @param radius Blur radius
 /// @return Average of horizontal and vertical Gaussian blur passes
-float4 GaussianBlurSeparableApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, StructuredBuffer<float> kernel, int radius, float scatter, float2 texelSize, bool cutoff)
+float4 GaussianBlurSeparableApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 texelSize, bool cutoff, float kernel[MAX_RADIUS + 1], int radius)
 {
     float4 result = (float4) 0;
-    result += GaussianBlur(BlitTexture, samplerState, texcoord, kernel, radius, float2(1, 0) * scatter, texelSize, cutoff);
-    result += GaussianBlur(BlitTexture, samplerState, texcoord, kernel, radius, float2(0, 1) * scatter, texelSize, cutoff);
+    result += GaussianBlur(BlitTexture, samplerState, texcoord, float2(1, 0), texelSize, cutoff, kernel, radius);
+    result += GaussianBlur(BlitTexture, samplerState, texcoord, float2(0, 1), texelSize, cutoff, kernel, radius);
     return result * 0.5;
 }
 
@@ -161,22 +188,27 @@ float4 GaussianBlurSeparableApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState)
 /// @param BlitTexture Input texture
 /// @param samplerState Sampler for texture reads
 /// @param texcoord UV of the pixel
-/// @param kernel 1D Gaussian kernel
-/// @param radius Kernel radius
-/// @param scatter Multiplier for sample offsets
 /// @param texelSize UV size of a texel
 /// @param cutoff Reject UVs outside [0,1] range if true
+/// @param kernel 1D Gaussian kernel
+/// @param radius Kernel radius
 /// @return Normalized weighted sum of all samples in the 2D Gaussian kernel
-float4 GaussianBlur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, StructuredBuffer<float> kernel, int radius, float scatter, float2 texelSize, bool cutoff)
+float4 GaussianBlur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 texelSize, bool cutoff, float kernel[MAX_RADIUS + 1], int radius)
 {
     float4 result = 0;
     float sum = 0;
 
-    for (int y = -radius; y <= radius; ++y)
+    [unroll(MAX_RADIUS * 2 + 1)]
+    for (int y = -MAX_RADIUS; y <= MAX_RADIUS; ++y)
     {
-        for (int x = -radius; x <= radius; ++x)
+        if (abs(y) > radius) continue;
+
+        [unroll(MAX_RADIUS * 2 + 1)]
+        for (int x = -MAX_RADIUS; x <= MAX_RADIUS; ++x)
         {
-            float2 offset = float2(x, y) * texelSize * scatter;
+            if (abs(x) > radius) continue;
+
+            float2 offset = float2(x, y) * texelSize;
 
             float w = kernel[abs(x)] * kernel[abs(y)];
 
@@ -197,18 +229,21 @@ float4 GaussianBlur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texc
 /// @param BlitTexture Input texture to sample from
 /// @param samplerState Sampler state for texture reads
 /// @param texcoord UV of the current pixel
-/// @param radius Blur radius defining kernel size
 /// @param direction Blur direction (e.g., (1,0) horizontal, (0,1) vertical)
 /// @param texelSize Size of one texel in UV space
 /// @param cutoff If true, excludes pixels outside [0,1] UV range
+/// @param radius Blur radius defining kernel size
 /// @return Tent-filtered pixel color along the specified axis
-float4 TentBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, int radius, float2 direction, float2 texelSize, bool cutoff)
+float4 TentBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius)
 {
     float sum = radius + 1;
     float4 result = SAMPLE_TEXTURE2D(BlitTexture, samplerState, texcoord) * sum;
 
-    for (int i = 1; i <= radius; ++i)
+    [unroll(MAX_RADIUS)]
+    for (int i = 1; i <= MAX_RADIUS; ++i)
     {
+        if (i > radius) continue;
+
         float w = radius - i + 1;
         float2 offset = direction * float(i) * texelSize;
 
@@ -234,16 +269,15 @@ float4 TentBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, 
 /// @param BlitTexture Input texture
 /// @param samplerState Sampler for texture reads
 /// @param texcoord UV of the current pixel
-/// @param radius Tent blur radius
-/// @param scatter Scaling factor for sampling offsets
 /// @param texelSize Size of one texel in UV space
 /// @param cutoff If true, excludes samples outside [0,1] UV
+/// @param radius Tent blur radius
 /// @return Average of horizontal and vertical tent blur passes
-float4 TentBlurSeparableApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, int radius, float scatter, float2 texelSize, bool cutoff)
+float4 TentBlurSeparableApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
 {
     float4 result = (float4) 0;
-    result += TentBlur(BlitTexture, samplerState, texcoord, radius, float2(1, 0) * scatter, texelSize, cutoff);
-    result += TentBlur(BlitTexture, samplerState, texcoord, radius, float2(0, 1) * scatter, texelSize, cutoff);
+    result += TentBlur(BlitTexture, samplerState, texcoord, float2(1, 0), texelSize, cutoff, radius);
+    result += TentBlur(BlitTexture, samplerState, texcoord, float2(0, 1), texelSize, cutoff, radius);
     return result * 0.5;
 }
 
@@ -252,25 +286,30 @@ float4 TentBlurSeparableApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), fl
 /// @param BlitTexture Input texture
 /// @param samplerState Sampler for reading texels
 /// @param texcoord UV of the current pixel
-/// @param radius Blur radius defining kernel extent
-/// @param scatter Multiplier for UV offset magnitude
 /// @param texelSize Size of one texel in UV space
 /// @param cutoff If true, discards samples outside [0,1] UV
+/// @param radius Blur radius defining kernel extent
 /// @return Normalized tent-filtered pixel color using a 2D kernel
-float4 TentBlur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, int radius, float scatter, float2 texelSize, bool cutoff)
+float4 TentBlur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
 {
     float4 result = (float4) 0;
     float sum = 0.0;
 
-    for (int y = -radius; y <= radius; ++y)
+    [unroll(MAX_RADIUS * 2 + 1)]
+    for (int y = -MAX_RADIUS; y <= MAX_RADIUS; ++y)
     {
-        for (int x = -radius; x <= radius; ++x)
+        if (abs(y) > radius) continue;
+
+        [unroll(MAX_RADIUS * 2 + 1)]
+        for (int x = -MAX_RADIUS; x <= MAX_RADIUS; ++x)
         {
+            if (abs(x) > radius) continue;
+
             float w = float((radius + 1) - max(abs(x), abs(y)));
 
             w = max(w, 0.0);
 
-            float2 offset = float2(x, y) * texelSize * scatter;
+            float2 offset = float2(x, y) * texelSize;
             float2 uv = texcoord + offset;
 
             if (UvInBounds(uv, cutoff))
@@ -290,20 +329,22 @@ float4 TentBlur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord
 /// @param BlitTexture Texture to blur
 /// @param samplerState Sampler state for texture fetches
 /// @param texcoord UV coordinate of the pixel
-/// @param radius Number of passes; higher values increase blur spread
-/// @param scatter Controls offset scaling for each pass
 /// @param texelSize Size of one texel in UV space
 /// @param cutoff If true, ignores samples outside [0,1] UV
+/// @param radius Number of passes; higher values increase blur spread
 /// @return Kawase-blurred pixel color
-float4 KawaseBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, int radius, float scatter, float2 texelSize, bool cutoff)
+float4 KawaseBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
 {
     float4 result = 0;
     float totalWeight = 0;
 
-    for (int i = 0; i < radius; ++i)
+    [unroll(MAX_RADIUS)]
+    for (int i = 0; i < MAX_RADIUS; ++i)
     {
+        if (i > radius) continue;
+
         float passWeight = 1.0 / (i + 1.0);
-        float2 scaledTexel = texelSize * (scatter * (i + 1));
+        float2 scaledTexel = texelSize * (i + 1);
 
         float2 offsets[4] =
         {
@@ -313,7 +354,7 @@ float4 KawaseBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord
                     float2(-1, -1)
         };
 
-                [unroll]
+        [unroll]
         for (int j = 0; j < 4; ++j)
         {
             float2 uv = texcoord + offsets[j] * scaledTexel;
@@ -333,15 +374,14 @@ float4 KawaseBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord
 /// @param BlitTexture Source texture
 /// @param samplerState Sampler state for texture access
 /// @param texcoord UV coordinate to sample
-/// @param kernel Kernel used for Gaussian blur (ignored for other modes)
-/// @param radius Blur radius / number of samples
 /// @param direction Normalized blur direction
-/// @param scatter Scales the sampling offsets along the direction
 /// @param blurMode 0=None, 1=Box, 2=Gaussian, 3=Tent, 4=Kawase
 /// @param texelSize Size of one pixel in UV space
 /// @param cutoff If true, ignores samples outside [0,1] UV
+/// @param kernel Kernel used for Gaussian blur (ignored for other modes)
+/// @param radius Blur radius / number of samples
 /// @return Blurred pixel along the specified direction
-float4 DirectionalBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, StructuredBuffer<float> kernel, int radius, float2 direction, float scatter, int blurMode, float2 texelSize, bool cutoff)
+float4 DirectionalBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 direction, int blurMode, float2 texelSize, bool cutoff, float kernel[MAX_RADIUS + 1], int radius)
 {
     float4 color = (float4) 0;
 
@@ -351,16 +391,16 @@ float4 DirectionalBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 tex
             color = SAMPLE_TEXTURE2D(BlitTexture, samplerState, texcoord);
             break;
         case 1:
-            color = BoxBlur(BlitTexture, samplerState, texcoord, radius, direction * scatter, texelSize, cutoff);
+            color = BoxBlur(BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, radius);
             break;
         case 2:
-            color = GaussianBlur(BlitTexture, samplerState, texcoord, kernel, radius, direction * scatter, texelSize, cutoff);
+            color = GaussianBlur(BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, kernel, radius);
             break;
         case 3:
-            color = TentBlur(BlitTexture, samplerState, texcoord, radius, direction * scatter, texelSize, cutoff);
+            color = TentBlur(BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, radius);
             break;
         case 4:
-                    //color = KawaseBlur(BlitTexture, samplerState, texcoord, radius, scatter, texelSize, cutoff);
+                    //color = KawaseBlur(BlitTexture, samplerState, texcoord, texelSize * scatter, cutoff, radius);
             break;
     }
 
@@ -371,14 +411,14 @@ float4 DirectionalBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 tex
 /// @param BlitTexture Source texture
 /// @param samplerState Sampler used for texture access
 /// @param texcoord UV to sample
-/// @param kernel Gaussian kernel weights
-/// @param radius Blur radius
 /// @param scatter Offset multiplier
 /// @param blurMode Blur algorithm selector
 /// @param texelSize UV size of a pixel
 /// @param cutoff Early stop flag for out-of-range sampling
+/// @param kernel Gaussian kernel weights
+/// @param radius Blur radius
 /// @return Approximate separable blurred color
-float4 SeparableBlurApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, StructuredBuffer<float> kernel, int radius, float scatter, int blurMode, float2 texelSize, bool cutoff)
+float4 SeparableBlurApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float scatter, int blurMode, float2 texelSize, bool cutoff, float kernel[MAX_RADIUS + 1], int radius)
 {
     float4 color = (float4) 0;
 
@@ -388,16 +428,16 @@ float4 SeparableBlurApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2
             color = SAMPLE_TEXTURE2D(BlitTexture, samplerState, texcoord);
             break;
         case 1:
-            color = BoxBlurSeparableApprox(BlitTexture, samplerState, texcoord, radius, scatter, texelSize, cutoff);
+            color = BoxBlurSeparableApprox(BlitTexture, samplerState, texcoord, texelSize * scatter, cutoff, radius);
             break;
         case 2:
-            color = GaussianBlurSeparableApprox(BlitTexture, samplerState, texcoord, kernel, radius, scatter, texelSize, cutoff);
+            color = GaussianBlurSeparableApprox(BlitTexture, samplerState, texcoord, texelSize * scatter, cutoff, kernel, radius);
             break;
         case 3:
-            color = TentBlurSeparableApprox(BlitTexture, samplerState, texcoord, radius, scatter, texelSize, cutoff);
+            color = TentBlurSeparableApprox(BlitTexture, samplerState, texcoord, texelSize * scatter, cutoff, radius);
             break;
         case 4:
-            color = KawaseBlur(BlitTexture, samplerState, texcoord, radius, scatter, texelSize, cutoff);
+            color = KawaseBlur(BlitTexture, samplerState, texcoord, texelSize * scatter, cutoff, radius);
             break;
     }
 
@@ -408,14 +448,14 @@ float4 SeparableBlurApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2
 /// @param BlitTexture Source texture
 /// @param samplerState Sampler for texture reads
 /// @param texcoord UV position to sample
-/// @param kernel Kernel for Gaussian blur
-/// @param radius Blur radius
 /// @param scatter Offset multiplier
 /// @param blurMode Blur type
 /// @param texelSize Pixel step in UV space
 /// @param cutoff Early exit flag
+/// @param kernel Kernel for Gaussian blur
+/// @param radius Blur radius
 /// @return Fully 2D blurred color
-float4 Blur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, StructuredBuffer<float> kernel, int radius, float scatter, int blurMode, float2 texelSize, bool cutoff)
+float4 Blur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float scatter, int blurMode, float2 texelSize, bool cutoff, float kernel[MAX_RADIUS + 1], int radius)
 {
     float4 color = (float4) 0;
 
@@ -425,16 +465,16 @@ float4 Blur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, St
             color = SAMPLE_TEXTURE2D(BlitTexture, samplerState, texcoord);
             break;
         case 1:
-            color = BoxBlur2d(BlitTexture, samplerState, texcoord, radius, scatter, texelSize, cutoff);
+            color = BoxBlur2d(BlitTexture, samplerState, texcoord, texelSize * scatter, cutoff, radius);
             break;
         case 2:
-            color = GaussianBlur2D(BlitTexture, samplerState, texcoord, kernel, radius, scatter, texelSize, cutoff);
+            color = GaussianBlur2D(BlitTexture, samplerState, texcoord, texelSize * scatter, cutoff, kernel, radius);
             break;
         case 3:
-            color = TentBlur2D(BlitTexture, samplerState, texcoord, radius, scatter, texelSize, cutoff);
+            color = TentBlur2D(BlitTexture, samplerState, texcoord, texelSize * scatter, cutoff, radius);
             break;
         case 4:
-            color = KawaseBlur(BlitTexture, samplerState, texcoord, radius, scatter, texelSize, cutoff);
+            color = KawaseBlur(BlitTexture, samplerState, texcoord, texelSize * scatter, cutoff, radius);
             break;
     }
 
@@ -445,14 +485,13 @@ float4 Blur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, St
 /// @param BlitTexture Input texture
 /// @param samplerState Sampler state
 /// @param texcoord UV of the pixel
-/// @param kernel Gaussian kernel weights
-/// @param radius Number of samples
-/// @param scatter Strength of radial blur
 /// @param blurMode Blur type
 /// @param texelSize Pixel step size in UV
 /// @param cutoff Early stop flag
+/// @param kernel Gaussian kernel weights
+/// @param radius Number of samples
 /// @return Radially blurred color
-float4 RadialBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, StructuredBuffer<float> kernel, int radius, float scatter, int blurMode, float2 texelSize, bool cutoff)
+float4 RadialBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[MAX_RADIUS + 1], int radius)
 {
     float2 direction = texcoord * 2.0 - 1.0;
 
@@ -464,16 +503,16 @@ float4 RadialBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord
             color = SAMPLE_TEXTURE2D(BlitTexture, samplerState, texcoord);
             break;
         case 1:
-            color = BoxBlur(BlitTexture, samplerState, texcoord, radius, direction * scatter, texelSize, cutoff);
+            color = BoxBlur(BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, radius);
             break;
         case 2:
-            color = GaussianBlur(BlitTexture, samplerState, texcoord, kernel, radius, direction * scatter, texelSize, cutoff);
+            color = GaussianBlur(BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, kernel, radius);
             break;
         case 3:
-            color = TentBlur(BlitTexture, samplerState, texcoord, radius, direction * scatter, texelSize, cutoff);
+            color = TentBlur(BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, radius);
             break;
         case 4:
-                    //color = KawaseBlur(BlitTexture, samplerState, texcoord, radius, scatter, texelSize, cutoff);
+                    //color = KawaseBlur(BlitTexture, samplerState, texcoord, texelSize, cutoff, radius);
             break;
     }
 
@@ -487,16 +526,16 @@ float4 RadialBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord
 /// @param BlitTexture Source texture
 /// @param samplerState Sampler state for texture access
 /// @param blurMode Blur kernel mode (used by SeparableBlurApprox)
+/// @param texcoord UV coordinates to sample
+/// @param texelSize Pixel size in UV space
 /// @param shortKernel Kernel for short-radius blur
 /// @param shortRadius Radius of the short blur
 /// @param longKernel Kernel for long-radius blur
 /// @param longRadius Radius of the long blur
-/// @param texcoord UV coordinates to sample
-/// @param texelSize Pixel size in UV space
 /// @return float3 containing mid-frequency (band-pass) filtered result
-float3 BandPass(TEXTURE2D(BlitTexture), SAMPLER(samplerState), int blurMode, StructuredBuffer<float> shortKernel, int shortRadius, StructuredBuffer<float> longKernel, int longRadius, float2 texcoord, float2 texelSize)
+float3 BandPass(TEXTURE2D(BlitTexture), SAMPLER(samplerState), int blurMode, float2 texcoord, float2 texelSize, float shortKernel[MAX_RADIUS + 1], int shortRadius, float longKernel[MAX_RADIUS + 1], int longRadius)
 {
-    float3 blurShort = SeparableBlurApprox(BlitTexture, samplerState, texcoord, shortKernel, shortRadius, 1, blurMode, texelSize, true).rgb;
-    float3 blurLong = SeparableBlurApprox(BlitTexture, samplerState, texcoord, longKernel, longRadius, 1, blurMode, texelSize, true).rgb;
+    float3 blurShort = SeparableBlurApprox(BlitTexture, samplerState, texcoord, 1, blurMode, texelSize, true, shortKernel, shortRadius).rgb;
+    float3 blurLong = SeparableBlurApprox(BlitTexture, samplerState, texcoord, 1, blurMode, texelSize, true, longKernel, longRadius).rgb;
     return max((float3) 0, blurShort - blurLong);
 }
