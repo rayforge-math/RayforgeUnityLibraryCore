@@ -161,7 +161,20 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
                         return null;
                     }
 
-                    return Unpack(depProp).value.boxedValue;
+                    var unpacked = Unpack(depProp);
+                    var property = unpacked.value;
+
+                    if (property.propertyType == SerializedPropertyType.Enum)
+                    {
+                        int index = property.enumValueIndex;
+                        if (index >= 0 && index < property.enumNames.Length)
+                        {
+                            string valueName = property.enumNames[index];
+                            return $"{valueName}";
+                        }
+                    }
+
+                    return property.boxedValue;
                 });
 
                 drawMode = show ? DrawMode.Draw : exprAttr.DrawMode;

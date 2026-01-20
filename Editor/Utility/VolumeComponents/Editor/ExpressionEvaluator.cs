@@ -8,7 +8,7 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
 {
     public static class ExpressionEvaluator
     {
-        private static readonly Regex TokenRegex = new Regex(@"([a-zA-Z_][a-zA-Z0-9_]*)|(==|!=|>=|<=|&&|\|\||[<>!=()+-/*])", RegexOptions.Compiled);
+        private static readonly Regex TokenRegex = new Regex(@"([a-zA-Z_][a-zA-Z0-9_\.]*)|(==|!=|>=|<=|&&|\|\||[<>!=()+-/*])", RegexOptions.Compiled);
 
         public static bool Evaluate(string expression, Func<string, object> getValue)
         {
@@ -20,13 +20,19 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
                 {
                     string token = match.Value;
 
-                    if (Regex.IsMatch(token, @"^[a-zA-Z_]"))
+                    if (char.IsLetter(token[0]) || token[0] == '_')
                     {
                         if (token == "true" || token == "false" || token == "AND" || token == "OR" || token == "NOT")
                             return token;
 
                         object val = getValue(token);
-                        return FormatValueForExpression(val);
+                        if (val != null)
+                        {
+                            return FormatValueForExpression(val);
+                        }
+
+                        string cleanToken = token.Contains(".") ? token.Substring(token.LastIndexOf('.') + 1) : token;
+                        return $"'{cleanToken}'";
                     }
 
                     return token switch
@@ -39,6 +45,7 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
                         _ => token
                     };
                 });
+                Debug.Log(processed);
 
                 using (var table = new DataTable())
                 {
@@ -56,6 +63,8 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
         private static string FormatValueForExpression(object val)
         {
             if (val == null) return "0";
+
+            if (val.GetType().IsEnum) return $"'{val.ToString()}'";
             if (val is bool b) return b ? "true" : "false";
             if (val is string s) return $"'{s}'";
             if (val is float f) return f.ToString(CultureInfo.InvariantCulture);
