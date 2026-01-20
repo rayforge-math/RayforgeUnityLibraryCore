@@ -8,7 +8,7 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
 {
     public static class ExpressionEvaluator
     {
-        private static readonly Regex VariableRegex = new Regex(@"([a-zA-Z_][a-zA-Z0-9_]*)", RegexOptions.Compiled);
+        private static readonly Regex TokenRegex = new Regex(@"([a-zA-Z_][a-zA-Z0-9_]*)|(==|!=|>=|<=|&&|\|\||[<>!=()+-/*])", RegexOptions.Compiled);
 
         public static bool Evaluate(string expression, Func<string, object> getValue)
         {
@@ -16,21 +16,29 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
 
             try
             {
-                string processed = VariableRegex.Replace(expression, match =>
+                string processed = TokenRegex.Replace(expression, match =>
                 {
-                    string name = match.Value;
+                    string token = match.Value;
 
-                    if (name == "true" || name == "false" || name == "AND" || name == "OR")
-                        return name;
+                    if (Regex.IsMatch(token, @"^[a-zA-Z_]"))
+                    {
+                        if (token == "true" || token == "false" || token == "AND" || token == "OR" || token == "NOT")
+                            return token;
 
-                    object val = getValue(name);
-                    return FormatValueForExpression(val);
+                        object val = getValue(token);
+                        return FormatValueForExpression(val);
+                    }
+
+                    return token switch
+                    {
+                        "&&" => " AND ",
+                        "||" => " OR ",
+                        "==" => " = ",
+                        "!=" => " <> ",
+                        "!" => " NOT ",
+                        _ => token
+                    };
                 });
-
-                processed = processed.Replace("&&", " AND ")
-                                     .Replace("||", " OR ")
-                                     .Replace("==", " = ")
-                                     .Replace("!=", " <> ");
 
                 using (var table = new DataTable())
                 {
@@ -40,7 +48,7 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[ConditionalExpr] Evaluation Error: {e.Message} in Expression: {expression}");
+                Debug.LogWarning($"[ConditionalExpr] Syntax Error: {expression} -> {e.Message}");
                 return true;
             }
         }
@@ -52,6 +60,7 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
             if (val is string s) return $"'{s}'";
             if (val is float f) return f.ToString(CultureInfo.InvariantCulture);
             if (val is double d) return d.ToString(CultureInfo.InvariantCulture);
+            if (val.GetType().IsEnum) return ((int)val).ToString();
 
             return val.ToString();
         }
