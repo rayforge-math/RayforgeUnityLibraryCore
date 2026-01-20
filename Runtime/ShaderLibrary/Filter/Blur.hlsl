@@ -49,21 +49,28 @@
 /// @return The averaged result of all valid samples in the 1D box kernel
 float4 BoxBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius)
 {
-    float4 result = (float4) 0;
+    float4 result = SAMPLE_TEXTURE2D(BlitTexture, samplerState, texcoord);
     //float weight = 1.0 / (2 * radius + 1);
-    float count = 0;
+    float count = 1.0;
 
-    [unroll(BLUR_MAX_RADIUS * 2 + 1)]
-    for (int i = -BLUR_MAX_RADIUS; i <= BLUR_MAX_RADIUS; ++i)
+    [unroll(BLUR_MAX_RADIUS)]
+    for (int i = 1; i <= BLUR_MAX_RADIUS; ++i)
     {
-        if (abs(i) > radius) continue;
+        if (i > radius) break;
 
         float2 offset = direction * float(i) * texelSize;
-        float2 uv = texcoord + offset;
 
-        if (UvInBounds(uv, cutoff))
+        float2 uvPos = texcoord + offset;
+        if (UvInBounds(uvPos, cutoff))
         {
-            result += SAMPLE_TEXTURE2D(BlitTexture, samplerState, uv); // * weight;
+            result += SAMPLE_TEXTURE2D(BlitTexture, samplerState, uvPos); // * weight;
+            count += 1.0;
+        }
+
+        float2 uvNeg = texcoord - offset;
+        if (UvInBounds(uvNeg, cutoff))
+        {
+            result += SAMPLE_TEXTURE2D(BlitTexture, samplerState, uvNeg); // * weight;
             count += 1.0;
         }
     }
