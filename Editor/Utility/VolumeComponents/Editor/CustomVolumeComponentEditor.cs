@@ -107,10 +107,17 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
 
         private DrawMode CheckConditionals(ParameterEntry parameter)
         {
-            var drawMode = CheckConditional<ConditionalFieldAttribute>(parameter);
+            // new logic, remove CheckConditional when this is working
+            var drawMode = CheckConditionalExprs(parameter);
+
             if (drawMode == DrawMode.Draw)
             {
-                drawMode = CheckConditional<ConditionalFieldsAttribute>(parameter);
+                drawMode = CheckConditional<ConditionalFieldAttribute>(parameter);
+
+                if (drawMode == DrawMode.Draw)
+                {
+                    drawMode = CheckConditional<ConditionalFieldsAttribute>(parameter);
+                }
             }
             return drawMode;
         }
@@ -133,6 +140,31 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
                 });
 
                 drawMode = show ? DrawMode.Draw : conditionalAttr.DrawMode;
+            }
+
+            return drawMode;
+        }
+
+        private DrawMode CheckConditionalExprs(ParameterEntry parameter)
+        {
+            var drawMode = DrawMode.Draw;
+
+            var exprAttr = parameter.param.GetAttribute<ConditionalExpr>();
+            if (exprAttr != null)
+            {
+                bool show = ExpressionEvaluator.Evaluate(exprAttr.Expression, fieldName =>
+                {
+                    var depProp = m_Fetcher.Find(fieldName);
+                    if (depProp == null)
+                    {
+                        Debug.LogWarning($"[ConditionalExpr] Field '{fieldName}' not found in {target.name}");
+                        return null;
+                    }
+
+                    return Unpack(depProp).value.boxedValue;
+                });
+
+                drawMode = show ? DrawMode.Draw : exprAttr.DrawMode;
             }
 
             return drawMode;
