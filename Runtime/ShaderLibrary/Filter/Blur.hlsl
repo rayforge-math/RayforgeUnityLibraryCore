@@ -56,7 +56,7 @@ float4 BoxBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, f
     [unroll(BLUR_MAX_RADIUS * 2 + 1)]
     for (int i = -BLUR_MAX_RADIUS; i <= BLUR_MAX_RADIUS; ++i)
     {
-        if (abs(i) > radius) break;
+        if (abs(i) > radius) continue;
 
         float2 offset = direction * float(i) * texelSize;
         float2 uv = texcoord + offset;
