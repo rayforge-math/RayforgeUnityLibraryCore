@@ -45,7 +45,6 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
                         _ => token
                     };
                 });
-                Debug.Log(processed);
 
                 using (var table = new DataTable())
                 {
