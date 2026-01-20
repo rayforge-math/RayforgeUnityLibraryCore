@@ -56,7 +56,7 @@ float4 BoxBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, f
     [unroll(BLUR_MAX_RADIUS * 2 + 1)]
     for (int i = -BLUR_MAX_RADIUS; i <= BLUR_MAX_RADIUS; ++i)
     {
-        if (abs(i) > radius) continue;
+        if (abs(i) > radius) break;
 
         float2 offset = direction * float(i) * texelSize;
         float2 uv = texcoord + offset;
@@ -105,16 +105,12 @@ float4 BoxBlur2d(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord,
     //float weight = 1.0 / pow(2.0 * radius + 1.0, 2.0);
     float count = 0;
 
-    [unroll(BLUR_MAX_RADIUS * 2 + 1)]
-    for (int y = -BLUR_MAX_RADIUS; y <= BLUR_MAX_RADIUS; y++)
+    [loop]
+    for (int y = -radius;y <=radius; y++)
     {
-        if (abs(y) > radius) continue;
-
-        [unroll(BLUR_MAX_RADIUS * 2 + 1)]
-        for (int x = -BLUR_MAX_RADIUS; x <= BLUR_MAX_RADIUS; x++)
+        [loop]
+        for (int x = -radius;x <=radius; x++)
         {
-            if (abs(x) > radius) continue;
-
             float2 uv = texcoord + float2(x, y) * texelSize;
             if (UvInBounds(uv, cutoff))
             {
@@ -146,7 +142,7 @@ float4 GaussianBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoo
     [unroll(BLUR_MAX_RADIUS)]
     for (int i = 1; i <= BLUR_MAX_RADIUS; ++i)
     {
-        if (i > radius) continue;
+        if (i > radius) break;
 
         float w = kernel[i];
         float2 offset = direction * float(i) * texelSize;
@@ -200,16 +196,12 @@ float4 GaussianBlur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texc
     float4 result = 0;
     float sum = 0;
 
-    [unroll(BLUR_MAX_RADIUS * 2 + 1)]
-    for (int y = -BLUR_MAX_RADIUS; y <= BLUR_MAX_RADIUS; ++y)
+    [loop]
+    for (int y = -radius;y <=radius;++y)
     {
-        if (abs(y) > radius) continue;
-
-        [unroll(BLUR_MAX_RADIUS * 2 + 1)]
-        for (int x = -BLUR_MAX_RADIUS; x <= BLUR_MAX_RADIUS; ++x)
+        [loop]
+        for (int x = -radius;x <=radius;++x)
         {
-            if (abs(x) > radius) continue;
-
             float2 offset = float2(x, y) * texelSize;
 
             float w = kernel[abs(x)] * kernel[abs(y)];
@@ -244,7 +236,7 @@ float4 TentBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, 
     [unroll(BLUR_MAX_RADIUS)]
     for (int i = 1; i <= BLUR_MAX_RADIUS; ++i)
     {
-        if (i > radius) continue;
+        if (i > radius) break;
 
         float w = radius - i + 1;
         float2 offset = direction * float(i) * texelSize;
@@ -297,16 +289,12 @@ float4 TentBlur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord
     float4 result = (float4) 0;
     float sum = 0.0;
 
-    [unroll(BLUR_MAX_RADIUS * 2 + 1)]
-    for (int y = -BLUR_MAX_RADIUS; y <= BLUR_MAX_RADIUS; ++y)
+    [loop]
+    for (int y = -radius;y <=radius;++y)
     {
-        if (abs(y) > radius) continue;
-
-        [unroll(BLUR_MAX_RADIUS * 2 + 1)]
-        for (int x = -BLUR_MAX_RADIUS; x <= BLUR_MAX_RADIUS; ++x)
+        [loop]
+        for (int x = -radius;x <=radius;++x)
         {
-            if (abs(x) > radius) continue;
-
             float w = float((radius + 1) - max(abs(x), abs(y)));
 
             w = max(w, 0.0);
@@ -343,7 +331,7 @@ float4 KawaseBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord
     [unroll(BLUR_MAX_RADIUS)]
     for (int i = 0; i < BLUR_MAX_RADIUS; ++i)
     {
-        if (i > radius) continue;
+        if (i > radius) break;
 
         float passWeight = 1.0 / (i + 1.0);
         float2 scaledTexel = texelSize * (i + 1);
@@ -387,6 +375,7 @@ float4 DirectionalBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 tex
 {
     float4 color = (float4) 0;
 
+    [branch]
     switch (blurMode)
     {
         case 0:
@@ -423,6 +412,7 @@ float4 SeparableBlurApprox(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2
 {
     float4 color = (float4) 0;
 
+    [branch]
     switch (blurMode)
     {
         case 0:
@@ -459,6 +449,7 @@ float4 Blur2D(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord, in
 {
     float4 color = (float4) 0;
 
+    [branch]
     switch (blurMode)
     {
         case 0:
@@ -497,6 +488,7 @@ float4 RadialBlur(TEXTURE2D(BlitTexture), SAMPLER(samplerState), float2 texcoord
 
     float4 color = (float4) 0;
 
+    [branch]
     switch (blurMode)
     {
         case 0:
