@@ -157,7 +157,7 @@ namespace Rayforge.Core.Utility.VolumeComponents.Editor
                     var depProp = m_Fetcher.Find(fieldName);
                     if (depProp == null)
                     {
-                        Debug.LogWarning($"[ConditionalExpr] Field '{fieldName}' not found in {target.name}");
+                        //Debug.LogWarning($"[ConditionalExpr] Field '{fieldName}' not found in {target.name}");
                         return null;
                     }
 
