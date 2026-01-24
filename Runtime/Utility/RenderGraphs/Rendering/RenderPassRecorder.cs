@@ -170,7 +170,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                     }
                 }
                 builder.UseTexture(data.Destination.handle, AccessFlags.Write);
-
+                
                 builder.SetRenderFunc(static (TPassData data, ComputeGraphContext ctx) =>
                 {
                     data.RenderFuncUpdate?.Invoke(ctx.cmd, data);

@@ -3,51 +3,48 @@ using UnityEngine;
 namespace Rayforge.Core.Rendering.Passes
 {
     /// <summary>
-    /// Represents a unified metadata container for a texture resource.
-    /// This generic structure pairs metadata (IDs, size, name) with a specific handle type,
-    /// allowing seamless transitions between persistent <see cref="UnityEngine.Rendering.RTHandle"/>s 
-    /// and transient <see cref="UnityEngine.Rendering.RenderGraphModule.TextureHandle"/>s.
+    /// Combines <see cref="TextureMeta"/> with a concrete texture handle.
     /// </summary>
-    /// <typeparam name="THandle">The type of texture handle (e.g., RTHandle or TextureHandle).</typeparam>
+    /// <typeparam name="THandle">The type of texture handle (RTHandle, TextureHandle, etc.).</typeparam>
     public struct TextureHandleMeta<THandle>
     {
-        /// <summary> 
-        /// The shader property IDs associated with this resource.
-        /// Facilitates consistent binding to shader variables across different render passes.
-        /// </summary>
-        public TextureIds Ids;
-
-        /// <summary> 
-        /// Human-readable identifier for this resource. 
-        /// Used for profiling, Frame Debugger visualization, and internal logging.
-        /// </summary>
-        public string Name;
-
-        /// <summary> 
-        /// Texel size data: x = 1/width, y = 1/height, z = width, w = height.
-        /// Essential for shaders to perform accurate texture sampling and coordinate calculations.
-        /// </summary>
-        public Vector4 TexelSize;
-
-        /// <summary> 
-        /// The underlying texture resource. 
-        /// For a depth pyramid, Index 0 typically represents the full-resolution source, 
-        /// while subsequent indices hold downsampled versions.
-        /// </summary>
+        public TextureMeta Meta;
         public THandle Handle;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="TextureHandleMeta{THandle}"/> struct.
+        /// Initializes a new instance with a prebuilt <see cref="TextureMeta"/> and handle.
+        /// </summary>
+        /// <param name="meta">The metadata for this texture.</param>
+        /// <param name="handle">The texture handle.</param>
+        public TextureHandleMeta(TextureMeta meta, THandle handle)
+        {
+            Meta = meta;
+            Handle = handle;
+        }
+
+        /// <summary>
+        /// Initializes a new instance with individual parameters for metadata and a handle.
         /// </summary>
         /// <param name="ids">Shader property IDs for binding.</param>
         /// <param name="name">Debug name for the resource.</param>
-        /// <param name="texelSize">Calculated texel size vector.</param>
-        /// <param name="handle">The actual texture handle (RTHandle or TextureHandle).</param>
+        /// <param name="resolution">Width and height of the texture.</param>
+        /// <param name="handle">The actual texture handle.</param>
+        public TextureHandleMeta(TextureIds ids, string name, Vector2Int resolution, THandle handle)
+        {
+            Meta = new TextureMeta(ids, name, new Vector4(1.0f / resolution.x, 1.0f / resolution.y, resolution.x, resolution.y));
+            Handle = handle;
+        }
+
+        /// <summary>
+        /// Initializes a new instance with individual parameters for metadata and a handle.
+        /// </summary>
+        /// <param name="ids">Shader property IDs for binding.</param>
+        /// <param name="name">Debug name for the resource.</param>
+        /// <param name="texelSize">Calculated texel size vector (x=1/width, y=1/height, z=width, w=height).</param>
+        /// <param name="handle">The actual texture handle.</param>
         public TextureHandleMeta(TextureIds ids, string name, Vector4 texelSize, THandle handle)
         {
-            Ids = ids;
-            Name = name;
-            TexelSize = texelSize;
+            Meta = new TextureMeta(ids, name, texelSize);
             Handle = handle;
         }
     }

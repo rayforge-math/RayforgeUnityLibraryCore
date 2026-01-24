@@ -29,7 +29,7 @@ namespace Rayforge.Core.Rendering.Helpers
 
             return new RenderTextureDescriptor(width, height)
             {
-                colorFormat = RenderTextureFormat.Depth,
+                colorFormat = enableRandomWrite ? RenderTextureFormat.RFloat : RenderTextureFormat.Depth,
                 depthBufferBits = 32,
                 dimension = TextureDimension.Tex2D,
                 useMipMap = false,
@@ -37,7 +37,8 @@ namespace Rayforge.Core.Rendering.Helpers
                 msaaSamples = msaaSamples,
                 sRGB = false,
                 enableRandomWrite = enableRandomWrite,
-                bindMS = false
+                bindMS = false,
+                depthStencilFormat = UnityEngine.Experimental.Rendering.GraphicsFormat.None
             };
         }
 
