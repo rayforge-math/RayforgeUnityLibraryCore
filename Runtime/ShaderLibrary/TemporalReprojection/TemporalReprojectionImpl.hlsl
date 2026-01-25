@@ -36,7 +36,8 @@ float4 SampleHistory(TEXTURE2D_PARAM(historyTexture, historySampler), float2 uv)
 /// @return The sampled color from the history texture at the reprojected position.
 float4 SampleHistoryMotionVectors(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float2 motionVector)
 {
-    float2 uv = currentUV - motionVector - (_TAA_Jitter - _TAA_JitterPrev);
+    float2 motion = motionVector / _ScreenParams.xy;
+    float2 uv = currentUV - motion - (_TAA_Jitter - _TAA_JitterPrev);
     return SampleHistory(historyTexture, historySampler, uv);
 }
 
