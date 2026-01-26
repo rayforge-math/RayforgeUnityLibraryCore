@@ -24,7 +24,7 @@ float4 SampleHistory(TEXTURE2D_PARAM(historyTexture, historySampler), float2 uv)
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
         return float4(0,0,0,0);
     
-    return SAMPLE_TEXTURE2D(historyTexture, historySampler, uv);
+    return SAMPLE_TEXTURE2D_X(historyTexture, historySampler, uv);
 }
 
 /// @brief Samples a history texture using motion vectors to offset the current UV coordinates.
@@ -32,12 +32,11 @@ float4 SampleHistory(TEXTURE2D_PARAM(historyTexture, historySampler), float2 uv)
 /// @param historyTexture The history texture to sample.
 /// @param historySampler Sampler state for the texture.
 /// @param currentUV Current frame UV coordinates.
-/// @param motionVector Motion vector to reproject the UV into the previous frame. Usually retrieved from the combined camera + object motion.
+/// @param motionVector Motion vector (NDC) to reproject the UV into the previous frame. Usually retrieved from the combined camera + object motion.
 /// @return The sampled color from the history texture at the reprojected position.
 float4 SampleHistoryMotionVectors(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float2 motionVector)
 {
-    float2 motion = motionVector / _ScreenParams.xy;
-    float2 uv = currentUV - motion - (_TAA_Jitter - _TAA_JitterPrev);
+    float2 uv = currentUV - DecodeMotionVector(motionVector) - (_TAA_Jitter - _TAA_JitterPrev);
     return SampleHistory(historyTexture, historySampler, uv);
 }
 
@@ -205,7 +204,7 @@ float4 BlendHistoryMotionVectors(TEXTURE2D_PARAM(historyTexture, historySampler)
     float2 motionVector;
     float4 history;
     SetupMotionVectorPipeline(historyTexture, historySampler, currentUV, motionVector, history);
-
+    
     float currentDepth = SampleLinear01Depth(currentUV);
 
     if (params.depthRejection && CheckAndSetupDepthRejection(currentUV, currentColor, currentDepth, history, params.depthThreshold, result))
@@ -213,7 +212,7 @@ float4 BlendHistoryMotionVectors(TEXTURE2D_PARAM(historyTexture, historySampler)
         return result;
     }
 
-    if(HasMotion(motionVector) && params.velocityDisocclusion)
+    if(params.velocityDisocclusion && HasMotion(motionVector))
     {
         SetupVelocityDisocclusion(motionVector, params.velocityThreshold, params.velocityScale, params.historyWeight);
     }
