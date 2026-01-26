@@ -36,6 +36,25 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         public UnsafeRTHandleMipChain(CreateFunction createFunc)
             : base(createFunc)
         { }
+
+        /// <summary>
+        /// Releases all allocated RTHandles and clears the internal collection.
+        /// Should be called when the owner (e.g., RenderPass or Feature) is disposed to prevent memory leaks.
+        /// </summary>
+        public void Dispose()
+        {
+            if (m_Handles == null) return;
+
+            foreach (var handle in m_Handles)
+            {
+                if (handle != null)
+                {
+                    handle.Release();
+                }
+            }
+
+            Resize(0);
+        }
     }
 
     /// <summary>

@@ -32,7 +32,7 @@ float4 SampleHistory(TEXTURE2D_PARAM(historyTexture, historySampler), float2 uv)
 /// @param historyTexture The history texture to sample.
 /// @param historySampler Sampler state for the texture.
 /// @param currentUV Current frame UV coordinates.
-/// @param motionVector Motion vector (NDC) to reproject the UV into the previous frame. Usually retrieved from the combined camera + object motion.
+/// @param motionVector Motion vector to reproject the UV into the previous frame. Usually retrieved from the combined camera + object motion.
 /// @return The sampled color from the history texture at the reprojected position.
 float4 SampleHistoryMotionVectors(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float2 motionVector)
 {
