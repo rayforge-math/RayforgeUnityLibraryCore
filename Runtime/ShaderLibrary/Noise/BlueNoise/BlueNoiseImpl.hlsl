@@ -12,8 +12,6 @@
 
 #include "../Utils/Hashes.hlsl"
 
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
-
 // ============================================================================
 // 1. Utility Functions
 // ============================================================================

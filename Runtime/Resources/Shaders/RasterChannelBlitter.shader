@@ -12,6 +12,8 @@ Shader "Rayforge/RasterChannelBlitter"
             Cull Off ZWrite Off
 
         HLSLPROGRAM
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+
             #include "../../ShaderLibrary/Blitter/RasterBlit.hlsl"
 
             #pragma vertex Vert

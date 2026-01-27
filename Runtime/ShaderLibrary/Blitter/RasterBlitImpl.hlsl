@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../../ShaderLibrary/Rendering/FullscreenTriangle.hlsl"
-
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/GlobalSamplers.hlsl"
+
+#include "../../ShaderLibrary/Rendering/FullscreenTriangle.hlsl"
 
 void SetupBlitPipeline(uint id, out float4 positionCS, out float2 texcoord)
 {

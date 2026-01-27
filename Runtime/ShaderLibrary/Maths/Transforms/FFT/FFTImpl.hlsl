@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Packages/com.rayforge.core/Runtime/ShaderLibrary/Maths/Spaces/ComplexPlane.hlsl"
+#include "../../Spaces/ComplexPlane.hlsl"
 
 // ============================================================================
 // 1. Prototypes - for abstracting the precise data layout

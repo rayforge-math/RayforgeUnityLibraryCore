@@ -58,17 +58,21 @@ static const float2 OffsetsStar[9] = {
  * @param falloff        Depth sensitivity factor. Higher values preserve edges more strictly.
  * @param COUNT          The number of samples in the offset array (e.g., 5 or 9).
  */
-#define CORE_BILATERAL_LOGIC(ARGS_MACRO, SAMPLE_MACRO, srcTex, srcSmp, lowDepth, lowDepthSmp, fullDepth, fullDepthSmp, uv, offsets, texSize, falloff, COUNT) \
-    float referenceDepth = SAMPLE_MACRO(fullDepth, fullDepthSmp, uv, 0).r; \
+#define CORE_BILATERAL_UPSAMPLE_LOGIC(SAMPLE_MACRO, COUNT) \
+    float referenceDepth = SAMPLE_MACRO(fDepth, fDepthSmp, uv, 0).r; \
     float4 combinedColor = 0; \
     float combinedWeight = 0; \
+    \
     [unroll] \
     for(int i = 0; i < COUNT; i++) { \
         float2 sampleUV = uv + offsets[i] * texSize.xy; \
-        float sampleDepth = SAMPLE_MACRO(lowDepth, lowDepthSmp, sampleUV, 0).r; \
-        float4 sampleColor = SAMPLE_MACRO(srcTex, srcSmp, sampleUV, 0); \
+        float sampleDepth = SAMPLE_MACRO(lDepth, lDepthSmp, sampleUV, 0).r; \
+        float4 sampleColor = SAMPLE_MACRO(src, srcSmp, sampleUV, 0); \
+        \
         float w = 1.0 / (abs(referenceDepth - sampleDepth) * falloff + 0.001); \
+        \
         float spatial = (i == 0) ? 2.0 : 1.0; \
+        \
         combinedColor += sampleColor * (w * spatial); \
         combinedWeight += (w * spatial); \
     } \
@@ -76,12 +80,12 @@ static const float2 OffsetsStar[9] = {
 
 float4 ExecuteBilateralFilter5XR(TEXTURE2D_X_PARAM(src, srcSmp), TEXTURE2D_X_PARAM(lDepth, lDepthSmp), TEXTURE2D_X_PARAM(fDepth, fDepthSmp), float4 texSize, float2 uv, float2 offsets[5], float falloff)
 {
-    CORE_BILATERAL_LOGIC(TEXTURE2D_X_ARGS, SAMPLE_TEXTURE2D_X_LOD, src, srcSmp, lDepth, lDepthSmp, fDepth, fDepthSmp, uv, offsets, texSize, falloff, 5)
+    CORE_BILATERAL_LOGIC(SAMPLE_TEXTURE2D_X_LOD, 5)
 }
 
 float4 ExecuteBilateralFilter5(TEXTURE2D_PARAM(src, srcSmp), TEXTURE2D_PARAM(lDepth, lDepthSmp), TEXTURE2D_PARAM(fDepth, fDepthSmp), float4 texSize, float2 uv, float2 offsets[5], float falloff)
 {
-    CORE_BILATERAL_LOGIC(TEXTURE2D_ARGS, SAMPLE_TEXTURE2D_LOD, src, srcSmp, lDepth, lDepthSmp, fDepth, fDepthSmp, uv, offsets, texSize, falloff, 5)
+    CORE_BILATERAL_LOGIC(SAMPLE_TEXTURE2D_LOD, 5)
 }
 
 float4 ExecuteBilateralFilter5XR(TEXTURE2D_X(src), TEXTURE2D_X(lDepth), TEXTURE2D_X(fDepth), float4 texSize, float2 uv, float2 offsets[5], float falloff)
@@ -94,18 +98,41 @@ float4 ExecuteBilateralFilter5XR(TEXTURE2D_X(src), TEXTURE2D_X(lDepth), TEXTURE2
     );
 }
 
+float4 ExecuteBilateralFilter5(TEXTURE2D( src), TEXTURE2D(lDepth), TEXTURE2D(fDepth), float4 texSize, float2 uv, float2 offsets[5], float falloff)
+{
+    return ExecuteBilateralFilter5(
+        TEXTURE2D_ARGS(src, sampler_LinearClamp),
+        TEXTURE2D_ARGS(lDepth, sampler_PointClamp),
+        TEXTURE2D_ARGS(fDepth, sampler_PointClamp),
+        texSize, uv, offsets, falloff
+    );
+}
+
 float4 ExecuteBilateralFilter9XR(TEXTURE2D_X_PARAM(src, srcSmp), TEXTURE2D_X_PARAM(lDepth, lDepthSmp), TEXTURE2D_X_PARAM(fDepth, fDepthSmp), float4 texSize, float2 uv, float2 offsets[9], float falloff)
 {
-    CORE_BILATERAL_LOGIC(TEXTURE2D_X_ARGS, SAMPLE_TEXTURE2D_X_LOD, src, srcSmp, lDepth, lDepthSmp, fDepth, fDepthSmp, uv, offsets, texSize, falloff, 9)
+    CORE_BILATERAL_LOGIC(SAMPLE_TEXTURE2D_X_LOD, 9)
 }
 
 float4 ExecuteBilateralFilter9(TEXTURE2D_PARAM(src, srcSmp), TEXTURE2D_PARAM(lDepth, lDepthSmp), TEXTURE2D_PARAM(fDepth, fDepthSmp), float4 texSize, float2 uv, float2 offsets[9], float falloff)
 {
-    CORE_BILATERAL_LOGIC(TEXTURE2D_ARGS, SAMPLE_TEXTURE2D_LOD, src, srcSmp, lDepth, lDepthSmp, fDepth, fDepthSmp, uv, offsets, texSize, falloff, 9)
+    CORE_BILATERAL_LOGIC(SAMPLE_TEXTURE2D_LOD, 9)
 }
 
 float4 ExecuteBilateralFilter9XR(TEXTURE2D_X(src), TEXTURE2D_X(lDepth), TEXTURE2D_X(fDepth), float4 texSize, float2 uv, float2 offsets[9], float falloff)
 {
-    return ExecuteBilateralFilter9XR(TEXTURE2D_X_ARGS(src, sampler_LinearClamp), TEXTURE2D_X_ARGS(lDepth, sampler_PointClamp), TEXTURE2D_X_ARGS(fDepth, sampler_PointClamp), texSize, uv, offsets, falloff);
+    return ExecuteBilateralFilter9XR(
+        TEXTURE2D_X_ARGS(src, sampler_LinearClamp), 
+        TEXTURE2D_X_ARGS(lDepth, sampler_PointClamp), 
+        TEXTURE2D_X_ARGS(fDepth, sampler_PointClamp), 
+        texSize, uv, offsets, falloff);
 }
 
+float4 ExecuteBilateralFilter9(TEXTURE2D( src), TEXTURE2D(lDepth), TEXTURE2D(fDepth), float4 texSize, float2 uv, float2 offsets[9], float falloff)
+{
+    return ExecuteBilateralFilter9(
+        TEXTURE2D_ARGS(src, sampler_LinearClamp), 
+        TEXTURE2D_ARGS(lDepth, sampler_PointClamp), 
+        TEXTURE2D_ARGS(fDepth, sampler_PointClamp), 
+        texSize, uv, offsets, falloff
+    );
+}

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
-
 /// @brief Parameters controlling channel remapping and source coordinate transformation.
 ///
 /// @param _SrcChannels

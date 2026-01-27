@@ -1,6 +1,8 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel ChannelBlitter
 
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+
 #include "../../ShaderLibrary/Blitter/ComputeBlit.hlsl"
 
 /// @brief Copies selected channels from a source texture to a destination texture.

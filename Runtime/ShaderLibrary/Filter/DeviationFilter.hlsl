@@ -12,8 +12,6 @@
 
 #include "../Maths/Statistics.hlsl"
 
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
-
 // ============================================================================
 // 1. Defins
 // ============================================================================

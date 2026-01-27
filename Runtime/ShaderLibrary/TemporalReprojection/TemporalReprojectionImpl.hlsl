@@ -7,8 +7,6 @@
 #include "../Maths/Statistics.hlsl"
 #include "../Filter/DeviationFilter.hlsl"
 
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
-
 // ============================================================================
 // 2. Utility Functions
 // ============================================================================

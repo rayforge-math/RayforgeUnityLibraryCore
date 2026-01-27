@@ -2,8 +2,6 @@
 
 #include "../Common.hlsl"
 
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
-
 CBUFFER_START(_Rayforge_TaaCamera)
 float4x4 _Rayforge_Matrix_Prev_VP;
 float4x4 _Rayforge_Matrix_Inv_VP;

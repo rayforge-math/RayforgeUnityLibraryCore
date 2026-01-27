@@ -1,7 +1,5 @@
 #pragma once
 
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
-
 /// @brief FFT configuration parameters.
 ///
 /// @details

@@ -1,8 +1,5 @@
 #pragma once
 
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/GlobalSamplers.hlsl"
-
 #define CORE_SAMPLE_NEIGHBORHOOD_LOGIC(SAMPLER_MACRO, tex, smp, uv, texSize, outNeighbors) \
     static const float2 offsets[9] = { \
         float2(-1, -1), float2(0, -1), float2(1, -1), \
