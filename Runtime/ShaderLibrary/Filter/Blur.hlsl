@@ -33,6 +33,33 @@
 
 #define BLUR_BUFFER_SIZE BLUR_RADIUS_MAX + 1
 
+#if defined(BILATERAL)
+    #define BIL_ARGS_X_DECL , TEXTURE2D_X_PARAM(depthTex, depthSmp), float falloff
+    #define BIL_ARGS_X_PASS , TEXTURE2D_X_ARGS(depthTex, depthSmp), falloff
+    
+    #define BIL_ARGS_DECL   , TEXTURE2D_PARAM(depthTex, depthSmp), float falloff
+    #define BIL_ARGS_PASS   , TEXTURE2D_ARGS(depthTex, depthSmp), falloff
+#else
+    #define BIL_ARGS_X_DECL 
+    #define BIL_ARGS_X_PASS 
+    #define BIL_ARGS_DECL   
+    #define BIL_ARGS_PASS   
+#endif
+
+#if defined(BILATERAL)
+    // Injects the variable declaration and fetch
+    #define BIL_FETCH_CENTER(SAMPLER, uv) \
+        float centerDepth = SAMPLER(depthTex, depthSmp, uv, 0).r;
+    
+    // Injects the depth comparison weight
+    #define BIL_GET_W(SAMPLER, uv) \
+        (1.0 / (abs(centerDepth - SAMPLER(depthTex, depthSmp, uv, 0).r) * falloff + 0.001))
+#else
+    // Empty or neutral if bilateral is off
+    #define BIL_FETCH_CENTER(SAMPLER, uv) 
+    #define BIL_GET_W(SAMPLER, uv) 1.0
+#endif
+
 // ============================================================================
 // 3. Utility Functions
 // ============================================================================
@@ -47,35 +74,41 @@
 /// @param cutoff If true, samples outside UV range are discarded to avoid leaking colors
 /// @param radius Number of samples taken to each side of the center pixel
 /// @return The averaged result of all valid samples in the 1D box kernel
-#define CORE_BOX_BLUR_LOGIC(SAMPLE_MACRO, tex, smp, uv, dir, texSize, radius) \
-    float4 res = SAMPLE_MACRO(tex, smp, uv, 0); \
+#define CORE_BOX_BLUR_LOGIC(SAMPLER_MACRO) \
+    float4 res = SAMPLER_MACRO(BlitTexture, samplerState, texcoord, 0); \
     float count = 1.0; \
+    \
+    BIL_FETCH_CENTER(SAMPLER_MACRO, texcoord) \
+    \
     [unroll(BLUR_RADIUS_MAX)] \
     for (int i = 1; i <= BLUR_RADIUS_MAX; ++i) { \
         if (i > radius) break; \
-        float2 offset = dir * float(i) * texSize; \
-        float2 uvPos = uv + offset; \
+        float2 offset = direction * float(i) * texelSize; \
+        \
+        float2 uvPos = texcoord + offset; \
         if (UvInBounds(uvPos, cutoff)) { \
-            res += SAMPLE_MACRO(tex, smp, uvPos, 0); \
-            count += 1.0; \
+            float w = BIL_GET_W(SAMPLER_MACRO, uvPos); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvPos, 0) * w; \
+            count += w; \
         } \
-        float2 uvNeg = uv - offset; \
+        \
+        float2 uvNeg = texcoord - offset; \
         if (UvInBounds(uvNeg, cutoff)) { \
-            res += SAMPLE_MACRO(tex, smp, uvNeg, 0); \
-            count += 1.0; \
+            float w = BIL_GET_W(SAMPLER_MACRO, uvNeg); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvNeg, 0) * w; \
+            count += w; \
         } \
     } \
-    res /= count; \
-    return res;
+    return res / max(count, 0.00001);
 
-float4 BoxBlurXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius)
+float4 BoxBlurXR(TEXTURE2D_X_PARAM( BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
-    CORE_BOX_BLUR_LOGIC(SAMPLE_TEXTURE2D_X_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, radius);
+    CORE_BOX_BLUR_LOGIC(SAMPLE_TEXTURE2D_X_LOD);
 }
 
-float4 BoxBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius)
+float4 BoxBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_DECL)
 {
-    CORE_BOX_BLUR_LOGIC(SAMPLE_TEXTURE2D_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, radius);
+    CORE_BOX_BLUR_LOGIC(SAMPLE_TEXTURE2D_LOD);
 }
 
 /// @brief Applies a 1D box blur along a given direction.
@@ -88,33 +121,40 @@ float4 BoxBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, floa
 /// @param cutoff If true, samples outside UV range are discarded to avoid leaking colors
 /// @param radius Number of samples taken to each side of the center pixel
 /// @return The averaged result of all valid samples in the 1D box kernel
-#define CORE_BOX_DYNAMIC_LOGIC(SAMPLER_MACRO, tex, smp, uv, dir, texSize, cutoff, radius) \
-    float4 res = SAMPLER_MACRO(tex, smp, uv, 0); \
+#define CORE_BOX_DYNAMIC_LOGIC(SAMPLER_MACRO) \
+    float4 res = SAMPLER_MACRO(BlitTexture, samplerState, texcoord, 0); \
     float count = 1.0; \
+    \
+    BIL_FETCH_CENTER(SAMPLER_MACRO, texcoord) \
+    \
     [loop] \
     for (int i = 1; i <= radius; ++i) { \
-        float2 offset = dir * (float)i * texSize; \
-        float2 uvPos = uv + offset; \
+        float2 offset = direction * (float)i * texelSize; \
+        \
+        float2 uvPos = texcoord + offset; \
         if (!cutoff || UvInBounds(uvPos, true)) { \
-            res += SAMPLER_MACRO(tex, smp, uvPos, 0); \
-            count += 1.0; \
+            float w = BIL_GET_W(SAMPLER_MACRO, uvPos); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvPos, 0) * w; \
+            count += w; \
         } \
-        float2 uvNeg = uv - offset; \
+        \
+        float2 uvNeg = texcoord - offset; \
         if (!cutoff || UvInBounds(uvNeg, true)) { \
-            res += SAMPLER_MACRO(tex, smp, uvNeg, 0); \
-            count += 1.0; \
+            float w = BIL_GET_W(SAMPLER_MACRO, uvNeg); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvNeg, 0) * w; \
+            count += w; \
         } \
     } \
-    return res / count;
+    return res / max(count, 0.0001);
 
-float4 BoxBlurDynamicXR(TEXTURE2D_X_PARAM( BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius)
+float4 BoxBlurDynamicXR(TEXTURE2D_X_PARAM( BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
-    CORE_BOX_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_X_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, radius)
+    CORE_BOX_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_X_LOD)
 }
 
-float4 BoxBlurDynamic(TEXTURE2D_PARAM( BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius)
+float4 BoxBlurDynamic(TEXTURE2D_PARAM( BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_DECL)
 {
-    CORE_BOX_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, radius)
+    CORE_BOX_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_LOD)
 }
 
 /// @brief Performs a separable approximation of a 2D box blur by applying
@@ -127,19 +167,19 @@ float4 BoxBlurDynamic(TEXTURE2D_PARAM( BlitTexture, samplerState), float2 texcoo
 /// @param cutoff If enabled, prevents sampling outside valid UV bounds
 /// @param radius Kernel radius for each 1D blur pass
 /// @return The average of horizontal and vertical box-blur passes, approximating a 2D box blur
-float4 BoxBlurSeparableApproxXR(TEXTURE2D_X_PARAM( BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 BoxBlurSeparableApproxXR(TEXTURE2D_X_PARAM( BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
     float4 result = (float4) 0;
-    result += BoxBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, radius);
-    result += BoxBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, radius);
+    result += BoxBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, radius BIL_ARGS_X_PASS);
+    result += BoxBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, radius BIL_ARGS_X_PASS);
     return result * 0.5;
 }
 
-float4 BoxBlurSeparableApprox(TEXTURE2D_PARAM( BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 BoxBlurSeparableApprox(TEXTURE2D_PARAM( BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_DECL)
 {
     float4 result = (float4) 0;
-    result += BoxBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, radius);
-    result += BoxBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, radius);
+    result += BoxBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, radius BIL_ARGS_PASS);
+    result += BoxBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, radius BIL_ARGS_PASS);
     return result * 0.5;
 }
 
@@ -153,30 +193,34 @@ float4 BoxBlurSeparableApprox(TEXTURE2D_PARAM( BlitTexture, samplerState), float
 /// @param cutoff If true, samples outside UV range are ignored
 /// @param radius Box kernel radius in both dimensions
 /// @return Normalized sum of all box-filter samples within the square kernel
-#define CORE_BOX_BLUR_2D_LOGIC(SAMPLER_MACRO, tex, smp, uv, texSize, cutoff, radius) \
+#define CORE_BOX_BLUR_2D_LOGIC(SAMPLER_MACRO) \
     float4 res = 0; \
     float count = 0; \
+    \
+    BIL_FETCH_CENTER(SAMPLER_MACRO, texcoord) \
+    \
     [loop] \
     for (int y = -radius; y <= radius; y++) { \
         [loop] \
         for (int x = -radius; x <= radius; x++) { \
-            float2 sampleUV = uv + float2(x, y) * texSize; \
+            float2 sampleUV = texcoord + float2(x, y) * texelSize; \
             if (!cutoff || UvInBounds(sampleUV, true)) { \
-                res += SAMPLER_MACRO(tex, smp, sampleUV, 0); \
-                count += 1.0; \
+                float w = BIL_GET_W(SAMPLER_MACRO, sampleUV); \
+                res += SAMPLER_MACRO(BlitTexture, samplerState, sampleUV, 0) * w; \
+                count += w; \
             }\
         } \
     } \
     return res / max(count, 0.0001);
 
-float4 BoxBlur2dXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 BoxBlur2dXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
-    CORE_BOX_BLUR_2D_LOGIC(SAMPLE_TEXTURE2D_X_LOD, BlitTexture, samplerState, texcoord, texelSize, cutoff, radius)
+    CORE_BOX_BLUR_2D_LOGIC(SAMPLE_TEXTURE2D_X_LOD)
 }
 
-float4 BoxBlur2d(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 BoxBlur2d(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_DECL)
 {
-    CORE_BOX_BLUR_2D_LOGIC(SAMPLE_TEXTURE2D_LOD, BlitTexture, samplerState, texcoord, texelSize, cutoff, radius)
+    CORE_BOX_BLUR_2D_LOGIC(SAMPLE_TEXTURE2D_LOD)
 }
 
 /// @brief Applies a 1D Gaussian blur along a specified direction using a supplied kernel.
@@ -190,35 +234,44 @@ float4 BoxBlur2d(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, fl
 /// @param kernel Precomputed Gaussian kernel values for offsets 0..radius
 /// @param radius Number of Gaussian samples to each side
 /// @return Gaussian-filtered pixel value normalized by sum of valid weights
-#define CORE_GAUSSIAN_BLUR_LOGIC(SAMPLER_MACRO, tex, smp, uv, dir, texSize, cutoff, kernel, radius) \
+#define CORE_GAUSSIAN_BLUR_LOGIC(SAMPLER_MACRO) \
     float sum = kernel[0]; \
-    float4 res = SAMPLER_MACRO(tex, smp, uv, 0) * sum; \
+    float4 res = SAMPLER_MACRO(BlitTexture, samplerState, texcoord, 0) * sum; \
+    \
+    BIL_FETCH_CENTER(SAMPLER_MACRO, texcoord) \
+    \
     [unroll(BLUR_RADIUS_MAX)] \
     for (int i = 1; i <= BLUR_RADIUS_MAX; ++i) { \
         if (i > radius) break; \
-        float w = kernel[i]; \
-        float2 offset = dir * float(i) * texSize; \
-        float2 uvNeg = uv - offset; \
+        float2 offset = direction * float(i) * texelSize; \
+        float gaussianWeight = kernel[i]; \
+        \
+        /* Negative direction */ \
+        float2 uvNeg = texcoord - offset; \
         if (!cutoff || UvInBounds(uvNeg, true)) { \
-            res += SAMPLER_MACRO(tex, smp, uvNeg, 0) * w; \
+            float w = gaussianWeight * BIL_GET_W(SAMPLER_MACRO, uvNeg); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvNeg, 0) * w; \
             sum += w; \
         } \
-        float2 uvPos = uv + offset; \
+        \
+        /* Positive direction */ \
+        float2 uvPos = texcoord + offset; \
         if (!cutoff || UvInBounds(uvPos, true)) { \
-            res += SAMPLER_MACRO(tex, smp, uvPos, 0) * w; \
+            float w = gaussianWeight * BIL_GET_W(SAMPLER_MACRO, uvPos); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvPos, 0) * w; \
             sum += w; \
         } \
     } \
-    return res / sum;
+    return res / max(sum, 0.0001);
 
-float4 GaussianBlurXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 GaussianBlurXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_X_DECL)
 {
-    CORE_GAUSSIAN_BLUR_LOGIC(SAMPLE_TEXTURE2D_X_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, kernel, radius)
+    CORE_GAUSSIAN_BLUR_LOGIC(SAMPLE_TEXTURE2D_X_LOD)
 }
 
-float4 GaussianBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 GaussianBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_DECL)
 {
-    CORE_GAUSSIAN_BLUR_LOGIC(SAMPLE_TEXTURE2D_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, kernel, radius)
+    CORE_GAUSSIAN_BLUR_LOGIC(SAMPLE_TEXTURE2D_LOD)
 }
 
 /// @brief Applies a 1D Gaussian blur along a specified direction using a supplied kernel.
@@ -232,34 +285,45 @@ float4 GaussianBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord,
 /// @param kernel Precomputed Gaussian kernel values for offsets 0..radius
 /// @param radius Number of Gaussian samples to each side
 /// @return Gaussian-filtered pixel value normalized by sum of valid weights
-#define CORE_GAUSSIAN_DYNAMIC_LOGIC(SAMPLER_MACRO, tex, smp, uv, dir, texSize, cutoff, kernel, radius) \
+#define CORE_GAUSSIAN_DYNAMIC_LOGIC(SAMPLER_MACRO) \
     float sum = kernel[0]; \
-    float4 res = SAMPLER_MACRO(tex, smp, uv, 0) * sum; \
+    float4 res = SAMPLER_MACRO(BlitTexture, samplerState, texcoord, 0) * sum; \
+    \
+    /* Implicitly uses depthTex, depthSmp, texcoord from scope */ \
+    BIL_FETCH_CENTER(SAMPLER_MACRO, texcoord) \
+    \
     [loop] \
     for (int i = 1; i <= radius; ++i) { \
-        float w = kernel[i]; \
-        float2 offset = dir * (float)i * texSize; \
-        float2 uvNeg = uv - offset; \
+        float w_base = kernel[i]; \
+        float2 offset = direction * (float)i * texelSize; \
+        \
+        /* Negative direction */ \
+        float2 uvNeg = texcoord - offset; \
         if (!cutoff || UvInBounds(uvNeg, true)) { \
-            res += SAMPLER_MACRO(tex, smp, uvNeg, 0) * w; \
+            /* w_base (Gauss) * bilateral weight */ \
+            float w = w_base * BIL_GET_W(SAMPLER_MACRO, uvNeg); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvNeg, 0) * w; \
             sum += w; \
         } \
-        float2 uvPos = uv + offset; \
+        \
+        /* Positive direction */ \
+        float2 uvPos = texcoord + offset; \
         if (!cutoff || UvInBounds(uvPos, true)) { \
-            res += SAMPLER_MACRO(tex, smp, uvPos, 0) * w; \
+            float w = w_base * BIL_GET_W(SAMPLER_MACRO, uvPos); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvPos, 0) * w; \
             sum += w; \
         } \
     } \
-    return res / sum;
+    return res / max(sum, 0.0001);
 
-float4 GaussianBlurDynamicXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 GaussianBlurDynamicXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_X_DECL)
 {
-    CORE_GAUSSIAN_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_X_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, kernel, radius)
+    CORE_GAUSSIAN_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_X_LOD)
 }
 
-float4 GaussianBlurDynamic(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 GaussianBlurDynamic(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_DECL)
 {
-    CORE_GAUSSIAN_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, kernel, radius)
+    CORE_GAUSSIAN_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_LOD)
 }
 
 /// @brief Approximates a full 2D Gaussian blur using two 1D passes.
@@ -271,19 +335,19 @@ float4 GaussianBlurDynamic(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 te
 /// @param kernel Gaussian kernel containing weights for 0..radius
 /// @param radius Blur radius
 /// @return Average of horizontal and vertical Gaussian blur passes
-float4 GaussianBlurSeparableApproxXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 GaussianBlurSeparableApproxXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_X_DECL)
 {
     float4 result = (float4)0;
-    result += GaussianBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, kernel, radius);
-    result += GaussianBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, kernel, radius);
+    result += GaussianBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, kernel, radius BIL_ARGS_X_PASS);
+    result += GaussianBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, kernel, radius BIL_ARGS_X_PASS);
     return result * 0.5;
 }
 
-float4 GaussianBlurSeparableApprox(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 GaussianBlurSeparableApprox(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_DECL)
 {
     float4 result = (float4)0;
-    result += GaussianBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, kernel, radius);
-    result += GaussianBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, kernel, radius);
+    result += GaussianBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, kernel, radius BIL_ARGS_PASS);
+    result += GaussianBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, kernel, radius BIL_ARGS_PASS);
     return result * 0.5;
 }
 
@@ -297,31 +361,36 @@ float4 GaussianBlurSeparableApprox(TEXTURE2D_PARAM(BlitTexture, samplerState), f
 /// @param kernel 1D Gaussian kernel
 /// @param radius Kernel radius
 /// @return Normalized weighted sum of all samples in the 2D Gaussian kernel
-#define CORE_GAUSSIAN_2D_LOGIC(SAMPLER_MACRO, tex, smp, uv, texSize, cutoff, kernel, radius) \
+#define CORE_GAUSSIAN_2D_LOGIC(SAMPLER_MACRO) \
     float4 res = 0; \
     float sum = 0; \
+    \
+    BIL_FETCH_CENTER(SAMPLER_MACRO, texcoord) \
+    \
     [loop] \
     for (int y = -radius; y <= radius; ++y) { \
         [loop] \
         for (int x = -radius; x <= radius; ++x) { \
-            float w = kernel[abs(x)] * kernel[abs(y)]; \
-            float2 sampleUV = uv + float2(x, y) * texSize; \
+            float gaussianW = kernel[abs(x)] * kernel[abs(y)]; \
+            float2 sampleUV = texcoord + float2(x, y) * texelSize; \
+            \
             if (!cutoff || UvInBounds(sampleUV, true)) { \
-                res += SAMPLER_MACRO(tex, smp, sampleUV, 0) * w; \
+                float w = gaussianW * BIL_GET_W(SAMPLER_MACRO, sampleUV); \
+                res += SAMPLER_MACRO(BlitTexture, samplerState, sampleUV, 0) * w; \
                 sum += w; \
             } \
         } \
     } \
     return res / max(sum, 0.0001);
 
-float4 GaussianBlur2DXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 GaussianBlur2DXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_X_DECL)
 {
-    CORE_GAUSSIAN_2D_LOGIC(SAMPLE_TEXTURE2D_X_LOD, BlitTexture, samplerState, texcoord, texelSize, cutoff, kernel, radius)
+    CORE_GAUSSIAN_2D_LOGIC(SAMPLE_TEXTURE2D_X_LOD)
 }
 
-float4 GaussianBlur2D(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 GaussianBlur2D(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_DECL)
 {
-    CORE_GAUSSIAN_2D_LOGIC(SAMPLE_TEXTURE2D_LOD, BlitTexture, samplerState, texcoord, texelSize, cutoff, kernel, radius)
+    CORE_GAUSSIAN_2D_LOGIC(SAMPLE_TEXTURE2D_LOD)
 }
 
 /// @brief Applies a 1D tent filter blur along a specified direction.
@@ -334,35 +403,44 @@ float4 GaussianBlur2D(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoor
 /// @param cutoff If true, excludes pixels outside [0,1] UV range
 /// @param radius Blur radius defining kernel size
 /// @return Tent-filtered pixel color along the specified axis
-#define CORE_TENT_BLUR_LOGIC(SAMPLER_MACRO, tex, smp, uv, dir, texSize, cutoff, radius) \
-    float sum = radius + 1; \
-    float4 res = SAMPLER_MACRO(tex, smp, uv, 0) * sum; \
+#define CORE_TENT_BLUR_LOGIC(SAMPLER_MACRO) \
+    float sum = (float)radius + 1.0; \
+    float4 res = SAMPLER_MACRO(BlitTexture, samplerState, texcoord, 0) * sum; \
+    \
+    BIL_FETCH_CENTER(SAMPLER_MACRO, texcoord) \
+    \
     [unroll(BLUR_RADIUS_MAX)] \
     for (int i = 1; i <= BLUR_RADIUS_MAX; ++i) { \
         if (i > radius) break; \
-        float w = radius - i + 1; \
-        float2 offset = dir * float(i) * texSize; \
-        float2 uvNeg = uv - offset; \
+        float w_linear = (float)radius - (float)i + 1.0; \
+        float2 offset = direction * float(i) * texelSize; \
+        \
+        /* Negative direction */ \
+        float2 uvNeg = texcoord - offset; \
         if (!cutoff || UvInBounds(uvNeg, true)) { \
-            res += SAMPLER_MACRO(tex, smp, uvNeg, 0) * w; \
+            float w = w_linear * BIL_GET_W(SAMPLER_MACRO, uvNeg); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvNeg, 0) * w; \
             sum += w; \
         } \
-        float2 uvPos = uv + offset; \
+        \
+        /* Positive direction */ \
+        float2 uvPos = texcoord + offset; \
         if (!cutoff || UvInBounds(uvPos, true)) { \
-            res += SAMPLER_MACRO(tex, smp, uvPos, 0) * w; \
+            float w = w_linear * BIL_GET_W(SAMPLER_MACRO, uvPos); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvPos, 0) * w; \
             sum += w; \
         } \
     } \
-    return res / sum;
+    return res / max(sum, 0.0001);
 
-float4 TentBlurXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius)
+float4 TentBlurXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
-    CORE_TENT_BLUR_LOGIC(SAMPLE_TEXTURE2D_X_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, radius)
+    CORE_TENT_BLUR_LOGIC(SAMPLE_TEXTURE2D_X_LOD)
 }
 
-float4 TentBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius)
+float4 TentBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_DECL)
 {
-    CORE_TENT_BLUR_LOGIC(SAMPLE_TEXTURE2D_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, radius)
+    CORE_TENT_BLUR_LOGIC(SAMPLE_TEXTURE2D_LOD)
 }
 
 /// @brief Applies a 1D tent filter blur along a specified direction.
@@ -375,34 +453,43 @@ float4 TentBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, flo
 /// @param cutoff If true, excludes pixels outside [0,1] UV range
 /// @param radius Blur radius defining kernel size
 /// @return Tent-filtered pixel color along the specified axis
-#define CORE_TENT_DYNAMIC_LOGIC(SAMPLER_MACRO, tex, smp, uv, dir, texSize, cutoff, radius) \
+#define CORE_TENT_DYNAMIC_LOGIC(SAMPLER_MACRO) \
     float sum = (float)radius + 1.0; \
-    float4 res = SAMPLER_MACRO(tex, smp, uv, 0) * sum; \
+    float4 res = SAMPLER_MACRO(BlitTexture, samplerState, texcoord, 0) * sum; \
+    \
+    BIL_FETCH_CENTER(SAMPLER_MACRO, texcoord) \
+    \
     [loop] \
     for (int i = 1; i <= radius; ++i) { \
-        float w = (float)radius - (float)i + 1.0; \
-        float2 offset = dir * (float)i * texSize; \
-        float2 uvNeg = uv - offset; \
+        float w_linear = (float)radius - (float)i + 1.0; \
+        float2 offset = direction * (float)i * texelSize; \
+        \
+        /* Negative direction */ \
+        float2 uvNeg = texcoord - offset; \
         if (!cutoff || UvInBounds(uvNeg, true)) { \
-            res += SAMPLER_MACRO(tex, smp, uvNeg, 0) * w; \
+            float w = w_linear * BIL_GET_W(SAMPLER_MACRO, uvNeg); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvNeg, 0) * w; \
             sum += w; \
         } \
-        float2 uvPos = uv + offset; \
+        \
+        /* Positive direction */ \
+        float2 uvPos = texcoord + offset; \
         if (!cutoff || UvInBounds(uvPos, true)) { \
-            res += SAMPLER_MACRO(tex, smp, uvPos, 0) * w; \
+            float w = w_linear * BIL_GET_W(SAMPLER_MACRO, uvPos); \
+            res += SAMPLER_MACRO(BlitTexture, samplerState, uvPos, 0) * w; \
             sum += w; \
         } \
     } \
-    return res / sum;
+    return res / max(sum, 0.0001);
 
-float4 TentBlurDynamicXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius)
+float4 TentBlurDynamicXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
-    CORE_TENT_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_X_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, radius)
+    CORE_TENT_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_X_LOD)
 }
 
-float4 TentBlurDynamic(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius)
+float4 TentBlurDynamic(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_DECL)
 {
-    CORE_TENT_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_LOD, BlitTexture, samplerState, texcoord, direction, texelSize, cutoff, radius)
+    CORE_TENT_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_LOD)
 }
 
 /// @brief Applies a separable approximation of a 2D tent blur.
@@ -414,19 +501,19 @@ float4 TentBlurDynamic(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoo
 /// @param cutoff If true, excludes samples outside [0,1] UV
 /// @param radius Tent blur radius
 /// @return Average of horizontal and vertical tent blur passes
-float4 TentBlurSeparableApproxXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 TentBlurSeparableApproxXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
     float4 result = (float4)0;
-    result += TentBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, radius);
-    result += TentBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, radius);
+    result += TentBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, radius BIL_ARGS_X_PASS);
+    result += TentBlurDynamicXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, radius BIL_ARGS_X_PASS);
     return result * 0.5;
 }
 
-float4 TentBlurSeparableApprox(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 TentBlurSeparableApprox(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_DECL)
 {
     float4 result = (float4)0;
-    result += TentBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, radius);
-    result += TentBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, radius);
+    result += TentBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(1, 0), texelSize, cutoff, radius BIL_ARGS_PASS);
+    result += TentBlurDynamic(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, float2(0, 1), texelSize, cutoff, radius BIL_ARGS_PASS);
     return result * 0.5;
 }
 
@@ -439,32 +526,37 @@ float4 TentBlurSeparableApprox(TEXTURE2D_PARAM(BlitTexture, samplerState), float
 /// @param cutoff If true, discards samples outside [0,1] UV
 /// @param radius Blur radius defining kernel extent
 /// @return Normalized tent-filtered pixel color using a 2D kernel
-#define CORE_TENT_2D_LOGIC(SAMPLER_MACRO, tex, smp, uv, texSize, cutoff, radius) \
+#define CORE_TENT_2D_LOGIC(SAMPLER_MACRO) \
     float4 res = (float4)0; \
     float sum = 0.0; \
+    \
+    BIL_FETCH_CENTER(SAMPLER_MACRO, texcoord) \
+    \
     [loop] \
     for (int y = -radius; y <= radius; ++y) { \
         [loop] \
         for (int x = -radius; x <= radius; ++x) { \
-            float w = (float)((radius + 1) - max(abs(x), abs(y))); \
-            w = max(w, 0.0); \
-            float2 sampleUV = uv + float2(x, y) * texSize; \
+            float w_tent = (float)((radius + 1) - max(abs(x), abs(y))); \
+            w_tent = max(w_tent, 0.0); \
+            \
+            float2 sampleUV = texcoord + float2(x, y) * texelSize; \
             if (!cutoff || UvInBounds(sampleUV, true)) { \
-                res += SAMPLER_MACRO(tex, smp, sampleUV, 0) * w; \
+                float w = w_tent * BIL_GET_W(SAMPLER_MACRO, sampleUV); \
+                res += SAMPLER_MACRO(BlitTexture, samplerState, sampleUV, 0) * w; \
                 sum += w; \
             } \
         } \
     } \
     return res / max(sum, 0.0001);
 
-float4 TentBlur2DXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 TentBlur2DXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
-    CORE_TENT_2D_LOGIC(SAMPLE_TEXTURE2D_X_LOD, BlitTexture, samplerState, texcoord, texelSize, cutoff, radius)
+    CORE_TENT_2D_LOGIC(SAMPLE_TEXTURE2D_X_LOD)
 }
 
-float4 TentBlur2D(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 TentBlur2D(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_DECL)
 {
-    CORE_TENT_2D_LOGIC(SAMPLE_TEXTURE2D_LOD, BlitTexture, samplerState, texcoord, texelSize, cutoff, radius)
+    CORE_TENT_2D_LOGIC(SAMPLE_TEXTURE2D_LOD)
 }
 
 /// @brief Applies a Kawase blur, an efficient multi-tap downsample-style blur.
@@ -477,37 +569,40 @@ float4 TentBlur2D(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, f
 /// @param cutoff If true, ignores samples outside [0,1] UV
 /// @param radius Number of passes; higher values increase blur spread
 /// @return Kawase-blurred pixel color
-#define CORE_KAWASE_BLUR_LOGIC(SAMPLER_MACRO, tex, smp, uv, texSize, cutoff, radius) \
+#define CORE_KAWASE_BLUR_LOGIC(SAMPLER_MACRO) \
     float4 res = 0; \
     float totalW = 0; \
+    const float2 offsets[4] = { float2(1, 1), float2(-1, 1), float2(1, -1), float2(-1, -1) }; \
+    \
+    BIL_FETCH_CENTER(SAMPLER_MACRO, texcoord) \
+    \
     [unroll(BLUR_RADIUS_MAX)] \
     for (int i = 0; i <= BLUR_RADIUS_MAX; ++i) { \
         if (i > radius) break; \
-        float passW = 1.0 / (i + 1.0); \
-        float2 scaledTexel = texSize * (i + 1); \
-        float2 offsets[4] = { \
-            float2(1, 1), float2(-1, 1), \
-            float2(1, -1), float2(-1, -1) \
-        }; \
+        float passW = 1.0 / (float(i) + 1.0); \
+        float2 scaledTexel = texelSize * (float(i) + 1.0); \
+        \
         [unroll] \
         for (int j = 0; j < 4; ++j) { \
-            float2 sampleUV = uv + offsets[j] * scaledTexel; \
+            float2 sampleUV = texcoord + offsets[j] * scaledTexel; \
             if (!cutoff || UvInBounds(sampleUV, true)) { \
-                res += SAMPLER_MACRO(tex, smp, sampleUV, 0) * passW; \
-                totalW += passW; \
+                /* Apply bilateral weight modulation */ \
+                float w = passW * BIL_GET_W(SAMPLER_MACRO, sampleUV); \
+                res += SAMPLER_MACRO(BlitTexture, samplerState, sampleUV, 0) * w; \
+                totalW += w; \
             } \
         } \
     } \
     return res / max(totalW, 1e-5);
 
-float4 KawaseBlurXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 KawaseBlurXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
-    CORE_KAWASE_BLUR_LOGIC(SAMPLE_TEXTURE2D_X_LOD, BlitTexture, samplerState, texcoord, texelSize, cutoff, radius)
+    CORE_KAWASE_BLUR_LOGIC(SAMPLE_TEXTURE2D_X_LOD)
 }
 
-float4 KawaseBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 KawaseBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_DECL)
 {
-    CORE_KAWASE_BLUR_LOGIC(SAMPLE_TEXTURE2D_LOD, BlitTexture, samplerState, texcoord, texelSize, cutoff, radius)
+    CORE_KAWASE_BLUR_LOGIC(SAMPLE_TEXTURE2D_LOD)
 }
 
 /// @brief Applies a Kawase blur, an efficient multi-tap downsample-style blur.
@@ -520,36 +615,39 @@ float4 KawaseBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, f
 /// @param cutoff If true, ignores samples outside [0,1] UV
 /// @param radius Number of passes; higher values increase blur spread
 /// @return Kawase-blurred pixel color
-#define CORE_KAWASE_DYNAMIC_LOGIC(SAMPLER_MACRO, tex, smp, uv, texSize, cutoff, radius) \
+#define CORE_KAWASE_DYNAMIC_LOGIC(SAMPLER_MACRO) \
     float4 res = 0; \
     float totalW = 0; \
-    const float2 off[4] = { \
-        float2(1, 1), float2(-1, 1), \
-        float2(1, -1), float2(-1, -1) \
-    }; \
+    const float2 off[4] = { float2(1, 1), float2(-1, 1), float2(1, -1), float2(-1, -1) }; \
+    \
+    BIL_FETCH_CENTER(SAMPLER_MACRO, texcoord) \
+    \
     [loop] \
     for (int i = 0; i <= radius; ++i) { \
-        float passW = 1.0 / (float(i) + 1.0); \
-        float2 scaledTexel = texSize * (float(i) + 1.0); \
+        float passW_base = 1.0 / (float(i) + 1.0); \
+        float2 scaledTexel = texelSize * (float(i) + 1.0); \
+        \
         [unroll] \
         for (int j = 0; j < 4; ++j) { \
-            float2 sampleUV = uv + off[j] * scaledTexel; \
+            float2 sampleUV = texcoord + off[j] * scaledTexel; \
             if (!cutoff || UvInBounds(sampleUV, true)) { \
-                res += SAMPLER_MACRO(tex, smp, sampleUV, 0) * passW; \
-                totalW += passW; \
+                /* Combine Kawase pass weight with bilateral depth weight */ \
+                float w = passW_base * BIL_GET_W(SAMPLER_MACRO, sampleUV); \
+                res += SAMPLER_MACRO(BlitTexture, samplerState, sampleUV, 0) * w; \
+                totalW += w; \
             } \
         } \
     } \
     return res / max(totalW, 1e-5);
 
-float4 KawaseBlurDynamicXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 KawaseBlurDynamicXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
-    CORE_KAWASE_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_X_LOD, BlitTexture, samplerState, texcoord, texelSize, cutoff, radius)
+    CORE_KAWASE_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_X_LOD)
 }
 
-float4 KawaseBlurDynamic(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius)
+float4 KawaseBlurDynamic(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, float2 texelSize, bool cutoff, int radius BIL_ARGS_DECL)
 {
-    CORE_KAWASE_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_LOD, BlitTexture, samplerState, texcoord, texelSize, cutoff, radius)
+    CORE_KAWASE_DYNAMIC_LOGIC(SAMPLE_TEXTURE2D_LOD)
 }
 
 /// @brief Applies a 1D directional blur in the given direction using the selected blur mode.
@@ -563,18 +661,18 @@ float4 KawaseBlurDynamic(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texc
 /// @param kernel Kernel used for Gaussian blur (ignored for other modes)
 /// @param radius Blur radius / number of samples
 /// @return Blurred pixel along the specified direction
-#define CORE_DIRECTIONAL_BLUR_LOGIC(ARGS_MACRO, SAMPLE_MACRO, BOX_F, GAUSS_F, TENT_F, tex, smp, uv, dir, mode, texSize, cutoff, kernel, radius) \
+#define CORE_DIRECTIONAL_BLUR_LOGIC(ARGS_MACRO, SAMPLE_MACRO, BOX_F, GAUSS_F, TENT_F, tex, smp, uv, dir, mode, texSize, cutoff, kernel, radius, BIL_ARGS_INJECTION) \
     float4 res = (float4)0; \
     [branch] \
     switch (mode) { \
         case 1: \
-            res = BOX_F(ARGS_MACRO(tex, smp), uv, dir, texSize, cutoff, radius); \
+            res = BOX_F(ARGS_MACRO(tex, smp), uv, dir, texSize, cutoff, radius BIL_ARGS_INJECTION); \
             break; \
         case 2: \
-            res = GAUSS_F(ARGS_MACRO(tex, smp), uv, dir, texSize, cutoff, kernel, radius); \
+            res = GAUSS_F(ARGS_MACRO(tex, smp), uv, dir, texSize, cutoff, kernel, radius BIL_ARGS_INJECTION); \
             break; \
         case 3: \
-            res = TENT_F(ARGS_MACRO(tex, smp), uv, dir, texSize, cutoff, radius); \
+            res = TENT_F(ARGS_MACRO(tex, smp), uv, dir, texSize, cutoff, radius BIL_ARGS_INJECTION); \
             break; \
         default: \
             res = SAMPLE_MACRO(tex, smp, uv, 0); \
@@ -582,14 +680,14 @@ float4 KawaseBlurDynamic(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texc
     } \
     return res;
 
-float4 DirectionalBlurXR(TEXTURE2D_X_PARAM( BlitTexture, samplerState), float2 texcoord, float2 direction, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 DirectionalBlurXR(TEXTURE2D_X_PARAM( BlitTexture, samplerState), float2 texcoord, float2 direction, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_X_DECL)
 {
-    CORE_DIRECTIONAL_BLUR_LOGIC(TEXTURE2D_X_ARGS, SAMPLE_TEXTURE2D_X_LOD, BoxBlurDynamicXR, GaussianBlurDynamicXR, TentBlurDynamicXR, BlitTexture, samplerState, texcoord, direction, blurMode, texelSize, cutoff, kernel, radius)
+    CORE_DIRECTIONAL_BLUR_LOGIC(TEXTURE2D_X_ARGS, SAMPLE_TEXTURE2D_X_LOD, BoxBlurDynamicXR, GaussianBlurDynamicXR, TentBlurDynamicXR, BlitTexture, samplerState, texcoord, direction, blurMode, texelSize, cutoff, kernel, radius, BIL_ARGS_X_PASS)
 }
 
-float4 DirectionalBlur(TEXTURE2D_PARAM( BlitTexture, samplerState), float2 texcoord, float2 direction, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 DirectionalBlur(TEXTURE2D_PARAM( BlitTexture, samplerState), float2 texcoord, float2 direction, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_DECL)
 {
-    CORE_DIRECTIONAL_BLUR_LOGIC(TEXTURE2D_ARGS, SAMPLE_TEXTURE2D_LOD, BoxBlurDynamic, GaussianBlurDynamic, TentBlurDynamic, BlitTexture, samplerState, texcoord, direction, blurMode, texelSize, cutoff, kernel, radius)
+    CORE_DIRECTIONAL_BLUR_LOGIC(TEXTURE2D_ARGS, SAMPLE_TEXTURE2D_LOD, BoxBlurDynamic, GaussianBlurDynamic, TentBlurDynamic, BlitTexture, samplerState, texcoord, direction, blurMode, texelSize, cutoff, kernel, radius, BIL_ARGS_PASS)
 }
 
 /// @brief Performs a separable 1D blur approximation along horizontal or vertical axis.
@@ -602,21 +700,21 @@ float4 DirectionalBlur(TEXTURE2D_PARAM( BlitTexture, samplerState), float2 texco
 /// @param kernel Gaussian kernel weights
 /// @param radius Blur radius
 /// @return Approximate separable blurred color
-#define CORE_SEPARABLE_BLUR_LOGIC(ARGS_MACRO, SAMPLE_MACRO, BOX_S, GAUSS_S, TENT_S, KAWASE, tex, smp, uv, mode, texSize, cutoff, kernel, radius) \
+#define CORE_SEPARABLE_BLUR_LOGIC(ARGS_MACRO, SAMPLE_MACRO, BOX_S, GAUSS_S, TENT_S, KAWASE, tex, smp, uv, mode, texSize, cutoff, kernel, radius, BIL_ARGS_INJECTION) \
     float4 res = (float4)0; \
     [branch] \
     switch (mode) { \
         case 1: \
-            res = BOX_S(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius); \
+            res = BOX_S(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius BIL_ARGS_INJECTION); \
             break; \
         case 2: \
-            res = GAUSS_S(ARGS_MACRO(tex, smp), uv, texSize, cutoff, kernel, radius); \
+            res = GAUSS_S(ARGS_MACRO(tex, smp), uv, texSize, cutoff, kernel, radius BIL_ARGS_INJECTION); \
             break; \
         case 3: \
-            res = TENT_S(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius); \
+            res = TENT_S(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius BIL_ARGS_INJECTION); \
             break; \
         case 4: \
-            res = KAWASE(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius); \
+            res = KAWASE(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius BIL_ARGS_INJECTION); \
             break; \
         default: \
             res = SAMPLE_MACRO(tex, smp, uv, 0); \
@@ -624,14 +722,14 @@ float4 DirectionalBlur(TEXTURE2D_PARAM( BlitTexture, samplerState), float2 texco
     } \
     return res;
 
-float4 SeparableBlurApproxXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 SeparableBlurApproxXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_X_DECL)
 {
-    CORE_SEPARABLE_BLUR_LOGIC(TEXTURE2D_X_ARGS, SAMPLE_TEXTURE2D_X_LOD, BoxBlurSeparableApproxXR, GaussianBlurSeparableApproxXR, TentBlurSeparableApproxXR, KawaseBlurDynamicXR, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius)
+    CORE_SEPARABLE_BLUR_LOGIC(TEXTURE2D_X_ARGS, SAMPLE_TEXTURE2D_X_LOD, BoxBlurSeparableApproxXR, GaussianBlurSeparableApproxXR, TentBlurSeparableApproxXR, KawaseBlurDynamicXR, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius, BIL_ARGS_X_PASS)
 }
 
-float4 SeparableBlurApprox(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 SeparableBlurApprox(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_DECL)
 {
-    CORE_SEPARABLE_BLUR_LOGIC(TEXTURE2D_ARGS, SAMPLE_TEXTURE2D_LOD, BoxBlurSeparableApprox, GaussianBlurSeparableApprox, TentBlurSeparableApprox, KawaseBlurDynamic, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius)
+    CORE_SEPARABLE_BLUR_LOGIC(TEXTURE2D_ARGS, SAMPLE_TEXTURE2D_LOD, BoxBlurSeparableApprox, GaussianBlurSeparableApprox, TentBlurSeparableApprox, KawaseBlurDynamic, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius, BIL_ARGS_PASS)
 }
 
 /// @brief Performs a full 2D convolution blur.
@@ -644,21 +742,21 @@ float4 SeparableBlurApprox(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 te
 /// @param kernel Kernel for Gaussian blur
 /// @param radius Blur radius
 /// @return Fully 2D blurred color
-#define CORE_BLUR_2D_LOGIC(ARGS_MACRO, SAMPLE_MACRO, BOX_2D, GAUSS_2D, TENT_2D, KAWASE_FUNC, tex, smp, uv, mode, texSize, cutoff, kernel, radius) \
+#define CORE_BLUR_2D_LOGIC(ARGS_MACRO, SAMPLE_MACRO, BOX_2D, GAUSS_2D, TENT_2D, KAWASE_FUNC, tex, smp, uv, mode, texSize, cutoff, kernel, radius, BIL_ARGS_INJECTION) \
     float4 res = (float4)0; \
     [branch] \
     switch (mode) { \
         case 1: \
-            res = BOX_2D(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius); \
+            res = BOX_2D(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius BIL_ARGS_INJECTION); \
             break; \
         case 2: \
-            res = GAUSS_2D(ARGS_MACRO(tex, smp), uv, texSize, cutoff, kernel, radius); \
+            res = GAUSS_2D(ARGS_MACRO(tex, smp), uv, texSize, cutoff, kernel, radius BIL_ARGS_INJECTION); \
             break; \
         case 3: \
-            res = TENT_2D(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius); \
+            res = TENT_2D(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius BIL_ARGS_INJECTION); \
             break; \
         case 4: \
-            res = KAWASE_FUNC(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius); \
+            res = KAWASE_FUNC(ARGS_MACRO(tex, smp), uv, texSize, cutoff, radius BIL_ARGS_INJECTION); \
             break; \
         default: \
             res = SAMPLE_MACRO(tex, smp, uv, 0); \
@@ -666,14 +764,14 @@ float4 SeparableBlurApprox(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 te
     } \
     return res;
 
-float4 Blur2DXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 Blur2DXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_X_DECL)
 {
-    CORE_BLUR_2D_LOGIC(TEXTURE2D_X_ARGS, SAMPLE_TEXTURE2D_X_LOD, BoxBlur2dXR, GaussianBlur2DXR, TentBlur2DXR, KawaseBlurDynamicXR, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius)
+    CORE_BLUR_2D_LOGIC(TEXTURE2D_X_ARGS, SAMPLE_TEXTURE2D_X_LOD, BoxBlur2dXR, GaussianBlur2DXR, TentBlur2DXR, KawaseBlurDynamicXR, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius, BIL_ARGS_X_PASS)
 }
 
-float4 Blur2D(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 Blur2D(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_DECL)
 {
-    CORE_BLUR_2D_LOGIC(TEXTURE2D_ARGS, SAMPLE_TEXTURE2D_LOD, BoxBlur2d, GaussianBlur2D, TentBlur2D, KawaseBlurDynamic, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius)
+    CORE_BLUR_2D_LOGIC(TEXTURE2D_ARGS, SAMPLE_TEXTURE2D_LOD, BoxBlur2d, GaussianBlur2D, TentBlur2D, KawaseBlurDynamic, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius, BIL_ARGS_PASS)
 }
 
 /// @brief Applies a radial blur centered on the screen origin.
@@ -686,20 +784,20 @@ float4 Blur2D(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, int b
 /// @param kernel Gaussian kernel weights
 /// @param radius Number of samples
 /// @return Radially blurred color
-#define CORE_RADIAL_BLUR_LOGIC(ARGS_MACRO, SAMPLE_MACRO, BOX_F, GAUSS_F, TENT_F, tex, smp, uv, mode, texSize, cutoff, kernel, radius) \
+#define CORE_RADIAL_BLUR_LOGIC(ARGS_MACRO, SAMPLE_MACRO, BOX_F, GAUSS_F, TENT_F, tex, smp, uv, mode, texSize, cutoff, kernel, radius, BIL_ARGS_INJECTION) \
     /* Calculate direction vector from center (0.5, 0.5) to current UV */ \
     float2 direction = uv * 2.0 - 1.0; \
     float4 res = (float4)0; \
     [branch] \
     switch (mode) { \
         case 1: \
-            res = BOX_F(ARGS_MACRO(tex, smp), uv, direction, texSize, cutoff, radius); \
+            res = BOX_F(ARGS_MACRO(tex, smp), uv, direction, texSize, cutoff, radius BIL_ARGS_INJECTION); \
             break; \
         case 2: \
-            res = GAUSS_F(ARGS_MACRO(tex, smp), uv, direction, texSize, cutoff, kernel, radius); \
+            res = GAUSS_F(ARGS_MACRO(tex, smp), uv, direction, texSize, cutoff, kernel, radius BIL_ARGS_INJECTION); \
             break; \
         case 3: \
-            res = TENT_F(ARGS_MACRO(tex, smp), uv, direction, texSize, cutoff, radius); \
+            res = TENT_F(ARGS_MACRO(tex, smp), uv, direction, texSize, cutoff, radius BIL_ARGS_INJECTION); \
             break; \
         default: \
             res = SAMPLE_MACRO(tex, smp, uv, 0); \
@@ -707,14 +805,14 @@ float4 Blur2D(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, int b
     } \
     return res; \
 
-float4 RadialBlurXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 RadialBlurXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_X_DECL)
 {
-    CORE_RADIAL_BLUR_LOGIC(TEXTURE2D_X_ARGS, SAMPLE_TEXTURE2D_X_LOD, BoxBlurXR, GaussianBlurXR, TentBlurXR, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius)
+    CORE_RADIAL_BLUR_LOGIC(TEXTURE2D_X_ARGS, SAMPLE_TEXTURE2D_X_LOD, BoxBlurXR, GaussianBlurXR, TentBlurXR, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius, BIL_ARGS_X_PASS)
 }
 
-float4 RadialBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius)
+float4 RadialBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, int blurMode, float2 texelSize, bool cutoff, float kernel[BLUR_BUFFER_SIZE], int radius BIL_ARGS_DECL)
 {
-    CORE_RADIAL_BLUR_LOGIC(TEXTURE2D_ARGS, SAMPLE_TEXTURE2D_LOD, BoxBlur, GaussianBlur, TentBlur, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius)
+    CORE_RADIAL_BLUR_LOGIC(TEXTURE2D_ARGS, SAMPLE_TEXTURE2D_LOD, BoxBlur, GaussianBlur, TentBlur, BlitTexture, samplerState, texcoord, blurMode, texelSize, cutoff, kernel, radius, BIL_ARGS_PASS)
 }
 
 /// @brief Applies a band-pass filter isolating mid-frequency image details.
@@ -731,17 +829,17 @@ float4 RadialBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, i
 /// @param longKernel Kernel for long-radius blur
 /// @param longRadius Radius of the long blur
 /// @return float3 containing mid-frequency (band-pass) filtered result
-float3 BandPassXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), int blurMode, float2 texcoord, float2 texelSize, float shortKernel[BLUR_BUFFER_SIZE], int shortRadius, float longKernel[BLUR_BUFFER_SIZE], int longRadius)
+float3 BandPassXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), int blurMode, float2 texcoord, float2 texelSize, float shortKernel[BLUR_BUFFER_SIZE], int shortRadius, float longKernel[BLUR_BUFFER_SIZE], int longRadius BIL_ARGS_X_DECL)
 {
-    float3 blurShort = SeparableBlurApproxXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, blurMode, texelSize, true, shortKernel, shortRadius).rgb;
-    float3 blurLong = SeparableBlurApproxXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, blurMode, texelSize, true, longKernel, longRadius).rgb;
+    float3 blurShort = SeparableBlurApproxXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, blurMode, texelSize, true, shortKernel, shortRadius BIL_ARGS_X_PASS).rgb;
+    float3 blurLong = SeparableBlurApproxXR(TEXTURE2D_X_ARGS(BlitTexture, samplerState), texcoord, blurMode, texelSize, true, longKernel, longRadius BIL_ARGS_X_PASS).rgb;
     return max((float3)0, blurShort - blurLong);
 }
 
-float3 BandPass(TEXTURE2D_PARAM(BlitTexture, samplerState), int blurMode, float2 texcoord, float2 texelSize, float shortKernel[BLUR_BUFFER_SIZE], int shortRadius, float longKernel[BLUR_BUFFER_SIZE], int longRadius)
+float3 BandPass(TEXTURE2D_PARAM(BlitTexture, samplerState), int blurMode, float2 texcoord, float2 texelSize, float shortKernel[BLUR_BUFFER_SIZE], int shortRadius, float longKernel[BLUR_BUFFER_SIZE], int longRadius BIL_ARGS_DECL)
 {
-    float3 blurShort = SeparableBlurApprox(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, blurMode, texelSize, true, shortKernel, shortRadius).rgb;
-    float3 blurLong = SeparableBlurApprox(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, blurMode, texelSize, true, longKernel, longRadius).rgb;
+    float3 blurShort = SeparableBlurApprox(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, blurMode, texelSize, true, shortKernel, shortRadius BIL_ARGS_PASS).rgb;
+    float3 blurLong = SeparableBlurApprox(TEXTURE2D_ARGS(BlitTexture, samplerState), texcoord, blurMode, texelSize, true, longKernel, longRadius BIL_ARGS_PASS).rgb;
     
     return max((float3)0, blurShort - blurLong);
 }
