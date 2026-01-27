@@ -124,6 +124,7 @@ float3 MinMaxClamp(float3 inputColor, float4 neighborhood[9], float scale)
 /// @return The resulting color after applying the selected clamping or damping mode.
 float3 ApplyColorClamping(float3 inputColor, float4 neighborhood[9], int mode, float scale)
 {
+    [branch]
     switch (mode)
     {
         default:
