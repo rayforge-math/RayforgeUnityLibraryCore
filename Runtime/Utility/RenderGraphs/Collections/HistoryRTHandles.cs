@@ -16,7 +16,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
     /// Optional user-defined context passed to the allocation function. Useful for providing external resources,
     /// a render graph context, or any other data required during allocation without capturing from the surrounding scope.
     /// </typeparam>
-    public class HistoryRTHandles<TData> : HistoryHandles<RTHandle>
+    public class HistoryRTHandles<TData> : HistoryHandles<RTHandle>, IDisposable
     {
         /// <summary>
         /// Function signature for creating or reallocating a texture handle.
@@ -66,6 +66,23 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         public HistoryRTHandles(TextureReAllocFunction reAllocFunc, string handleName)
             : this(reAllocFunc, null, null, handleName)
         { }
+
+        /// <summary>
+        /// Releases all allocated RTHandles and clears the internal collection.
+        /// Should be called when the owner (e.g., RenderPass or Feature) is disposed to prevent memory leaks.
+        /// </summary>
+        public void Dispose()
+        {
+            if (m_Handles == null) return;
+
+            foreach (var handle in m_Handles)
+            {
+                if (handle != null)
+                {
+                    handle.Release();
+                }
+            }
+        }
 
         /// <summary>
         /// Allocates or reallocates both ping-pong handles if needed based on the provided descriptor.

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "./Sampling.hlsl"
-#include "./Texture.hlsl"
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 

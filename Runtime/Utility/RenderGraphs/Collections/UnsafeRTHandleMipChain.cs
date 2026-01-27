@@ -27,7 +27,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
     /// Optional user data passed to the texture creation function, useful for passing context
     /// or resources needed during RenderGraph allocation.
     /// </typeparam>
-    public class UnsafeRTHandleMipChain<TData> : UnsafeMipChain<RTHandle, TData>
+    public class UnsafeRTHandleMipChain<TData> : UnsafeMipChain<RTHandle, TData>, IDisposable
     {
         /// <summary>
         /// Initializes a mip chain with a texture creation function.

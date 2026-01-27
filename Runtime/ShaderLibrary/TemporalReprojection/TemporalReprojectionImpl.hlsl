@@ -19,12 +19,12 @@
 /// @param historySampler Sampler state for the texture.
 /// @param uv UV coordinates in [0,1].
 /// @return The sampled color from the history texture, or zero if UV is invalid.
-float4 SampleHistory(TEXTURE2D_PARAM(historyTexture, historySampler), float2 uv)
+float4 SampleHistoryXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float2 uv)
 {
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-        return float4(0,0,0,0);
+        return float4(0, 0, 0, 0);
     
-    return SAMPLE_TEXTURE2D_X(historyTexture, historySampler, uv);
+    return SAMPLE_TEXTURE2D_X_LOD(historyTexture, historySampler, uv, 0);
 }
 
 /// @brief Samples a history texture using motion vectors to offset the current UV coordinates.
@@ -34,10 +34,10 @@ float4 SampleHistory(TEXTURE2D_PARAM(historyTexture, historySampler), float2 uv)
 /// @param currentUV Current frame UV coordinates.
 /// @param motionVector Motion vector to reproject the UV into the previous frame. Usually retrieved from the combined camera + object motion.
 /// @return The sampled color from the history texture at the reprojected position.
-float4 SampleHistoryMotionVectors(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float2 motionVector)
+float4 SampleHistoryMotionVectorsXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float2 currentUV, float2 motionVector)
 {
     float2 uv = currentUV - DecodeMotionVector(motionVector) - (_TAA_Jitter - _TAA_JitterPrev);
-    return SampleHistory(historyTexture, historySampler, uv);
+    return SampleHistoryXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), uv);
 }
 
 /// @brief Samples a history texture by projecting a world-space position into the previous frame.
@@ -47,18 +47,21 @@ float4 SampleHistoryMotionVectors(TEXTURE2D_PARAM(historyTexture, historySampler
 /// @param historySampler Sampler state for the texture.
 /// @param worldPos World-space position to reproject into the previous frame. Usually reconstructed from depth buffer.
 /// @return The sampled color from the history texture, or zero if the projected pixel is invalid.
-float4 SampleHistoryWorldPos(TEXTURE2D_PARAM(historyTexture, historySampler), float3 worldPos)
+float4 SampleHistoryWorldPosXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float3 worldPos)
 {
     float4 clipPrev = mul(_Rayforge_Matrix_Prev_VP, float4(worldPos, 1.0));
 
-    // If w is very small or negative, pixel is invalid (was behind camera)
-    if (clipPrev.w <= 0.0f)
-        return float4(0,0,0,0);
+    if (clipPrev.w <= 0.0001f)
+        return float4(0, 0, 0, 0);
 
     float2 ndcPrev = clipPrev.xy / clipPrev.w;
     float2 uv = ndcPrev * 0.5 + 0.5;
 
-    return SampleHistory(historyTexture, historySampler, uv);
+    #if UNITY_UV_STARTS_AT_TOP
+        uv.y = 1.0 - uv.y;
+    #endif
+
+    return SampleHistoryXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), uv);
 }
 
 /// @brief Determines whether a previous frame sample should be rejected based on depth difference. Useful to avoid blending history across surfaces at different depths, reducing ghosting.
@@ -101,10 +104,10 @@ float3 Blend(float3 current, float3 previous, float historyWeight)
 /// Unity motion vectors are based on unjittered projection matrices.
 /// @param history Output: The reprojected history color from the previous frame, including
 /// depth information typically stored in the alpha channel.
-void SetupMotionVectorPipeline(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, out float2 motionVector, out float4 history)
+void SetupMotionVectorPipelineXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float2 currentUV, out float2 motionVector, out float4 history)
 {
-    motionVector = SAMPLE_TEXTURE2D_X(_TAA_MotionVectorTexture, sampler_TAA_MotionVectorTexture, currentUV).rg;
-    history = SampleHistoryMotionVectors(historyTexture, historySampler, currentUV, motionVector);
+    motionVector = SAMPLE_TEXTURE2D_X_LOD(_TAA_MotionVectorTexture, sampler_TAA_MotionVectorTexture, currentUV, 0).rg;
+    history = SampleHistoryMotionVectorsXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, motionVector);
 }
 
 /// @brief Reconstructs the world-space position of the current pixel using its UV
@@ -130,10 +133,10 @@ float3 ReconstructWorldPos(float2 uv, float depth)
 /// @param currentUV The UV coordinate of the current pixel in the current frame.
 /// @param depth The non-linear depth value for the current pixel, sampled from the current depth buffer.
 /// @param history Output: The history sample reprojected using world-space position lookup, including stored depth in the alpha channel.
-void SetupWorldPosPipeline(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float depth, out float4 history)
+void SetupWorldPosPipelineXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float2 currentUV, float depth, out float4 history)
 {
     float3 worldPos = ReconstructWorldPos(currentUV, depth);
-    history = SampleHistoryWorldPos(historyTexture, historySampler, worldPos);
+    history = SampleHistoryWorldPosXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), worldPos);
 }
 
 /// @brief Determines whether the given motion vector indicates noticeable motion.
@@ -148,9 +151,9 @@ bool HasMotion(float2 motionVector)
 /// to linear 0–1 depth using the global z-buffer parameters.
 /// @param uv UV coordinates to sample at.
 /// @return Linear depth in the range [0,1].
-float SampleLinear01Depth(float2 uv)
+float SampleLinear01DepthXR(float2 uv)
 {
-    float rawDepth = SAMPLE_TEXTURE2D_X(_TAA_DepthTexture, sampler_TAA_DepthTexture, uv).r;
+    float rawDepth = SAMPLE_TEXTURE2D_X_LOD(_TAA_DepthTexture, sampler_TAA_DepthTexture, uv, 0).r;
     return Linear01Depth(rawDepth, _ZBufferParams);
 }
 
@@ -197,15 +200,15 @@ void SetupVelocityDisocclusion(float2 motionVector, float threshold, float scale
 /// @param params Reprojection settings controlling depth rejection, velocity disocclusion,
 /// history weighting, and optional color clamping mode.
 /// @return The blended color result, combining the current color and reprojected history.
-float4 BlendHistoryMotionVectors(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float3 currentColor, ReprojectionParams params)
+float4 BlendHistoryMotionVectorsXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float2 currentUV, float3 currentColor, ReprojectionParams params)
 {
     float4 result = (float4) 0;
 
     float2 motionVector;
     float4 history;
-    SetupMotionVectorPipeline(historyTexture, historySampler, currentUV, motionVector, history);
+    SetupMotionVectorPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, motionVector, history);
     
-    float currentDepth = SampleLinear01Depth(currentUV);
+    float currentDepth = SampleLinear01DepthXR(currentUV);
 
     if (params.depthRejection && CheckAndSetupDepthRejection(currentUV, currentColor, currentDepth, history, params.depthThreshold, result))
     {
@@ -232,16 +235,16 @@ float4 BlendHistoryMotionVectors(TEXTURE2D_PARAM(historyTexture, historySampler)
 /// @param params Reprojection settings controlling depth rejection, velocity disocclusion,
 /// history weighting, and the color clamping mode (None, MinMax, ClipBox).
 /// @return The blended color result after reprojection, clamping, and temporal filtering.
-float4 BlendHistoryMotionVectors(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float4 currentNeighborhood[9], ReprojectionParams params)
+float4 BlendHistoryMotionVectorsXR(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float4 currentNeighborhood[9], ReprojectionParams params)
 {
     float4 result = (float4) 0;
 
     float2 motionVector;
     float4 history;
-    SetupMotionVectorPipeline(historyTexture, historySampler, currentUV, motionVector, history);
+    SetupMotionVectorPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, motionVector, history);
 
     float3 currentColor = currentNeighborhood[4].rgb;
-    float currentDepth = SampleLinear01Depth(currentUV);
+    float currentDepth = SampleLinear01DepthXR(currentUV);
 
     if (params.depthRejection && CheckAndSetupDepthRejection(currentUV, currentColor, currentDepth, history, params.depthThreshold, result))
     {
@@ -276,14 +279,14 @@ float4 BlendHistoryMotionVectors(TEXTURE2D_PARAM(historyTexture, historySampler)
 /// @param params Reprojection parameters controlling history weighting and depth rejection behavior.
 /// @return The blended final color, combining current-frame color with
 /// world-reprojected history, or the current color alone if history is rejected.
-float4 BlendHistoryWorldPos(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float3 currentColor, ReprojectionParams params)
+float4 BlendHistoryWorldPosXR(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float3 currentColor, ReprojectionParams params)
 {
     float4 result = (float4) 0;
 
-    float currentDepth = SampleLinear01Depth(currentUV);
+    float currentDepth = SampleLinear01DepthXR(currentUV);
     
     float4 history;
-    SetupWorldPosPipeline(historyTexture, historySampler, currentUV, currentDepth, history);
+    SetupWorldPosPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, currentDepth, history);
 
     if (params.depthRejection && CheckAndSetupDepthRejection(currentUV, currentColor, currentDepth, history, params.depthThreshold, result))
     {
@@ -311,14 +314,14 @@ float4 BlendHistoryWorldPos(TEXTURE2D_PARAM(historyTexture, historySampler), flo
 /// @return The final TAA-filtered color for the pixel, combining the reprojected
 /// history with the current frame's color after optional clamping.  
 /// If history is rejected, returns the current color.
-float4 BlendHistoryWorldPos(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float4 currentNeighborhood[9], ReprojectionParams params)
+float4 BlendHistoryWorldPosXR(TEXTURE2D_PARAM(historyTexture, historySampler), float2 currentUV, float4 currentNeighborhood[9], ReprojectionParams params)
 {
     float4 result = (float4) 0;
 
-    float currentDepth = SampleLinear01Depth(currentUV);
+    float currentDepth = SampleLinear01DepthXR(currentUV);
     
     float4 history;
-    SetupWorldPosPipeline(historyTexture, historySampler, currentUV, currentDepth, history);
+    SetupWorldPosPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, currentDepth, history);
 
     float3 currentColor = currentNeighborhood[4].rgb;
 

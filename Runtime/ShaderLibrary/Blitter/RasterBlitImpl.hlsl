@@ -1,7 +1,8 @@
 #pragma once
 
-#include "../../ShaderLibrary/Sampling.hlsl"
 #include "../../ShaderLibrary/Rendering/FullscreenTriangle.hlsl"
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/GlobalSamplers.hlsl"
 
 void SetupBlitPipeline(uint id, out float4 positionCS, out float2 texcoord)
 {
@@ -11,7 +12,7 @@ void SetupBlitPipeline(uint id, out float4 positionCS, out float2 texcoord)
 
 float4 SampleBlitTexture(float2 texcoord)
 {
-    float4 sample = SAMPLE_TEXTURE2D(_BlitTexture, sampler_LinearClamp, texcoord);
+    float4 sample = SAMPLE_TEXTURE2D_LOD(_BlitTexture, sampler_LinearClamp, texcoord, 0);
                 
     float4 dest = (float4) 0;
     if (_SrcChannels.r != BLIT_CH_NONE)

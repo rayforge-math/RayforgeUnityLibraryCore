@@ -25,7 +25,7 @@
 float SampleBlueNoise(float2 screenUV, float2 screenSize)
 {
     screenUV.x *= screenSize.x / screenSize.y;
-    return SAMPLE_TEXTURE2D(_Rayforge_BlueNoise, sampler_Rayforge_BlueNoise, screenUV).r * 2 - 1;
+    return SAMPLE_TEXTURE2D_LOD(_Rayforge_BlueNoise, sampler_Rayforge_BlueNoise, screenUV, 0).r * 2 - 1;
 }
 
 /// @brief Samples a blue-noise texture in screen space and offsets it over time
@@ -41,5 +41,5 @@ float SampleBlueNoiseTimeOffset(float2 screenUV, float2 screenSize)
     screenUV += offset;
     screenUV = frac(screenUV);
 
-    return SAMPLE_TEXTURE2D(_Rayforge_BlueNoise, sampler_Rayforge_BlueNoise, screenUV).r * 2 - 1;
+    return SAMPLE_TEXTURE2D_LOD(_Rayforge_BlueNoise, sampler_Rayforge_BlueNoise, screenUV, 0).r * 2 - 1;
 }
