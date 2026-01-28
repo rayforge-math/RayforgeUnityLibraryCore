@@ -25,7 +25,11 @@
 float HenyeyGreensteinPhase(float cosTheta, float g)
 {
     float g2 = g * g;
-    return (1.0 - g2) / (pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5) * PI_4);
+    //return (1.0 - g2) / (pow(abs(1.0 + g2 - 2.0 * g * cosTheta), 1.5) * PI_4);
+    // x^1.5 = x * x^0.5 = x * sqrt(x) -> make use of dedicated sqrt hardware
+    float base = 1.0 + g2 - 2.0 * g * cosTheta;
+    return (1.0 - g2) / (base * sqrt(abs(base)) * PI_4);
+
 }
 
 /// @brief Computes an approximate, cheaper version of the Henyey-Greenstein phase function.
@@ -37,7 +41,10 @@ float HenyeyGreensteinPhase(float cosTheta, float g)
 float HenyeyGreensteinPhaseApprox(float cosTheta, float g)
 {
     float g2 = g * g;
-    return (1.0 - g2) / (pow(1.0 - g * cosTheta, 2.0) * PI_4);
+    //return (1.0 - g2) / (pow(1.0 - g * cosTheta, 2.0) * PI_4);
+    // x^2 = x * x -> replace power of with multiplication
+    float base = 1.0 - g * cosTheta;
+    return (1.0 - g2) / (base * base * PI_4);
 }
 
 /// @brief Computes the exact Henyey-Greenstein scattering for a ray in a volumetric medium.
