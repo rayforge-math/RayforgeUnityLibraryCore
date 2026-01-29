@@ -58,21 +58,44 @@ static const float2 OffsetsStar[9] = {
  * @param falloff        Depth sensitivity factor. Higher values preserve edges more strictly.
  * @param COUNT          The number of samples in the offset array (e.g., 5 or 9).
  */
+#if defined(UPSAMPLE_ADAPTIVE)
+    #if !defined(UPSAMPLE_ADAPTIVE_BIAS)
+        #define ADAPTIVE_BIAS 0.1
+    #endif
+
+    #define BIL_UP_ADAPTIVE_FALLOFF(refDepth, baseFalloff) \
+        (baseFalloff * (1.0 / (refDepth * ADAPTIVE_BIAS + 0.1)))
+#else
+    #define BIL_UP_ADAPTIVE_FALLOFF(refDepth, baseFalloff) (baseFalloff)
+#endif
+
 #define CORE_BILATERAL_UPSAMPLE_LOGIC(SAMPLE_MACRO, COUNT) \
-    float referenceDepth = SAMPLE_MACRO(fDepth, fDepthSmp, uv, 0).r; \
+    float rawRefDepth = SAMPLE_MACRO(fDepth, fDepthSmp, uv, 0).r; \
+    float referenceDepth = LinearEyeDepth(rawRefDepth, _ZBufferParams); \
+    \
+    /* use partial derivatives for gradient (rate of change) */ \
+    float depthGradient = fwidth(referenceDepth); \
+    float edgeStrictness = 1.0 + saturate(depthGradient); \
+    \
+    falloff = BIL_UP_ADAPTIVE_FALLOFF(referenceDepth, falloff); \
+    float finalFalloff = pow(falloff, edgeStrictness); \
+    \
     float4 combinedColor = 0; \
     float combinedWeight = 0; \
     \
     [unroll] \
     for(int i = 0; i < COUNT; i++) { \
         float2 sampleUV = uv + offsets[i] * texSize.xy; \
-        float sampleDepth = SAMPLE_MACRO(lDepth, lDepthSmp, sampleUV, 0).r; \
-        float4 sampleColor = SAMPLE_MACRO(src, srcSmp, sampleUV, 0); \
+        float rawSampleDepth = SAMPLE_MACRO(lDepth, lDepthSmp, sampleUV, 0).r; \
+        float sampleDepth = LinearEyeDepth(rawSampleDepth, _ZBufferParams); \
         \
-        float w = 1.0 / (abs(referenceDepth - sampleDepth) * falloff + 0.001); \
+        float4 sampleColor = SAMPLE_MACRO(src, srcSmp, sampleUV, 0); \
+        float depthDiff = sampleDepth - referenceDepth; \
+        \
+        float w = (1.0 / (abs(depthDiff) * finalFalloff + 0.1) * 0.1); \
+        if (depthDiff < 0) w *= 0.0001; \
         \
         float spatial = (i == 0) ? 2.0 : 1.0; \
-        \
         combinedColor += sampleColor * (w * spatial); \
         combinedWeight += (w * spatial); \
     } \

@@ -47,15 +47,14 @@
 #endif
 
 #if defined(BILATERAL)
-    // Injects the variable declaration and fetch
     #define BIL_FETCH_CENTER(SAMPLER, uv) \
-        float centerDepth = SAMPLER(depthTex, depthSmp, uv, 0).r;
-    
-    // Injects the depth comparison weight
+        float centerDepth = LinearEyeDepth(SAMPLER(depthTex, depthSmp, uv, 0).r, _ZBufferParams); \
+        float finalFalloff = falloff;
+
     #define BIL_GET_W(SAMPLER, uv) \
-        (1.0 / (abs(centerDepth - SAMPLER(depthTex, depthSmp, uv, 0).r) * falloff + 0.001))
+        (1.0 / (abs(centerDepth - LinearEyeDepth(SAMPLER(depthTex, depthSmp, uv, 0).r, _ZBufferParams)) * finalFalloff + 0.1) * 0.1)
+
 #else
-    // Empty or neutral if bilateral is off
     #define BIL_FETCH_CENTER(SAMPLER, uv) 
     #define BIL_GET_W(SAMPLER, uv) 1.0
 #endif
@@ -631,7 +630,6 @@ float4 KawaseBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, f
         for (int j = 0; j < 4; ++j) { \
             float2 sampleUV = texcoord + off[j] * scaledTexel; \
             if (!cutoff || UvInBounds(sampleUV, true)) { \
-                /* Combine Kawase pass weight with bilateral depth weight */ \
                 float w = passW_base * BIL_GET_W(SAMPLER_MACRO, sampleUV); \
                 res += SAMPLER_MACRO(BlitTexture, samplerState, sampleUV, 0) * w; \
                 totalW += w; \
