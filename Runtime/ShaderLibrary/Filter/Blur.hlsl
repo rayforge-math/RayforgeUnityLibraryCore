@@ -33,7 +33,7 @@
 
 #define BLUR_BUFFER_SIZE BLUR_RADIUS_MAX + 1
 
-#if defined(BILATERAL)
+#if defined(BLUR_BILATERAL)
     #define BIL_ARGS_X_DECL , TEXTURE2D_X_PARAM(depthTex, depthSmp), float falloff
     #define BIL_ARGS_X_PASS , TEXTURE2D_X_ARGS(depthTex, depthSmp), falloff
     
@@ -46,10 +46,13 @@
     #define BIL_ARGS_PASS   
 #endif
 
-#if defined(BILATERAL)
+#if defined(BLUR_BILATERAL)
     #define BIL_FETCH_CENTER(SAMPLER, uv) \
         float centerDepth = LinearEyeDepth(SAMPLER(depthTex, depthSmp, uv, 0).r, _ZBufferParams); \
-        float finalFalloff = falloff;
+         /* use partial derivatives for gradient (rate of change) */ \
+        float depthGradient = fwidth(centerDepth); \
+        float edgeStrictness = 1.0 + saturate(depthGradient); \
+        float finalFalloff = pow(falloff, edgeStrictness);
 
     #define BIL_GET_W(SAMPLER, uv) \
         (1.0 / (abs(centerDepth - LinearEyeDepth(SAMPLER(depthTex, depthSmp, uv, 0).r, _ZBufferParams)) * finalFalloff + 0.1) * 0.1)

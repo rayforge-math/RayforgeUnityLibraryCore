@@ -77,8 +77,8 @@ static const float2 OffsetsStar[9] = {
     float depthGradient = fwidth(referenceDepth); \
     float edgeStrictness = 1.0 + saturate(depthGradient); \
     \
-    falloff = BIL_UP_ADAPTIVE_FALLOFF(referenceDepth, falloff); \
     float finalFalloff = pow(falloff, edgeStrictness); \
+    finalFalloff = BIL_UP_ADAPTIVE_FALLOFF(referenceDepth, finalFalloff); \
     \
     float4 combinedColor = 0; \
     float combinedWeight = 0; \
