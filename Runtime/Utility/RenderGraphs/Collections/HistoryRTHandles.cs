@@ -113,18 +113,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// <param name="data">Optional user-defined context passed to the allocation function.</param>
         /// <returns><c>true</c> if the handle at the specified index was reallocated; otherwise, <c>false</c>.</returns>
         private bool ReAllocateAtIndex(int index, RenderTextureDescriptor descriptor, TData data)
-        {
-            // Capture the current reference from the internal collection
-            RTHandle handle = m_Handles[index];
-
-            // Invoke the allocation delegate. 'ref' allows the delegate to replace the handle instance.
-            if (m_ReAllocFunc.Invoke(ref handle, descriptor, m_HandleNames[index], data))
-            {
-                m_Handles[index] = handle;
-                return true;
-            }
-            return false;
-        }
+            => m_ReAllocFunc.Invoke(ref m_Handles[index], descriptor, m_HandleNames[index], data);
 
         /// <summary>
         /// Reallocates only the current Target handle if needed based on the provided descriptor.

@@ -11,15 +11,17 @@
 // 2. Defines
 // ============================================================================
 
+#define SAMPLER_P_C sampler_PointClamp
+
 #if defined(TAA_USE_DEPTH)
     #define DEPTH_INPUT_DECL , float curDepth 
     #define DEPTH_INPUT_PASS , curDepth 
 
     #if defined(TAA_ALLOW_FULL_RGBA) 
         // MRT Case - Add the history depth texture to the arguments.
-        #define DEPTH_ARGS_X_DECL , TEXTURE2D_X_PARAM(histDepthTex, histDepthSmp)
-        #define DEPTH_ARGS_X_PASS , TEXTURE2D_X_ARGS(histDepthTex, histDepthSmp)
-        #define FETCH_HIST_DEPTH(col, uv) SAMPLE_TEXTURE2D_X_LOD(histDepthTex, histDepthSmp, uv, 0).r
+        #define DEPTH_ARGS_X_DECL , TEXTURE2D_X(histDepthTex)
+        #define DEPTH_ARGS_X_PASS , histDepthTex
+        #define FETCH_HIST_DEPTH(col, uv) LinearEyeDepth(SAMPLE_TEXTURE2D_X_LOD(histDepthTex, SAMPLER_P_C, uv, 0).r, _ZBufferParams)
     #else
         // Alpha Case - No extra textures needed.
         #define DEPTH_ARGS_DECL 
@@ -34,13 +36,13 @@
     #define FETCH_HIST_DEPTH(col, uv) 0.0
 #endif
 
-#define TAA_MV_ARGS_X_DECL   , TEXTURE2D_X_PARAM(mvTex, mvSmp) DEPTH_ARGS_X_DECL
-#define TAA_MV_ARGS_X_PASS   , TEXTURE2D_X_ARGS(mvTex, mvSmp) DEPTH_ARGS_X_PASS
+#define TAA_MV_ARGS_X_DECL   , TEXTURE2D_X(mvTex) DEPTH_ARGS_X_DECL
+#define TAA_MV_ARGS_X_PASS   , mvTex DEPTH_ARGS_X_PASS
 
 #define TAA_WP_ARGS_X_DECL   DEPTH_ARGS_X_DECL
 #define TAA_WP_ARGS_X_PASS   DEPTH_ARGS_X_PASS
 
-#define SAMPLE_MV(uv) SAMPLE_TEXTURE2D_X_LOD(mvTex, mvSmp, uv, 0).rg
+#define SAMPLE_MV(uv) SAMPLE_TEXTURE2D_X_LOD(mvTex, SAMPLER_P_C, uv, 0).rg
 
 #if !defined(DECODE_MOTION_VECTOR)
     #define DECODE_MOTION_VECTOR(mv) (mv * 0.5)
@@ -64,9 +66,9 @@ float4 SampleHistoryXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float2
 /// @brief Fetches motion vectors and samples history for the motion-based pipeline.
 void SetupMotionVectorPipelineXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float2 currentUV, float4 fallback, out float2 motionVector, out float4 history, out float historyDepth TAA_MV_ARGS_X_DECL)
 {
-    motionVector = SAMPLE_MV(currentUV);
+    motionVector = DECODE_MOTION_VECTOR(SAMPLE_MV(currentUV));
     
-    float2 prevUV = currentUV - DECODE_MOTION_VECTOR(motionVector) - (_TAA_Jitter - _TAA_JitterPrev);
+    float2 prevUV = currentUV - motionVector - (_TAA_Jitter - _TAA_JitterPrev);
     history = SampleHistoryXR(TEXTURE2D_X_ARGS( historyTexture, historySampler), prevUV, fallback);
     historyDepth = FETCH_HIST_DEPTH(history, prevUV);
 }
@@ -116,17 +118,19 @@ inline bool ApplyDepthRejection(float4 currentColor, float4 history, float histo
     result.a = curDepth;
 #endif
     
-    bool depthReject = abs(curDepth - historyDepth) > params.depthThreshold;
-    
-    if (depthReject)
+    if(params.depthRejection == 1)
     {
+        bool depthReject = abs(curDepth - historyDepth) > params.depthThreshold;
+        if (depthReject)
+        {
 #if defined(TAA_ALLOW_FULL_RGBA)
-        result = currentColor;
+            result = currentColor;
 #else
-        result.rgb = currentColor.rgb;
+            result.rgb = currentColor.rgb;
 #endif
         
-        return true;
+            return true;
+        }
     }
 #endif
 
@@ -187,7 +191,7 @@ float4 BlendHistoryMotionVectorsXR(TEXTURE2D_X_PARAM(historyTexture, historySamp
     float4 history;
     float historyDepth;
     SetupMotionVectorPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, currentColor, motionVector, history, historyDepth TAA_MV_ARGS_X_PASS);
-
+    
     if (ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS))
     {
         return result;

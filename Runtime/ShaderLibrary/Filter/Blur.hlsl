@@ -52,7 +52,7 @@
          /* use partial derivatives for gradient (rate of change) */ \
         float depthGradient = fwidth(centerDepth); \
         float edgeStrictness = 1.0 + saturate(depthGradient); \
-        float finalFalloff = pow(falloff, edgeStrictness);
+        float finalFalloff = pow(abs(falloff), edgeStrictness);
 
     #define BIL_GET_W(SAMPLER, uv) \
         (1.0 / (abs(centerDepth - LinearEyeDepth(SAMPLER(depthTex, depthSmp, uv, 0).r, _ZBufferParams)) * finalFalloff + 0.1) * 0.1)

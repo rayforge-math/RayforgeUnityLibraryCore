@@ -25,7 +25,7 @@ namespace Rayforge.Core.Rendering.Collections
         /// <summary>
         /// The index currently acting as the "Second" slot.
         /// </summary>
-        public int SecondIndex => m_CurrentIndex ^ 1;
+        public int SecondIndex => NextIndex(m_CurrentIndex);
 
         /// <summary>
         /// Gets the handle currently considered the "first" slot.
