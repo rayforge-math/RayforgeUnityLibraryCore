@@ -75,46 +75,93 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         {
             if (m_Handles == null) return;
 
-            foreach (var handle in m_Handles)
+            for (int i = 0; i < m_Handles.Length; i++)
             {
-                if (handle != null)
-                {
-                    handle.Release();
-                }
+                ReleaseAtIndex(i);
             }
         }
 
         /// <summary>
-        /// Allocates or reallocates both ping-pong handles if needed based on the provided descriptor.
-        /// Only updates handles that were actually reallocated.
-        /// Optionally swaps the current target after allocation.
+        /// Releases a specific handle by its index and sets the slot to null.
+        /// Provides English comments as requested.
         /// </summary>
-        /// <param name="descriptor">The render texture descriptor used for allocation.</param>
-        /// <param name="swap">If true, swaps the current and previous handle after allocation.</param>
+        /// <param name="index">The internal index to release.</param>
+        private void ReleaseAtIndex(int index)
+        {
+            if (m_Handles[index] != null)
+            {
+                m_Handles[index].Release();
+                m_Handles[index] = null;
+            }
+        }
+
+        /// <summary>
+        /// Releases the current Target handle and sets its slot to null.
+        /// </summary>
+        public void DisposeTarget() => ReleaseAtIndex(TargetIndex);
+
+        /// <summary>
+        /// Releases the History handle and sets its slot to null.
+        /// </summary>
+        public void DisposeHistory() => ReleaseAtIndex(HistoryIndex);
+
+        /// <summary>
+        /// Internal helper to reallocate a specific slot by its index.
+        /// </summary>
+        /// <param name="index">The internal array index to check (0 or 1).</param>
+        /// <param name="descriptor">The render texture descriptor used for the allocation check.</param>
         /// <param name="data">Optional user-defined context passed to the allocation function.</param>
-        /// <returns><c>true</c> if at least one handle was allocated/reallocated, <c>false</c> otherwise.</returns>
-        /// <exception cref="ArgumentException">
-        /// Thrown if <paramref name="descriptor"/> has non-positive width or height.
-        /// </exception>
+        /// <returns><c>true</c> if the handle at the specified index was reallocated; otherwise, <c>false</c>.</returns>
+        private bool ReAllocateAtIndex(int index, RenderTextureDescriptor descriptor, TData data)
+        {
+            // Capture the current reference from the internal collection
+            RTHandle handle = m_Handles[index];
+
+            // Invoke the allocation delegate. 'ref' allows the delegate to replace the handle instance.
+            if (m_ReAllocFunc.Invoke(ref handle, descriptor, m_HandleNames[index], data))
+            {
+                m_Handles[index] = handle;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Reallocates only the current Target handle if needed based on the provided descriptor.
+        /// </summary>
+        /// <param name="descriptor">The render texture descriptor for the target.</param>
+        /// <param name="data">Optional user-defined context for the allocation logic.</param>
+        /// <returns><c>true</c> if the target handle was reallocated; otherwise, <c>false</c>.</returns>
+        public bool ReAllocateTargetIfNeeded(RenderTextureDescriptor descriptor, TData data = default)
+            => ReAllocateAtIndex(TargetIndex, descriptor, data);
+
+        /// <summary>
+        /// Reallocates only the History handle if needed based on the provided descriptor.
+        /// </summary>
+        /// <param name="descriptor">The render texture descriptor for the history.</param>
+        /// <param name="data">Optional user-defined context for the allocation logic.</param>
+        /// <returns><c>true</c> if the history handle was reallocated; otherwise, <c>false</c>.</returns>
+        public bool ReAllocateHistoryIfNeeded(RenderTextureDescriptor descriptor, TData data = default)
+            => ReAllocateAtIndex(HistoryIndex, descriptor, data);
+
+        /// <summary>
+        /// Orchestrates the reallocation of both handles and optionally swaps their roles.
+        /// </summary>
+        /// <param name="descriptor">The render texture descriptor applied to both handles.</param>
+        /// <param name="swap">If <c>true</c>, calls <see cref="PingPongBuffer{T}.Swap"/> after checking allocations.</param>
+        /// <param name="data">Optional user-defined context passed to the allocation function.</param>
+        /// <returns><c>true</c> if at least one of the handles was reallocated; otherwise, <c>false</c>.</returns>
+        /// <exception cref="ArgumentException">Thrown if descriptor has non-positive dimensions.</exception>
         public bool ReAllocateHandlesIfNeeded(RenderTextureDescriptor descriptor, bool swap = false, TData data = default)
         {
             if (descriptor.width <= 0 || descriptor.height <= 0)
-                throw new ArgumentException("RenderTextureDescriptor must have positive width and height.", nameof(descriptor));
+                throw new ArgumentException("Descriptor must have positive dimensions.", nameof(descriptor));
 
-            bool alloc = false;
-
-            for (int i = 0; i < 2; ++i)
-            {
-                var handle = m_Handles[i];
-                if (m_ReAllocFunc.Invoke(ref handle, descriptor, m_HandleNames[i], data))
-                {
-                    m_Handles[i] = handle;
-                    alloc |= true;
-                }
-            }
+            bool changed = ReAllocateTargetIfNeeded(descriptor, data);
+            changed |= ReAllocateHistoryIfNeeded(descriptor, data);
 
             if (swap) Swap();
-            return alloc;
+            return changed;
         }
     }
 

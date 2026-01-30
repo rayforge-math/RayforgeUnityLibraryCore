@@ -28,8 +28,9 @@ namespace Rayforge.Core.Rendering.Collections
         /// Initializes the mip chain with a handle creation function.
         /// </summary>
         /// <param name="createFunc">Function to create each mip level.</param>
-        public UnsafeMipChain(CreateFunction createFunc)
-            : base(createFunc)
+        /// <param name="releaseFunc">Function to release a given mip level.</param>
+        public UnsafeMipChain(CreateFunction createFunc, ReleaseFunction releaseFunc)
+            : base(createFunc, releaseFunc)
         {
             m_MipResolutionCache = Array.Empty<Vector2Int>();
 
@@ -101,17 +102,14 @@ namespace Rayforge.Core.Rendering.Collections
 
             int remaining = m_MipResolutionCache.Length - startIndex;
 
-            // Truncate cache if count is 0 or exceeds remaining entries
             if (count == 0 || count >= remaining)
             {
                 if (startIndex == 0)
                 {
-                    // Reset entire cache
                     m_MipResolutionCache = Array.Empty<Vector2Int>();
                 }
                 else
                 {
-                    // Truncate cache at startIndex
                     Array.Resize(ref m_MipResolutionCache, startIndex);
                 }
             }

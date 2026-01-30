@@ -31,7 +31,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// <param name="createFunc">Function to create each mip level.</param>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="createFunc"/> is <c>null</c>.</exception>
         public TextureHandleMipChain(CreateFunction createFunc)
-            : base(createFunc)
+            : base(createFunc, null)
         {
             if (createFunc == null)
                 throw new ArgumentNullException(nameof(createFunc), "Texture creation function cannot be null.");

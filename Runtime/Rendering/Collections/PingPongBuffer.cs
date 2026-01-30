@@ -18,6 +18,16 @@ namespace Rayforge.Core.Rendering.Collections
         private int m_CurrentIndex;
 
         /// <summary>
+        /// The index currently acting as the "First" slot.
+        /// </summary>
+        public int FirstIndex => m_CurrentIndex;
+
+        /// <summary>
+        /// The index currently acting as the "Second" slot.
+        /// </summary>
+        public int SecondIndex => m_CurrentIndex ^ 1;
+
+        /// <summary>
         /// Gets the handle currently considered the "first" slot.
         /// This is the slot returned as "current" until <see cref="Swap"/> is called.
         /// After swapping, this getter will return the other slot.
@@ -80,7 +90,7 @@ namespace Rayforge.Core.Rendering.Collections
         /// </summary>
         /// <param name="index">Current index.</param>
         /// <returns>Index of the alternate slot (0 or 1).</returns>
-        private static int NextIndex(int index) => (index + 1) & 1;
+        private static int NextIndex(int index) => index ^ 1;
 
         public ReadOnlySpan<THandle> AsSpan()
             => m_Handles.AsSpan();

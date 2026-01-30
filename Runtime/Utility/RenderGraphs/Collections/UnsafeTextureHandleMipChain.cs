@@ -32,7 +32,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// </summary>
         /// <param name="createFunc">Function invoked to create each mip level.</param>
         public UnsafeTextureHandleMipChain(CreateFunction createFunc)
-            : base(createFunc)
+            : base(createFunc, null)
         { }
 
         /// <summary>

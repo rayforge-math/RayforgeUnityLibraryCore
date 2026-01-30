@@ -63,7 +63,13 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                         builder.UseTexture(input.handle, AccessFlags.Read);
                     }
                 }
-                builder.UseTexture(data.Destination.handle, AccessFlags.Write);
+                for (int i = 0; i < data.DestinationCount; ++i)
+                {
+                    if (data.TryPeekDestination(i, out var dest))
+                    {
+                        builder.UseTexture(dest.handle, AccessFlags.Write);
+                    }
+                }
 
                 builder.SetRenderFunc(static (TPassData data, UnsafeGraphContext ctx) =>
                 {
@@ -80,7 +86,24 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                     data.RenderFuncUpdate?.Invoke(ctx.cmd, propertyBlock, data);
 
                     CommandBuffer unsafeCmd = CommandBufferHelpers.GetNativeCommandBuffer(ctx.cmd);
-                    unsafeCmd.SetRenderTarget(data.Destination.handle, 0, CubemapFace.Unknown, 0);
+
+                    int rtCount = data.DestinationCount;
+                    if(rtCount > 1)
+                    {
+                        var mrtArray = MRTPool.Get(rtCount);
+
+                        for (int i = 0; i < rtCount; i++)
+                        {
+                            if (data.TryPeekDestination(i, out var dest))
+                                mrtArray[i] = dest.handle;
+                        }
+
+                        unsafeCmd.SetRenderTarget(mrtArray, mrtArray[0]);
+                    }
+                    else
+                    {
+                        unsafeCmd.SetRenderTarget(data.Destination.handle, 0, CubemapFace.Unknown, 0);
+                    }
 
                     while (data.TryPopInput(out var input))
                     {
@@ -118,7 +141,15 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                         builder.UseTexture(input.handle, AccessFlags.Read);
                     }
                 }
-                builder.SetRenderAttachment(data.Destination.handle, 0, AccessFlags.Write);
+
+                int destCount = data.DestinationCount;
+                for (int i = 0; i < destCount; ++i)
+                {
+                    if (data.TryPeekDestination(i, out var dest))
+                    {
+                        builder.SetRenderAttachment(dest.handle, i, AccessFlags.Write);
+                    }
+                }
 
                 builder.SetRenderFunc(static (TPassData data, RasterGraphContext ctx) =>
                 {
@@ -169,19 +200,30 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                         builder.UseTexture(input.handle, AccessFlags.Read);
                     }
                 }
-                builder.UseTexture(data.Destination.handle, AccessFlags.Write);
-                
+
+                for (int i = 0; i < data.DestinationCount; ++i)
+                {
+                    if (data.TryPeekDestination(i, out var dest))
+                    {
+                        builder.UseTexture(dest.handle, AccessFlags.Write);
+                    }
+                }
+
                 builder.SetRenderFunc(static (TPassData data, ComputeGraphContext ctx) =>
                 {
                     data.RenderFuncUpdate?.Invoke(ctx.cmd, data);
 
                     var passMeta = data.PassMeta;
+
                     while (data.TryPopInput(out var input))
                     {
                         ctx.cmd.SetComputeTextureParam(passMeta.Shader, passMeta.KernelIndex, input.propertyId, input.handle);
                     }
-                    var dest = data.Destination;
-                    ctx.cmd.SetComputeTextureParam(passMeta.Shader, passMeta.KernelIndex, dest.propertyId, dest.handle);
+
+                    while (data.TryPopDestination(out var dest))
+                    {
+                        ctx.cmd.SetComputeTextureParam(passMeta.Shader, passMeta.KernelIndex, dest.propertyId, dest.handle);
+                    }
 
                     ctx.cmd.DispatchCompute(
                         passMeta.Shader,
