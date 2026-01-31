@@ -160,6 +160,14 @@ inline void ApplyColorClamping(inout float3 historyRGB, float4 neighborhood[9], 
     }
 }
 
+inline void ApplyColorClamping(inout float3 historyRGB, float4 neighborhood[5], ReprojectionParams params)
+{
+    if (params.colorClampingMode != CLAMP_NONE)
+    {
+        historyRGB = ApplyColorClamping(historyRGB, neighborhood, params.colorClampingMode, params.clipBoxScale);
+    }
+}
+
 inline void ApplyFinalBlend(float4 currentColor, float4 history, float historyWeight, inout float4 result)
 {
     float4 blend = lerp(currentColor, history, historyWeight);
@@ -212,22 +220,27 @@ float4 BlendHistoryMotionVectorsXR(TEXTURE2D_X_PARAM(historyTexture, historySamp
 /// @param params Reprojection settings controlling depth rejection, velocity disocclusion,
 /// history weighting, and the color clamping mode (None, MinMax, ClipBox).
 /// @return The blended color result after reprojection, clamping, and temporal filtering.
+#define IMPLEMENT_BLEND_MOTION_VECTORS_LOGIC(_CENTER_IDX) \
+    float4 result = (float4)0; \
+    float2 motionVector; \
+    float4 history; \
+    float historyDepth; \
+    float4 currentColor = currentNeighborhood[_CENTER_IDX]; \
+    SetupMotionVectorPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, currentColor, motionVector, history, historyDepth TAA_MV_ARGS_X_PASS); \
+    ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS); \
+    ApplyVelocityDisocclusion(motionVector, params); \
+    ApplyColorClamping(history.rgb, currentNeighborhood, params); \
+    ApplyFinalBlend(currentColor, history, params.historyWeight, result); \
+    return result;
+
 float4 BlendHistoryMotionVectorsXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float2 currentUV, float4 currentNeighborhood[9], ReprojectionParams params DEPTH_INPUT_DECL TAA_MV_ARGS_X_DECL)
 {
-    float4 result = (float4) 0;
+    IMPLEMENT_BLEND_MOTION_VECTORS_LOGIC(4)
+}
 
-    float2 motionVector;
-    float4 history;
-    float historyDepth;
-    float4 currentColor = currentNeighborhood[4];
-    SetupMotionVectorPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, currentColor, motionVector, history, historyDepth TAA_MV_ARGS_X_PASS);
-
-    ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS);
-    ApplyVelocityDisocclusion(motionVector, params);
-    ApplyColorClamping(history.rgb, currentNeighborhood, params);
-    ApplyFinalBlend(currentColor, history, params.historyWeight, result);
-
-    return result;
+float4 BlendHistoryMotionVectorsXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float2 currentUV, float4 currentNeighborhood[5], ReprojectionParams params DEPTH_INPUT_DECL TAA_MV_ARGS_X_DECL)
+{
+    IMPLEMENT_BLEND_MOTION_VECTORS_LOGIC(2)
 }
 
 /// @brief Reprojects history using world-space reconstruction instead of motion vectors,
@@ -276,19 +289,24 @@ float4 BlendHistoryWorldPosXR(TEXTURE2D_X_PARAM(historyTexture, historySampler),
 /// @return The final TAA-filtered color for the pixel, combining the reprojected
 /// history with the current frame's color after optional clamping.  
 /// If history is rejected, returns the current color.
+#define IMPLEMENT_BLEND_WORLD_POS_LOGIC(_CENTER_IDX) \
+    float4 result = (float4)0; \
+    float4 currentColor = currentNeighborhood[_CENTER_IDX]; \
+    float4 history; \
+    float historyDepth; \
+    SetupWorldPosPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, currentDepth, currentColor, history TAA_WP_ARGS_X_PASS); \
+    float curDepth = currentDepth; \
+    ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS); \
+    ApplyColorClamping(history.rgb, currentNeighborhood, params); \
+    ApplyFinalBlend(currentColor, history, params.historyWeight, result); \
+    return result;
+
 float4 BlendHistoryWorldPosXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float2 currentUV, float currentDepth, float4 currentNeighborhood[9], ReprojectionParams params TAA_WP_ARGS_X_DECL)
 {
-    float4 result = (float4)0;
+    IMPLEMENT_BLEND_WORLD_POS_LOGIC(4)
+}
 
-    float4 currentColor = currentNeighborhood[4];
-    float4 history;
-    float historyDepth;
-    SetupWorldPosPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, currentDepth, currentColor, history TAA_WP_ARGS_X_PASS);
-    
-    float curDepth = currentDepth;
-    ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS);
-    ApplyColorClamping(history.rgb, currentNeighborhood, params);
-    ApplyFinalBlend(currentColor, history, params.historyWeight, result);
-
-    return result;
+float4 BlendHistoryWorldPosXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), float2 currentUV, float currentDepth, float4 currentNeighborhood[5], ReprojectionParams params TAA_WP_ARGS_X_DECL)
+{
+    IMPLEMENT_BLEND_WORLD_POS_LOGIC(2)
 }

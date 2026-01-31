@@ -33,15 +33,31 @@
 /// @param neighborhood A fixed array of 9 float3 samples representing the local 3x3 neighborhood.
 /// @param scale Controls the width of the variance clip box. Typical values: 1.0�3.0.
 /// @return The input color clamped to [mean - stdDev * scale, mean + stdDev * scale].
+#define IMPLEMENT_VARIANCE_CLAMP_LOGIC(_SAMPLES) \
+    float3 mean, stdDev; \
+    ComputeMeanAndStdDev(neighborhood, mean, stdDev); \
+    float3 minC = mean - stdDev * scale; \
+    float3 maxC = mean + stdDev * scale; \
+    return clamp(inputColor.rgb, minC, maxC);
+
 float3 VarianceClamp(float3 inputColor, float4 neighborhood[9], float scale)
 {
-    float3 mean, stdDev;
-    ComputeMeanAndStdDev9(neighborhood, mean, stdDev);
+    IMPLEMENT_VARIANCE_CLAMP_LOGIC(9)
+}
 
-    float3 minC = mean - stdDev * scale;
-    float3 maxC = mean + stdDev * scale;
+float3 VarianceClamp(float3 inputColor, float4 neighborhood[5], float scale)
+{
+    IMPLEMENT_VARIANCE_CLAMP_LOGIC(5)
+}
 
-    return clamp(inputColor, minC, maxC);
+float3 VarianceClamp(float3 inputColor, float3 neighborhood[9], float scale)
+{
+    IMPLEMENT_VARIANCE_CLAMP_LOGIC(9)
+}
+
+float3 VarianceClamp(float3 inputColor, float3 neighborhood[5], float scale)
+{
+    IMPLEMENT_VARIANCE_CLAMP_LOGIC(5)
 }
 
 /// @brief Performs luma-oriented clip-box clamping on an input color using the
@@ -54,31 +70,44 @@ float3 VarianceClamp(float3 inputColor, float4 neighborhood[9], float scale)
 /// @param neighborhood A fixed array of 9 float3 samples representing the local 3x3 neighborhood.
 /// @param scale Controls the width of the clip box. Typical values: 1.0�3.0.
 /// @return The clamped color.
+#define IMPLEMENT_CLIPBOX_LOGIC(_SAMPLES) \
+    float3 mean, stdDev; \
+    ComputeMeanAndStdDev(neighborhood, mean, stdDev); \
+    float3 lumaWeights = float3(0.2126, 0.7152, 0.0722); \
+    float meanLuma = dot(mean, lumaWeights); \
+    float3 lumaDir = float3(0, 0, 0); \
+    [unroll] \
+    for (int i = 0; i < _SAMPLES; ++i) \
+    { \
+        float3 delta = neighborhood[i].rgb - mean; \
+        float lumaDelta = dot(neighborhood[i].rgb, lumaWeights) - meanLuma; \
+        lumaDir += delta * lumaDelta; \
+    } \
+    lumaDir = normalize(lumaDir + 1e-6); \
+    float3 deltaInput = inputColor.rgb - mean; \
+    float proj = dot(deltaInput, lumaDir); \
+    float limit = length(stdDev) * scale; \
+    float3 clampedDelta = clamp(proj, -limit, limit) * lumaDir; \
+    return mean + clampedDelta;
+
 float3 ClipBoxClamp(float3 inputColor, float4 neighborhood[9], float scale)
 {
-    float3 mean, stdDev;
-    ComputeMeanAndStdDev9(neighborhood, mean, stdDev);
+    IMPLEMENT_CLIPBOX_LOGIC(9)
+}
 
-    float3 lumaWeights = float3(0.2126, 0.7152, 0.0722);
-    float meanLuma = dot(mean, lumaWeights);
+float3 ClipBoxClamp(float3 inputColor, float4 neighborhood[5], float scale)
+{
+    IMPLEMENT_CLIPBOX_LOGIC(5)
+}
 
-    float3 lumaDir = float3(0, 0, 0);
-    [unroll]
-    for (int i = 0; i < 9; ++i)
-    {
-        float3 delta = neighborhood[i].rgb - mean;
-        float lumaDelta = dot(neighborhood[i].rgb, lumaWeights) - meanLuma;
-        lumaDir += delta * lumaDelta;
-    }
-    lumaDir = normalize(lumaDir + 1e-6);
+float3 ClipBoxClamp(float3 inputColor, float3 neighborhood[9], float scale)
+{
+    IMPLEMENT_CLIPBOX_LOGIC(9)
+}
 
-    float3 deltaInput = inputColor - mean;
-    float proj = dot(deltaInput, lumaDir);
-
-    float limit = length(stdDev) * scale;
-    float3 clampedDelta = clamp(proj, -limit, limit) * lumaDir;
-
-    return mean + clampedDelta;
+float3 ClipBoxClamp(float3 inputColor, float3 neighborhood[5], float scale)
+{
+    IMPLEMENT_CLIPBOX_LOGIC(5)
 }
 
 /// @brief Clamps an input color to the min/max bounding box defined by a 3x3
@@ -88,25 +117,37 @@ float3 ClipBoxClamp(float3 inputColor, float4 neighborhood[9], float scale)
 /// @param neighborhood A fixed array of 9 float3 samples representing the local 3x3 neighborhood.
 /// @param scale Scales the range around the average value of the min and max color value.
 /// @return The clamped color.
+#define IMPLEMENT_MINMAX_CLAMP_LOGIC(_SAMPLES) \
+    float3 minColor = 1e9; \
+    float3 maxColor = -1e9; \
+    [unroll] \
+    for (int i = 0; i < _SAMPLES; ++i) \
+    { \
+        minColor = min(minColor, neighborhood[i].rgb); \
+        maxColor = max(maxColor, neighborhood[i].rgb); \
+    } \
+    float3 centre = (maxColor + minColor) * 0.5; \
+    float3 halfExtent = (maxColor - minColor) * 0.5 * scale; \
+    return clamp(inputColor.rgb, centre - halfExtent, centre + halfExtent);
+
 float3 MinMaxClamp(float3 inputColor, float4 neighborhood[9], float scale)
 {
-    float3 minColor = float3(1e9, 1e9, 1e9);
-    float3 maxColor = float3(-1e9, -1e9, -1e9);
+    IMPLEMENT_MINMAX_CLAMP_LOGIC(9)
+}
 
-    [unroll]
-    for (int i = 0; i < 9; ++i)
-    {
-        minColor = min(minColor, neighborhood[i].rgb);
-        maxColor = max(maxColor, neighborhood[i].rgb);
-    }
+float3 MinMaxClamp(float3 inputColor, float4 neighborhood[5], float scale)
+{
+    IMPLEMENT_MINMAX_CLAMP_LOGIC(5)
+}
 
-    float3 centre = (maxColor + minColor) * 0.5;
-    float3 halfExtent = (maxColor - minColor) * 0.5 * scale;
+float3 MinMaxClamp(float3 inputColor, float3 neighborhood[9], float scale)
+{
+    IMPLEMENT_MINMAX_CLAMP_LOGIC(9)
+}
 
-    float3 scaledMin = centre - halfExtent;
-    float3 scaledMax = centre + halfExtent;
-
-    return clamp(inputColor, scaledMin, scaledMax);
+float3 MinMaxClamp(float3 inputColor, float3 neighborhood[5], float scale)
+{
+    IMPLEMENT_MINMAX_CLAMP_LOGIC(5)
 }
 
 /// @brief Applies a selected color clamping or deviation-damping mode to an input color
@@ -122,29 +163,35 @@ float3 MinMaxClamp(float3 inputColor, float4 neighborhood[9], float scale)
 /// @param mode Clamping / damping mode to apply (see above).
 /// @param scaleOrStrength Scale factor for clamps (MinMax, Variance, ClipBox) or strength for damping (0�1).
 /// @return The resulting color after applying the selected clamping or damping mode.
+#define IMPLEMENT_CLAMPING_SWITCH \
+    [branch] \
+    switch (mode) \
+    { \
+        case 1:  inputColor = MinMaxClamp(inputColor, neighborhood, scale);   break; \
+        case 2:  inputColor = VarianceClamp(inputColor, neighborhood, scale); break; \
+        case 3:  inputColor = ClipBoxClamp(inputColor, neighborhood, scale);  break; \
+        default: break; \
+    } \
+    return inputColor;
+
 float3 ApplyColorClamping(float3 inputColor, float4 neighborhood[9], int mode, float scale)
 {
-    [branch]
-    switch (mode)
-    {
-        default:
-        case CLAMP_NONE:
-            break;
+    IMPLEMENT_CLAMPING_SWITCH
+}
 
-        case CLAMP_MINMAX:
-            inputColor = MinMaxClamp(inputColor, neighborhood, scale);
-            break;
+float3 ApplyColorClamping(float3 inputColor, float4 neighborhood[5], int mode, float scale)
+{
+    IMPLEMENT_CLAMPING_SWITCH
+}
 
-        case CLAMP_VARIANCE:
-            inputColor = VarianceClamp(inputColor, neighborhood, scale);
-            break;
+float3 ApplyColorClamping(float3 inputColor, float3 neighborhood[9], int mode, float scale)
+{
+    IMPLEMENT_CLAMPING_SWITCH
+}
 
-        case CLAMP_CLIPBOX:
-            inputColor = ClipBoxClamp(inputColor, neighborhood, scale);
-            break;
-    }
-
-    return inputColor;
+float3 ApplyColorClamping(float3 inputColor, float3 neighborhood[5], int mode, float scale)
+{
+    IMPLEMENT_CLAMPING_SWITCH
 }
 
 /// @brief Smoothly damps deviations from the local mean based on standard deviation.
@@ -155,17 +202,32 @@ float3 ApplyColorClamping(float3 inputColor, float4 neighborhood[9], int mode, f
 /// @param strength How strongly to pull the color towards the local mean (0 = off, 1 = full damping).
 /// @param threshold Deviation at which damping starts to take effect (in units of sigma).
 /// @return The damped color.
+#define IMPLEMENT_SMOOTHEN_LOGIC(_SAMPLES) \
+    float3 mean, stdDev; \
+    ComputeMeanAndStdDev(neighborhood, mean, stdDev); \
+    float delta = Luminance(inputColor.rgb) - Luminance(mean); \
+    float deviation = delta / (Luminance(stdDev) + 1e-6); \
+    float t = (deviation - threshold) / max(threshold, 1e-6); \
+    return lerp(inputColor.rgb, mean, saturate(t * strength));
+
 float3 StdDevSmoothen(float3 inputColor, float4 neighborhood[9], float strength, float threshold)
 {
-    float3 mean, stdDev;
-    ComputeMeanAndStdDev9(neighborhood, mean, stdDev);
+    IMPLEMENT_SMOOTHEN_LOGIC(9)
+}
 
-    float delta = Luminance(inputColor) - Luminance(mean);
-    float deviation = delta / (Luminance(stdDev) + 1e-6);
+float3 StdDevSmoothen(float3 inputColor, float4 neighborhood[5], float strength, float threshold)
+{
+    IMPLEMENT_SMOOTHEN_LOGIC(5)
+}
 
-    float t = (deviation - threshold) / max(threshold, 1e-6);
+float3 StdDevSmoothen(float3 inputColor, float3 neighborhood[9], float strength, float threshold)
+{
+    IMPLEMENT_SMOOTHEN_LOGIC(9)
+}
 
-    return lerp(inputColor, mean, saturate(t * strength));
+float3 StdDevSmoothen(float3 inputColor, float3 neighborhood[5], float strength, float threshold)
+{
+    IMPLEMENT_SMOOTHEN_LOGIC(5)
 }
 
 /// @brief Smoothly dampens bright outlier pixels in a 3x3 neighborhood based on local luminance variance.
@@ -178,28 +240,38 @@ float3 StdDevSmoothen(float3 inputColor, float4 neighborhood[9], float strength,
 /// @param proportional If true, damping is scaled by how strongly the center pixel deviates from the
 ///                     local mean. If false, damping depends only on neighborhood variance.
 /// @return The damped color of the central pixel (neighborhood[4].rgb).
+#define IMPLEMENT_DAMPEN_LOGIC(_SAMPLES, _CENTER_IDX) \
+    float3 mean, stdDev; \
+    ComputeMeanAndStdDev(neighborhood, mean, stdDev); \
+    float3 centre = neighborhood[_CENTER_IDX].rgb; \
+    float meanLuma = Luminance(mean); \
+    float centreLuma = Luminance(centre); \
+    float stdDevLuma = Luminance(stdDev); \
+    float deltaLuma = max(centreLuma - meanLuma, 0.0); \
+    float dampen; \
+    if (proportional) { \
+        dampen = saturate(strength * (deltaLuma * stdDevLuma)); \
+    } else { \
+        dampen = saturate(strength * (step(0.0, deltaLuma) * stdDevLuma)); \
+    } \
+    return centre * (1.0 - dampen);
+
 float3 StdDevDampen(float4 neighborhood[9], float strength, bool proportional)
 {
-    float3 mean, stdDev;
-    ComputeMeanAndStdDev9(neighborhood, mean, stdDev);
+    IMPLEMENT_DAMPEN_LOGIC(9, 4)
+}
 
-    float3 centre = neighborhood[4].rgb;
-    
-    float meanLuma = Luminance(mean);
-    float centreLuma = Luminance(centre);
-    float stdDevLuma = Luminance(stdDev);
+float3 StdDevDampen(float4 neighborhood[5], float strength, bool proportional)
+{
+    IMPLEMENT_DAMPEN_LOGIC(5, 2)
+}
 
-    float deltaLuma = max(centreLuma - meanLuma, 0.0);
+float3 StdDevDampen(float3 neighborhood[9], float strength, bool proportional)
+{
+    IMPLEMENT_DAMPEN_LOGIC(9, 4)
+}
 
-    float dampen;
-    if (proportional)
-    {
-        dampen = saturate(strength * (deltaLuma * stdDevLuma));
-    }
-    else
-    {
-        dampen = saturate(strength * (step(0.0, deltaLuma) * stdDevLuma));
-    }
-
-    return centre * (1.0 - dampen);
+float3 StdDevDampen(float3 neighborhood[5], float strength, bool proportional)
+{
+    IMPLEMENT_DAMPEN_LOGIC(5, 2)
 }

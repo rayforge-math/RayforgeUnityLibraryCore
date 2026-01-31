@@ -1,59 +1,75 @@
 #pragma once
 
-/// @brief Computes the per-channel mean and standard deviation from a 3x3 neighborhood of samples.
-/// @param neighborhood A fixed array of 9 float3 color samples representing the 3x3 neighborhood around the pixel.
-/// @param mean Output: The per-channel arithmetic mean of the neighborhood.
-/// @param stdDev Output: The per-channel standard deviation, describing how much variation exists in the neighborhood.
-void ComputeMeanAndStdDev9(in float4 neighborhood[9], out float3 mean, out float3 stdDev)
+#define IMPLEMENT_STATS_LOGIC(_SAMPLES) \
+    mean = 0; \
+    [unroll] for (int i = 0; i < _SAMPLES; ++i) mean += neighborhood[i].rgb; \
+    mean /= (float)_SAMPLES; \
+    float3 var = 0; \
+    [unroll] for (int j = 0; j < _SAMPLES; ++j) { \
+        float3 d = neighborhood[j].rgb - mean; \
+        var += d * d; \
+    } \
+    stdDev = sqrt(max(0, var / (float)_SAMPLES));
+
+#define IMPLEMENT_STATS_EXCL_LOGIC(_SAMPLES, _CENTER_IDX) \
+    mean = 0; \
+    [unroll] for (int i = 0; i < _SAMPLES; ++i) { \
+        if (i == _CENTER_IDX) continue; \
+        mean += neighborhood[i].rgb; \
+    } \
+    mean /= (float)(_SAMPLES - 1); \
+    float3 var = 0; \
+    [unroll] for (int j = 0; j < _SAMPLES; ++j) { \
+        if (j == _CENTER_IDX) continue; \
+        float3 d = neighborhood[j].rgb - mean; \
+        var += d * d; \
+    } \
+    stdDev = sqrt(max(0, var / (float)(_SAMPLES - 1)));
+
+// --- 9-Tap / 8-Tap (3x3 Box) ---
+
+/// @brief Computes mean and stdDev from a 3x3 neighborhood (9 samples).
+void ComputeMeanAndStdDev(in float4 neighborhood[9], out float3 mean, out float3 stdDev)
 {
-    mean = float3(0, 0, 0);
-
-    [unroll]
-    for (int i = 0; i < 9; ++i)
-    {
-        mean += neighborhood[i].rgb;
-    }
-    mean /= 9.0;
-
-    float3 var = float3(0, 0, 0);
-    [unroll]
-    for (int j = 0; j < 9; ++j)
-    {
-        float3 d = neighborhood[j].rgb - mean;
-        var += d * d;
-    }
-    var /= 9.0;
-
-    stdDev = sqrt(var);
+    IMPLEMENT_STATS_LOGIC(9)
 }
 
-/// @brief Computes the per-channel mean and standard deviation from a 3x3 neighborhood of samples, excluding the centre.
-/// @param neighborhood A fixed array of 9 float3 color samples representing the 3x3 neighborhood around the pixel.
-/// @param mean Output: The per-channel arithmetic mean of the neighborhood.
-/// @param stdDev Output: The per-channel standard deviation, describing how much variation exists in the neighborhood.
-void ComputeMeanAndStdDev8(in float4 neighborhood[9], out float3 mean, out float3 stdDev)
+void ComputeMeanAndStdDev(in float3 neighborhood[9], out float3 mean, out float3 stdDev)
 {
-    mean = float3(0, 0, 0);
+    IMPLEMENT_STATS_LOGIC(9)
+}
 
-    [unroll]
-    for (int i = 0; i < 9; ++i)
-    {
-        if (i == 4)
-            continue;
-        mean += neighborhood[i].rgb;
-    }
-    mean /= 8.0;
+/// @brief Computes mean and stdDev from a 3x3 neighborhood, excluding the center (8 samples).
+void ComputeMeanAndStdDevExcl(in float4 neighborhood[9], out float3 mean, out float3 stdDev)
+{
+    IMPLEMENT_STATS_EXCL_LOGIC(9, 4)
+}
 
-    float3 var = float3(0, 0, 0);
-    [unroll]
-    for (int j = 0; j < 9; ++j)
-    {
-        if (j == 4)
-            continue;
-        float3 d = neighborhood[j].rgb - mean;
-        var += d * d;
-    }
-    var /= 8.0;
+void ComputeMeanAndStdDevExcl(in float3 neighborhood[9], out float3 mean, out float3 stdDev)
+{
+    IMPLEMENT_STATS_EXCL_LOGIC(9, 4)
+}
 
-    stdDev = sqrt(var);
+// --- 5-Tap / 4-Tap (Cross) ---
+
+/// @brief Computes mean and stdDev from a 5-tap cross neighborhood.
+void ComputeMeanAndStdDev(in float4 neighborhood[5], out float3 mean, out float3 stdDev)
+{
+    IMPLEMENT_STATS_LOGIC(5)
+}
+
+void ComputeMeanAndStdDev(in float3 neighborhood[5], out float3 mean, out float3 stdDev)
+{
+    IMPLEMENT_STATS_LOGIC(5)
+}
+
+/// @brief Computes mean and stdDev from a 5-tap cross, excluding the center (4 samples).
+void ComputeMeanAndStdDevExcl(in float4 neighborhood[5], out float3 mean, out float3 stdDev)
+{
+    IMPLEMENT_STATS_EXCL_LOGIC(5, 2)
+}
+
+void ComputeMeanAndStdDevExcl(in float3 neighborhood[5], out float3 mean, out float3 stdDev)
+{
+    IMPLEMENT_STATS_EXCL_LOGIC(5, 2)
 }
