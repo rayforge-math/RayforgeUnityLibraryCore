@@ -3,6 +3,7 @@ using Rayforge.Core.ShaderExtensions.Blitter;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
+using Rayforge.Core.Common.Cache;
 
 namespace Rayforge.Core.Utility.RenderGraphs.Rendering
 {
@@ -90,7 +91,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
                     int rtCount = data.DestinationCount;
                     if(rtCount > 1)
                     {
-                        var mrtArray = MRTPool.Get(rtCount);
+                        var mrtArray = StaticArrayPool<RenderTargetIdentifier>.Get(rtCount);
 
                         for (int i = 0; i < rtCount; i++)
                         {

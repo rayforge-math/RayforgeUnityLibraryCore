@@ -21,11 +21,11 @@
         // MRT Case - Add the history depth texture to the arguments.
         #define DEPTH_ARGS_X_DECL , TEXTURE2D_X(histDepthTex)
         #define DEPTH_ARGS_X_PASS , histDepthTex
-        #define FETCH_HIST_DEPTH(col, uv) LinearEyeDepth(SAMPLE_TEXTURE2D_X_LOD(histDepthTex, SAMPLER_P_C, uv, 0).r, _ZBufferParams)
+        #define FETCH_HIST_DEPTH(col, uv) SAMPLE_TEXTURE2D_X_LOD(histDepthTex, SAMPLER_P_C, uv, 0).r
     #else
         // Alpha Case - No extra textures needed.
-        #define DEPTH_ARGS_DECL 
-        #define DEPTH_ARGS_PASS 
+        #define DEPTH_ARGS_X_DECL 
+        #define DEPTH_ARGS_X_PASS 
         #define FETCH_HIST_DEPTH(col, uv) col.a
     #endif
 #else
@@ -69,14 +69,13 @@ void SetupMotionVectorPipelineXR(TEXTURE2D_X_PARAM(historyTexture, historySample
     motionVector = DECODE_MOTION_VECTOR(SAMPLE_MV(currentUV));
     
     float2 prevUV = currentUV - motionVector - (_TAA_Jitter - _TAA_JitterPrev);
-    history = SampleHistoryXR(TEXTURE2D_X_ARGS( historyTexture, historySampler), prevUV, fallback);
+    history = SampleHistoryXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), prevUV, fallback);
     historyDepth = FETCH_HIST_DEPTH(history, prevUV);
 }
 
 /// @brief Reconstructs WS position from UV and depth.
-float3 ReconstructWorldPos(float2 uv, float currentDepth)
+float3 ReconstructWorldPos(float2 uv, float rawDepth)
 {
-    float rawDepth = (1.0 / (currentDepth * _ZBufferParams.z)) - (_ZBufferParams.w / _ZBufferParams.z);
     float2 ndc = uv * 2.0 - 1.0;
     float4 posCS = float4(ndc, rawDepth, 1.0);
     float4 posWS = mul(_Rayforge_Matrix_Inv_VP, posCS);
@@ -110,7 +109,7 @@ void SetupWorldPosPipelineXR(TEXTURE2D_X_PARAM(historyTexture, historySampler), 
 // Utility building blocks
 // ============================================================================
 
-inline bool ApplyDepthRejection(float4 currentColor, float4 history, float historyDepth, ReprojectionParams params, inout float4 result DEPTH_INPUT_DECL)
+inline void ApplyDepthRejection(float4 currentColor, float4 history, float historyDepth, inout ReprojectionParams params, inout float4 result DEPTH_INPUT_DECL)
 {
 #if defined(TAA_USE_DEPTH)
     
@@ -120,28 +119,32 @@ inline bool ApplyDepthRejection(float4 currentColor, float4 history, float histo
     
     if(params.depthRejection == 1)
     {
-        bool depthReject = abs(curDepth - historyDepth) > params.depthThreshold;
-        if (depthReject)
-        {
-#if defined(TAA_ALLOW_FULL_RGBA)
-            result = currentColor;
-#else
-            result.rgb = currentColor.rgb;
-#endif
+        float linearCur = LinearEyeDepth(curDepth, _ZBufferParams);
+        float linearHist = LinearEyeDepth(historyDepth, _ZBufferParams);
+        float depthDiff = abs(linearCur - linearHist);
+    
+        float dynamicThreshold = params.depthThreshold * linearCur + 0.001;
         
-            return true;
+        // Hard rejection: if the discrepancy is extreme, force history weight to zero.
+        if (depthDiff > dynamicThreshold * 10.0) 
+        {
+            params.historyWeight = 0.0;
+            return;
         }
+    
+        float t = saturate(depthDiff / dynamicThreshold);
+        float scale = 1.0 - (t * t * (3.0 - 2.0 * t));
+        
+        params.historyWeight *= scale;
     }
 #endif
-
-    return false;
 }
 
 inline void ApplyVelocityDisocclusion(float2 motionVector, inout ReprojectionParams params)
 {
     bool hasMotion = dot(motionVector, motionVector) > 1e-6;
     
-    if (params.velocityDisocclusion && hasMotion)
+    if (params.velocityDisocclusion == 1 && hasMotion)
     {
         float speed = length(motionVector);
         float disocclusion = saturate((speed - params.velocityThreshold) * params.velocityScale);
@@ -157,15 +160,14 @@ inline void ApplyColorClamping(inout float3 historyRGB, float4 neighborhood[9], 
     }
 }
 
-inline void ApplyFinalBlend(float4 currentColor, float4 history, ReprojectionParams params, inout float4 result)
+inline void ApplyFinalBlend(float4 currentColor, float4 history, float historyWeight, inout float4 result)
 {
-    float4 blend = lerp(currentColor, history, params.historyWeight);
+    float4 blend = lerp(currentColor, history, historyWeight);
     
 #if defined(TAA_ALLOW_FULL_RGBA)
     result = blend;
 #else
-    float depth = result.a;
-    result = float4(blend.rgb, depth);
+    result.rgb = blend.rgb;
 #endif
 }
 
@@ -191,14 +193,10 @@ float4 BlendHistoryMotionVectorsXR(TEXTURE2D_X_PARAM(historyTexture, historySamp
     float4 history;
     float historyDepth;
     SetupMotionVectorPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, currentColor, motionVector, history, historyDepth TAA_MV_ARGS_X_PASS);
-    
-    if (ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS))
-    {
-        return result;
-    }
 
+    ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS);
     ApplyVelocityDisocclusion(motionVector, params);
-    ApplyFinalBlend(currentColor, history, params, result);
+    ApplyFinalBlend(currentColor, history, params.historyWeight, result);
 
     return result;
 }
@@ -224,14 +222,10 @@ float4 BlendHistoryMotionVectorsXR(TEXTURE2D_X_PARAM(historyTexture, historySamp
     float4 currentColor = currentNeighborhood[4];
     SetupMotionVectorPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, currentColor, motionVector, history, historyDepth TAA_MV_ARGS_X_PASS);
 
-    if (ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS))
-    {
-        return result;
-    }
-
+    ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS);
     ApplyVelocityDisocclusion(motionVector, params);
     ApplyColorClamping(history.rgb, currentNeighborhood, params);
-    ApplyFinalBlend(currentColor, history, params, result);
+    ApplyFinalBlend(currentColor, history, params.historyWeight, result);
 
     return result;
 }
@@ -259,12 +253,8 @@ float4 BlendHistoryWorldPosXR(TEXTURE2D_X_PARAM(historyTexture, historySampler),
     SetupWorldPosPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, currentDepth, currentColor, history TAA_WP_ARGS_X_PASS);
 
     float curDepth = currentDepth;
-    if (ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS))
-    {
-        return result;
-    }
-
-    ApplyFinalBlend(currentColor, history, params, result);
+    ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS);
+    ApplyFinalBlend(currentColor, history, params.historyWeight, result);
 
     return result;
 }
@@ -296,13 +286,9 @@ float4 BlendHistoryWorldPosXR(TEXTURE2D_X_PARAM(historyTexture, historySampler),
     SetupWorldPosPipelineXR(TEXTURE2D_X_ARGS(historyTexture, historySampler), currentUV, currentDepth, currentColor, history TAA_WP_ARGS_X_PASS);
     
     float curDepth = currentDepth;
-    if (ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS))
-    {
-        return result;
-    }
-
+    ApplyDepthRejection(currentColor, history, historyDepth, params, result DEPTH_INPUT_PASS);
     ApplyColorClamping(history.rgb, currentNeighborhood, params);
-    ApplyFinalBlend(currentColor, history, params, result);
+    ApplyFinalBlend(currentColor, history, params.historyWeight, result);
 
     return result;
 }

@@ -95,7 +95,7 @@ static const float2 OffsetsStar[9] = {
         float depthDiff = sampleDepth - referenceDepth; \
         \
         float w = (1.0 / (abs(depthDiff) * finalFalloff + 0.1) * 0.1); \
-        if (depthDiff < 0) w *= 0.0001; \
+        /*if (depthDiff < 0) w *= 0.0001;*/ \
         \
         float spatial = (i == 0) ? 2.0 : 1.0; \
         combinedColor += sampleColor * (w * spatial); \

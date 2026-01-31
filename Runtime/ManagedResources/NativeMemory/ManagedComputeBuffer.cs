@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using UnityEngine;
-using UnityEngine.Rendering.RenderGraphModule;
+using Rayforge.Core.Common.Cache;
 
 namespace Rayforge.Core.ManagedResources.NativeMemory
 {
@@ -14,18 +14,6 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// </summary>
     public sealed class ManagedComputeBuffer : ManagedBuffer<ComputeBufferDescriptor, ComputeBuffer>
     {
-        private static class UploadCache<T> 
-            where T : struct
-        {
-            private static T[] s_Array;
-
-            static UploadCache()
-                => s_Array = new T[1];
-
-            public static T[] GetArray()
-                => s_Array;
-        }
-
         /// <summary>
         /// Private constructor: initializes the managed buffer with an existing ComputeBuffer and descriptor.
         /// Use the <see cref="Create"/> methods to allocate buffers safely.
@@ -129,7 +117,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             where T : unmanaged
         {
             if (data == null) return;
-            var uploadCache = UploadCache<T>.GetArray();
+            var uploadCache = StaticArrayPool<T>.Get(1);
             uploadCache[0] = data.RawData;
             SetData(uploadCache);
         }
