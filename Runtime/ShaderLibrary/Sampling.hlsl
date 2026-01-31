@@ -4,7 +4,6 @@
     [unroll] \
     for (int i = 0; i < _COUNT; ++i) { \
         float2 sUV = uv + _OFFSETS[i] * texSize; \
-        sUV = clamp(sUV, 0.0, 1.0); \
         outNeighbors[i] = SAMPLER_MACRO(tex, smp, sUV, 0); \
     }
 
@@ -46,20 +45,20 @@ void SampleNeighborhood(TEXTURE2D_PARAM(tex, smp), float2 uv, float2 texelSize, 
 
 void SampleNeighborhoodXR(TEXTURE2D_X(tex), float2 uv, float2 texelSize, out float4 neighbors[9])
 {
-    SampleNeighborhoodXR(TEXTURE2D_X_ARGS(tex, sampler_LinearClamp), uv, texelSize, neighbors);
+    SampleNeighborhoodXR(TEXTURE2D_X_ARGS(tex, sampler_PointClamp), uv, texelSize, neighbors);
 }
 
 void SampleNeighborhoodXR(TEXTURE2D_X(tex), float2 uv, float2 texelSize, out float4 neighbors[5])
 {
-    SampleNeighborhoodXR(TEXTURE2D_X_ARGS(tex, sampler_LinearClamp), uv, texelSize, neighbors);
+    SampleNeighborhoodXR(TEXTURE2D_X_ARGS(tex, sampler_PointClamp), uv, texelSize, neighbors);
 }
 
 void SampleNeighborhood(TEXTURE2D(tex), float2 uv, float2 texelSize, out float4 neighbors[9])
 {
-    SampleNeighborhood(TEXTURE2D_ARGS(tex, sampler_LinearClamp), uv, texelSize, neighbors);
+    SampleNeighborhood(TEXTURE2D_ARGS(tex, sampler_PointClamp), uv, texelSize, neighbors);
 }
 
 void SampleNeighborhood(TEXTURE2D(tex), float2 uv, float2 texelSize, out float4 neighbors[5])
 {
-    SampleNeighborhood(TEXTURE2D_ARGS(tex, sampler_LinearClamp), uv, texelSize, neighbors);
+    SampleNeighborhood(TEXTURE2D_ARGS(tex, sampler_PointClamp), uv, texelSize, neighbors);
 }
