@@ -56,13 +56,10 @@
 #if defined(BLUR_BILATERAL)
     #define BIL_FETCH_CENTER(SAMPLER, uv) \
         float centerDepth = LinearEyeDepth(SAMPLER(depthTex, SAMPLER_P_C, uv, 0).r, _ZBufferParams); \
-        /* use partial derivatives for gradient (rate of change) */ \
-        float depthGradient = fwidth(centerDepth); \
-        float edgeStrictness = 1.0 + saturate(depthGradient); \
-        float finalFalloff = pow(abs(falloff), edgeStrictness);
+        float finalFalloff = GetFinalFalloff(centerDepth, falloff);
 
     #define BIL_GET_W(SAMPLER, uv) \
-        (1.0 / (abs(centerDepth - LinearEyeDepth(SAMPLER(depthTex, depthSmp, uv, 0).r, _ZBufferParams)) * finalFalloff + 0.1) * 0.1)
+        GetBilateralWeight(centerDepth, LinearEyeDepth(SAMPLER(depthTex, depthSmp, uv, 0).r, _ZBufferParams), finalFalloff)  
 
 #else
     #define BIL_FETCH_CENTER(SAMPLER, uv) 

@@ -71,7 +71,7 @@ static const float2 OffsetsStar[9] = {
     #endif
 
     #define BIL_UP_ADAPTIVE_FALLOFF(refDepth, baseFalloff) \
-        (baseFalloff * (1.0 / (refDepth * ADAPTIVE_BIAS + 0.1)))
+        GetAdaptiveFalloff(refDepth, baseFalloff, ADAPTIVE_BIAS)
 #else
     #define BIL_UP_ADAPTIVE_FALLOFF(refDepth, baseFalloff) (baseFalloff)
 #endif
@@ -80,11 +80,7 @@ static const float2 OffsetsStar[9] = {
     float rawRefDepth = SAMPLE_MACRO(fDepth, SAMPLER_P_C, uv, 0).r; \
     float referenceDepth = LinearEyeDepth(rawRefDepth, _ZBufferParams); \
     \
-    /* use partial derivatives for gradient (rate of change) */ \
-    float depthGradient = fwidth(referenceDepth); \
-    float edgeStrictness = 1.0 + saturate(depthGradient); \
-    \
-    float finalFalloff = pow(abs(falloff), edgeStrictness); \
+    float finalFalloff = GetFinalFalloff(referenceDepth, falloff); \
     finalFalloff = BIL_UP_ADAPTIVE_FALLOFF(referenceDepth, finalFalloff); \
     \
     float4 combinedColor = 0; \
@@ -97,9 +93,7 @@ static const float2 OffsetsStar[9] = {
         float sampleDepth = LinearEyeDepth(rawSampleDepth, _ZBufferParams); \
         \
         float4 sampleColor = SAMPLE_MACRO(src, srcSmp, sampleUV, 0); \
-        float depthDiff = sampleDepth - referenceDepth; \
-        \
-        float w = (1.0 / (abs(depthDiff) * finalFalloff + 0.1) * 0.1); \
+        float w = GetBilateralWeight(referenceDepth, sampleDepth, finalFalloff); \
         /*if (depthDiff < 0) w *= 0.0001;*/ \
         \
         float spatial = (i == 0) ? 2.0 : 1.0; \
