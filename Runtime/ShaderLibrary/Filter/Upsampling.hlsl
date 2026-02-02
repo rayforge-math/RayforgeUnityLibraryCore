@@ -65,23 +65,11 @@ static const float2 OffsetsStar[9] = {
     #define SAMPLER_L_C sampler_LinearClamp
 #endif
 
-#if defined(UPSAMPLE_ADAPTIVE)
-    #if !defined(UPSAMPLE_ADAPTIVE_BIAS)
-        #define ADAPTIVE_BIAS 0.1
-    #endif
-
-    #define BIL_UP_ADAPTIVE_FALLOFF(refDepth, baseFalloff) \
-        GetAdaptiveFalloff(refDepth, baseFalloff, ADAPTIVE_BIAS)
-#else
-    #define BIL_UP_ADAPTIVE_FALLOFF(refDepth, baseFalloff) (baseFalloff)
-#endif
-
 #define CORE_BILATERAL_UPSAMPLE_LOGIC(SAMPLE_MACRO, COUNT) \
     float rawRefDepth = SAMPLE_MACRO(fDepth, SAMPLER_P_C, uv, 0).r; \
     float referenceDepth = LinearEyeDepth(rawRefDepth, _ZBufferParams); \
     \
     float finalFalloff = GetFinalFalloff(referenceDepth, falloff); \
-    finalFalloff = BIL_UP_ADAPTIVE_FALLOFF(referenceDepth, finalFalloff); \
     \
     float4 combinedColor = 0; \
     float combinedWeight = 0; \
