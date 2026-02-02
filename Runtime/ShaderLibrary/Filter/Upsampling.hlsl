@@ -58,7 +58,12 @@ static const float2 OffsetsStar[9] = {
  * @param falloff        Depth sensitivity factor. Higher values preserve edges more strictly.
  * @param COUNT          The number of samples in the offset array (e.g., 5 or 9).
  */
-#define SAMPLER_P_C sampler_PointClamp
+#if !defined(SAMPLER_P_C)
+    #define SAMPLER_P_C sampler_PointClamp
+#endif
+#if !defined(SAMPLER_L_C)
+    #define SAMPLER_L_C sampler_LinearClamp
+#endif
 
 #if defined(UPSAMPLE_ADAPTIVE)
     #if !defined(UPSAMPLE_ADAPTIVE_BIAS)

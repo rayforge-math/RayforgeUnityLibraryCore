@@ -33,6 +33,13 @@
 
 #define BLUR_BUFFER_SIZE BLUR_RADIUS_MAX + 1
 
+#if !defined(SAMPLER_P_C)
+    #define SAMPLER_P_C sampler_PointClamp
+#endif
+#if !defined(SAMPLER_L_C)
+    #define SAMPLER_L_C sampler_LinearClamp
+#endif
+
 #if defined(BLUR_BILATERAL)
     #define BIL_ARGS_X_DECL , TEXTURE2D_X_PARAM(depthTex, depthSmp), float falloff
     #define BIL_ARGS_X_PASS , TEXTURE2D_X_ARGS(depthTex, depthSmp), falloff
@@ -48,8 +55,8 @@
 
 #if defined(BLUR_BILATERAL)
     #define BIL_FETCH_CENTER(SAMPLER, uv) \
-        float centerDepth = LinearEyeDepth(SAMPLER(depthTex, depthSmp, uv, 0).r, _ZBufferParams); \
-         /* use partial derivatives for gradient (rate of change) */ \
+        float centerDepth = LinearEyeDepth(SAMPLER(depthTex, SAMPLER_P_C, uv, 0).r, _ZBufferParams); \
+        /* use partial derivatives for gradient (rate of change) */ \
         float depthGradient = fwidth(centerDepth); \
         float edgeStrictness = 1.0 + saturate(depthGradient); \
         float finalFalloff = pow(abs(falloff), edgeStrictness);
@@ -103,7 +110,7 @@
     } \
     return res / max(count, 0.00001);
 
-float4 BoxBlurXR(TEXTURE2D_X_PARAM( BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
+float4 BoxBlurXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
     CORE_BOX_BLUR_LOGIC(SAMPLE_TEXTURE2D_X_LOD);
 }
