@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Unity.Collections;
 using UnityEngine;
-using UnityEngine.Rendering.RenderGraphModule;
+using Rayforge.Core.Common.Cache;
 
 namespace Rayforge.Core.ManagedResources.NativeMemory
 {
@@ -117,7 +117,9 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             where T : unmanaged
         {
             if (data == null) return;
-            SetData(new T[] { data.RawData });
+            var uploadCache = StaticArrayPool<T>.Get(1);
+            uploadCache[0] = data.RawData;
+            SetData(uploadCache);
         }
 
         /// <summary>

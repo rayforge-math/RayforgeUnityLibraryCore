@@ -27,8 +27,15 @@ namespace Rayforge.Core.Rendering.Collections
         /// </returns>
         public delegate bool CreateFunction(ref THandle handle, RenderTextureDescriptor descriptor, int mipLevel, TData data = default);
 
+        /// <summary>
+        /// Delegate for releasing a handle when it's removed from the chain.
+        /// </summary>
+        /// <param name="handle">The handle to be released.</param>
+        public delegate void ReleaseFunction(ref THandle handle);
+
         protected THandle[] m_Handles;
         protected CreateFunction m_CreateFunc;
+        protected readonly ReleaseFunction m_ReleaseFunc;
 
         private Vector2Int m_BaseResolution = new Vector2Int(-1 , -1);
         private static readonly Func<int, Vector2Int, Vector2Int> m_CalculateMipResFunc = MipChainHelpers.DefaultMipResolution;
@@ -47,15 +54,14 @@ namespace Rayforge.Core.Rendering.Collections
         /// Initializes the mip chain with a handle creation function.
         /// </summary>
         /// <param name="createFunc">Function to create each mip level.</param>
+        /// <param name="releaseFunc">Function to release a given mip level.</param>
         /// <exception cref="ArgumentNullException">
         /// Thrown if <paramref name="createFunc"/> is <c>null</c>.
         /// </exception>
-        public MipChain(CreateFunction createFunc)
+        public MipChain(CreateFunction createFunc, ReleaseFunction releaseFunc)
         {
-            if (createFunc == null)
-                throw new ArgumentNullException(nameof(createFunc));
-
-            m_CreateFunc = createFunc;
+            m_CreateFunc = createFunc ?? throw new ArgumentNullException(nameof(createFunc));
+            m_ReleaseFunc = releaseFunc;
             m_Handles = Array.Empty<THandle>();
         }
 
@@ -171,6 +177,29 @@ namespace Rayforge.Core.Rendering.Collections
         {
             if (newLength < 0) newLength = 0;
             if (MipCount == newLength) return;
+
+            if (m_Handles != null && m_Handles.Length > 0)
+            {
+                preserveIndex = Math.Clamp(preserveIndex, 0, m_Handles.Length - 1);
+                preserveCount = Math.Min(preserveCount, m_Handles.Length - preserveIndex);
+                preserveCount = Math.Min(preserveCount, newLength);
+
+                for (int i = 0; i < m_Handles.Length; i++)
+                {
+                    bool isPreserved = i >= preserveIndex && i < (preserveIndex + preserveCount);
+
+                    if (!isPreserved && m_Handles[i] != null)
+                    {
+                        m_ReleaseFunc(ref m_Handles[i]);
+                        m_Handles[i] = default;
+                    }
+                }
+            }
+            else
+            {
+                preserveCount = 0;
+            }
+
             if (newLength == 0)
             {
                 m_Handles = Array.Empty<THandle>();
@@ -181,10 +210,6 @@ namespace Rayforge.Core.Rendering.Collections
 
             if (m_Handles != null && preserveCount > 0)
             {
-                preserveIndex = Math.Clamp(preserveIndex, 0, m_Handles.Length - 1);
-                preserveCount = Math.Min(preserveCount, m_Handles.Length - preserveIndex);
-                preserveCount = Math.Min(preserveCount, newHandles.Length);
-
                 Array.Copy(m_Handles, preserveIndex, newHandles, 0, preserveCount);
             }
 

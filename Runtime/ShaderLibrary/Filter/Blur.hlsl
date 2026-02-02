@@ -33,7 +33,14 @@
 
 #define BLUR_BUFFER_SIZE BLUR_RADIUS_MAX + 1
 
-#if defined(BILATERAL)
+#if !defined(SAMPLER_P_C)
+    #define SAMPLER_P_C sampler_PointClamp
+#endif
+#if !defined(SAMPLER_L_C)
+    #define SAMPLER_L_C sampler_LinearClamp
+#endif
+
+#if defined(BLUR_BILATERAL)
     #define BIL_ARGS_X_DECL , TEXTURE2D_X_PARAM(depthTex, depthSmp), float falloff
     #define BIL_ARGS_X_PASS , TEXTURE2D_X_ARGS(depthTex, depthSmp), falloff
     
@@ -46,16 +53,15 @@
     #define BIL_ARGS_PASS   
 #endif
 
-#if defined(BILATERAL)
-    // Injects the variable declaration and fetch
+#if defined(BLUR_BILATERAL)
     #define BIL_FETCH_CENTER(SAMPLER, uv) \
-        float centerDepth = SAMPLER(depthTex, depthSmp, uv, 0).r;
-    
-    // Injects the depth comparison weight
+        float centerDepth = LinearEyeDepth(SAMPLER(depthTex, SAMPLER_P_C, uv, 0).r, _ZBufferParams); \
+        float finalFalloff = GetFinalFalloff(centerDepth, falloff);
+
     #define BIL_GET_W(SAMPLER, uv) \
-        (1.0 / (abs(centerDepth - SAMPLER(depthTex, depthSmp, uv, 0).r) * falloff + 0.001))
+        GetBilateralWeight(centerDepth, LinearEyeDepth(SAMPLER(depthTex, depthSmp, uv, 0).r, _ZBufferParams), finalFalloff)  
+
 #else
-    // Empty or neutral if bilateral is off
     #define BIL_FETCH_CENTER(SAMPLER, uv) 
     #define BIL_GET_W(SAMPLER, uv) 1.0
 #endif
@@ -101,7 +107,7 @@
     } \
     return res / max(count, 0.00001);
 
-float4 BoxBlurXR(TEXTURE2D_X_PARAM( BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
+float4 BoxBlurXR(TEXTURE2D_X_PARAM(BlitTexture, samplerState), float2 texcoord, float2 direction, float2 texelSize, bool cutoff, int radius BIL_ARGS_X_DECL)
 {
     CORE_BOX_BLUR_LOGIC(SAMPLE_TEXTURE2D_X_LOD);
 }
@@ -631,7 +637,6 @@ float4 KawaseBlur(TEXTURE2D_PARAM(BlitTexture, samplerState), float2 texcoord, f
         for (int j = 0; j < 4; ++j) { \
             float2 sampleUV = texcoord + off[j] * scaledTexel; \
             if (!cutoff || UvInBounds(sampleUV, true)) { \
-                /* Combine Kawase pass weight with bilateral depth weight */ \
                 float w = passW_base * BIL_GET_W(SAMPLER_MACRO, sampleUV); \
                 res += SAMPLER_MACRO(BlitTexture, samplerState, sampleUV, 0) * w; \
                 totalW += w; \

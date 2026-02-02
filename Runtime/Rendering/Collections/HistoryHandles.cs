@@ -18,6 +18,16 @@
         public THandle History => Second;
 
         /// <summary>
+        /// Gets the internal array index for the current frame's target.
+        /// </summary>
+        public int TargetIndex => FirstIndex;
+
+        /// <summary>
+        /// Gets the internal array index for the history data.
+        /// </summary>
+        public int HistoryIndex => SecondIndex;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="HistoryHandles"/> struct.
         /// </summary>
         /// <param name="initial0">Initial first handle (current).</param>

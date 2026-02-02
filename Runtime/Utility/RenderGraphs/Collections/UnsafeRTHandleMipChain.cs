@@ -33,8 +33,9 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// Initializes a mip chain with a texture creation function.
         /// </summary>
         /// <param name="createFunc">Function to create each mip level.</param>
-        public UnsafeRTHandleMipChain(CreateFunction createFunc)
-            : base(createFunc)
+        /// <param name="releaseFunc">Function to release a given mip level.</param>
+        public UnsafeRTHandleMipChain(CreateFunction createFunc, ReleaseFunction releaseFunc)
+            : base(createFunc, releaseFunc)
         { }
 
         /// <summary>
@@ -95,14 +96,15 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// Initializes a mip chain with a texture creation function.
         /// </summary>
         /// <param name="createFunc">Function to create each mip level.</param>
+        /// <param name="releaseFunc">Function to release a given mip level.</param>
         /// <exception cref="ArgumentNullException">
         /// Thrown if <paramref name="createFunc"/> is <c>null</c>.
         /// </exception>
-        public UnsafeRTHandleMipChain(CreateFunctionNoData createFunc)
+        public UnsafeRTHandleMipChain(CreateFunctionNoData createFunc, ReleaseFunction releaseFunc)
             : base((ref RTHandle handle, RenderTextureDescriptor descriptor, int mipLevel, NoData _) =>
             {
                 return createFunc.Invoke(ref handle, descriptor, mipLevel);
-            })
+            }, releaseFunc)
         {
             if (createFunc == null)
                 throw new ArgumentNullException(nameof(createFunc), "The texture creation function must not be null.");

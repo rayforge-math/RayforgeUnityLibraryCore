@@ -1,6 +1,5 @@
 using Rayforge.Core.ShaderExtensions.Blitter;
 using System;
-using System.Collections.Generic;
 using UnityEngine.Rendering.RenderGraphModule;
 
 namespace Rayforge.Core.Utility.RenderGraphs.Rendering
@@ -20,39 +19,32 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
         where TDerived : PassDataBase<TDerived, TMeta>
         where TMeta : struct
     {
-        // --- Fixed input slots ---
-        private TextureMeta _input0;
-        private TextureMeta _input1;
-        private TextureMeta _input2;
-        private TextureMeta _input3;
-        private TextureMeta _input4;
-        private TextureMeta _input5;
-        private TextureMeta _input6;
-        private TextureMeta _input7;
+        private TextureStack m_InputStack;
+        private TextureStack m_DestinationStack;
 
-        private int _inputCount = 0;
-
-        /// <summary>
-        /// The number of currently pushed input textures in this pass.
-        /// <para>
-        /// This value is automatically updated when pushing or consuming inputs.
-        /// </para>
-        /// </summary>
-        public int InputCount => _inputCount;
+        public int InputCount => m_InputStack.Count;
+        public int DestinationCount => m_DestinationStack.Count;
 
         /// <summary>
         /// Maximum number of supported input textures.
         /// </summary>
-        public const int InputCapacity = 8;
+        public const int InputCapacity = TextureStack.Capacity;
 
-        private TextureMeta m_Destination;
         /// <summary>
-        /// Gets or sets the destination texture that this pass writes into.
+        /// Legacy support for single destination. 
+        /// Acts as a wrapper for the first MRT slot (index 0).
         /// </summary>
         public TextureMeta Destination
         {
-            get => m_Destination;
-            set => m_Destination = value;
+            get
+            {
+                return m_DestinationStack.Count > 0 ? m_DestinationStack.Peek(0) : default;
+            }
+            set
+            {
+                m_DestinationStack.Clear();
+                m_DestinationStack.Push(value);
+            }
         }
 
         private TMeta m_PassMeta;
@@ -81,10 +73,8 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
         /// <param name="other">The pass data instance to fetch from.</param>
         public void FetchFrom(PassDataBase<TDerived, TMeta> other)
         {
-            ConsumeInputsFrom(other);
-
-            m_Destination = other.m_Destination;
-            other.m_Destination = default;
+            m_InputStack.ConsumeFrom(ref other.m_InputStack);
+            m_DestinationStack.ConsumeFrom(ref other.m_DestinationStack);
 
             m_PassMeta = other.m_PassMeta;
         }
@@ -107,7 +97,28 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
         /// <param name="handle">The texture handle to write into.</param>
         /// <param name="propertyId">Optional shader property ID to bind the texture to.</param>
         public void PushDestination(TextureHandle handle, int propertyId = 0)
-            => Destination = new TextureMeta { handle = handle, propertyId = propertyId };
+            => m_DestinationStack.Push(new TextureMeta { handle = handle, propertyId = propertyId });
+
+        /// <summary>
+        /// Returns the last added destination and marks it as consumed (Popped).
+        /// </summary>
+        /// <param name="destination">The texture metadata of the last destination.</param>
+        /// <returns>True if a destination was returned; false if the stack is empty.</returns>
+        public bool TryPopDestination(out TextureMeta destination)
+            => m_DestinationStack.TryPop(out destination);
+
+        /// <summary>
+        /// Attempts to peek at the destination texture at the specified MRT index without consuming it.
+        /// </summary>
+        /// <param name="index">Zero-based index of the destination slot (0-7, corresponds to SV_Target0-7).</param>
+        /// <param name="destination">The texture metadata at the slot, if valid.</param>
+        /// <returns>True if a valid destination exists at the specified index; otherwise, false.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if the index is out of range [0-7].</exception>
+        public bool TryPeekDestination(int index, out TextureMeta destination)
+        {
+            destination = m_DestinationStack.Peek(index);
+            return destination.handle.IsValid();
+        }
 
         /// <summary>
         /// Adds an input texture to the next available slot.
@@ -117,22 +128,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
         /// <param name="input">The texture metadata to add as input.</param>
         /// <exception cref="InvalidOperationException">Thrown if input slots are full.</exception>
         public void PushInput(TextureMeta input)
-        {
-            if (_inputCount >= InputCapacity)
-                throw new InvalidOperationException($"Cannot add more than {InputCapacity} inputs.");
-
-            switch (_inputCount++)
-            {
-                case 0: _input0 = input; break;
-                case 1: _input1 = input; break;
-                case 2: _input2 = input; break;
-                case 3: _input3 = input; break;
-                case 4: _input4 = input; break;
-                case 5: _input5 = input; break;
-                case 6: _input6 = input; break;
-                case 7: _input7 = input; break;
-            }
-        }
+            => m_InputStack.Push(input);
 
         /// <summary>
         /// Sets an input texture at the first available slot using a shader property ID and texture handle.
@@ -154,53 +150,12 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
             => PushInput(new TextureMeta { propertyId = BlitParameters.BlitTextureId, handle = handle });
 
         /// <summary>
-        /// Consumes all input textures from the given source pass data.
-        /// Each input slot is copied to this instance and then cleared in the source.
-        /// </summary>
-        /// <param name="source">The source pass data instance to consume inputs from.</param>
-        private void ConsumeInputsFrom(PassDataBase<TDerived, TMeta> source)
-        {
-            _input0 = source._input0; source._input0 = default;
-            _input1 = source._input1; source._input1 = default;
-            _input2 = source._input2; source._input2 = default;
-            _input3 = source._input3; source._input3 = default;
-            _input4 = source._input4; source._input4 = default;
-            _input5 = source._input5; source._input5 = default;
-            _input6 = source._input6; source._input6 = default;
-            _input7 = source._input7; source._input7 = default;
-
-            _inputCount = source._inputCount;
-            source._inputCount = 0;
-        }
-
-        /// <summary>
         /// Returns the last input added and marks it as consumed.
         /// </summary>
         /// <param name="input">The texture metadata of the last input.</param>
         /// <returns>True if an input was returned; false if no inputs remain.</returns>
         public bool TryPopInput(out TextureMeta input)
-        {
-            if (_inputCount == 0)
-            {
-                input = default;
-                return false;
-            }
-
-            _inputCount--;
-            switch (_inputCount)
-            {
-                case 0: input = _input0; _input0 = default; break;
-                case 1: input = _input1; _input1 = default; break;
-                case 2: input = _input2; _input2 = default; break;
-                case 3: input = _input3; _input3 = default; break;
-                case 4: input = _input4; _input4 = default; break;
-                case 5: input = _input5; _input5 = default; break;
-                case 6: input = _input6; _input6 = default; break;
-                case 7: input = _input7; _input7 = default; break;
-                default: input = default; break; // safety
-            }
-            return true;
-        }
+            => m_InputStack.TryPop(out input);
 
         /// <summary>
         /// Attempts to peek at the input texture at the specified index without consuming it.
@@ -211,19 +166,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Rendering
         /// <exception cref="ArgumentOutOfRangeException">Thrown if the index is out of range [0-7].</exception>
         public bool TryPeekInput(int index, out TextureMeta input)
         {
-            input = index switch
-            {
-                0 => _input0,
-                1 => _input1,
-                2 => _input2,
-                3 => _input3,
-                4 => _input4,
-                5 => _input5,
-                6 => _input6,
-                7 => _input7,
-                _ => throw new ArgumentOutOfRangeException(nameof(index), $"Index {index} is out of range (0-{InputCapacity - 1}).")
-            };
-
+            input = m_InputStack.Peek(index);
             return input.handle.IsValid();
         }
     }
