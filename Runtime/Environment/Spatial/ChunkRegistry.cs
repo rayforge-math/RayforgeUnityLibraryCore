@@ -1,8 +1,5 @@
 using Rayforge.Core.Environment.Spatial.Helpers;
-using System.Collections.Generic;
-using UnityEditor;
 using UnityEngine;
-using static Codice.Client.Commands.WkTree.WorkspaceTreeNode;
 
 namespace Rayforge.Core.Environment.Spatial
 {

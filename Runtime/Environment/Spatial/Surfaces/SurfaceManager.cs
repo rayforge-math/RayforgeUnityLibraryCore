@@ -9,21 +9,30 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// </summary>
     public class SurfaceManager : MonoBehaviour
     {
-        [Header("Workflow Settings")]
-        [Tooltip("If true, RebuildRegistry() is called automatically on Start.")]
-        public bool autoUpdate = false;
+        [Header("Floating Origin")]
+        [Tooltip("The relay that monitors world movement. If null, it will be searched in parents/siblings during Awake.")]
+        public OriginShiftRelay shiftRelay;
+
+        [Header("LOD & Culling")]
+        [Tooltip("The reference point for LOD calculations (usually Main Camera).")]
+        public Transform lodReference;
+        [Range(1, 8)]
+        public int globalLodBias = 1;
+        [Tooltip("Active radius in chunks around the lodReference.")]
+        public int viewDistance = 5;
 
         [Header("Detection Settings")]
         [Tooltip("If enabled, the manager automatically scans all children of this GameObject.")]
         public bool scanHierarchy = true;
         [Tooltip("If not empty, only objects containing this string in their name are considered.")]
         public string nameFilter = "";
-
         [Space(5)]
         [Tooltip("If enabled, objects must have a minimum physical size to be accepted.")]
         public bool enableAreaCheck = true;
         [Tooltip("Minimum XZ-Area in square meters (e.g., 1.0 for a 1x1m area).")]
         public float minAreaThreshold = 1.0f;
+        [Tooltip("If true, RebuildRegistry() is called automatically on Start.")]
+        public bool autoUpdate = false;
 
         [Header("Surfaces")]
         [Tooltip("Manual list of surfaces. If Auto Detect is enabled, this list is populated automatically.")]
@@ -33,6 +42,19 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         private readonly List<int> _cleanupBuffer = new List<int>(32);
         private SurfaceRegistry _registry = new SurfaceRegistry();
 
+        #region Unity Lifecycle
+
+        private void Awake()
+        {
+            SetupDependencies();
+
+            if (shiftRelay != null)
+            {
+                shiftRelay.OnWorldShiftDetected -= HandleOriginShift;
+                shiftRelay.OnWorldShiftDetected += HandleOriginShift;
+            }
+        }
+
         private void Start()
         {
             if (autoUpdate)
@@ -40,6 +62,50 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 RebuildRegistry();
             }
         }
+
+        private void OnDestroy()
+        {
+            if (shiftRelay != null)
+            {
+                shiftRelay.OnWorldShiftDetected -= HandleOriginShift;
+            }
+        }
+
+        private void OnValidate()
+        {
+            SetupDependencies();
+        }
+
+        #endregion
+
+        #region Setup Logic
+
+        /// <summary>
+        /// Purely handles finding and assigning references in the hierarchy.
+        /// Safe to call in-editor (OnValidate).
+        /// </summary>
+        public void SetupDependencies()
+        {
+            if (shiftRelay == null)
+            {
+                shiftRelay = GetComponentInParent<OriginShiftRelay>(true);
+            }
+
+            if (lodReference == null && Camera.main != null)
+            {
+                lodReference = Camera.main.transform;
+            }
+        }
+
+        /// <summary>
+        /// Called only when the OriginShiftRelay exceeds its threshold.
+        /// </summary>
+        private void HandleOriginShift(Vector3 delta)
+        {
+            //_registry.ApplyOriginShift(delta);
+        }
+
+        #endregion
 
         /// <summary>
         /// Orchestrates the full synchronization process: cleans the manual list and performs a hierarchy scan.
