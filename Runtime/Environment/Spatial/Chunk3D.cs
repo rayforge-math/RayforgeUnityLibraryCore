@@ -7,7 +7,8 @@ namespace Rayforge.Core.Environment.Spatial
     /// Optimized for the Fog System with Origin-Shift awareness.
     /// </summary>
     /// <typeparam name="T">The derived type for type-safe processing.</typeparam>
-    public abstract class Chunk3D<T> : MonoBehaviour where T : Chunk3D<T>
+    public abstract class Chunk3D<T> : MonoBehaviour, ISpatialEntry
+        where T : Chunk3D<T>
     {
         #region Spatial Settings
         [Header("Spatial Settings")]
