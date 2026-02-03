@@ -83,7 +83,6 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
 
         /// <summary>
         /// Releases a specific handle by its index and sets the slot to null.
-        /// Provides English comments as requested.
         /// </summary>
         /// <param name="index">The internal index to release.</param>
         private void ReleaseAtIndex(int index)

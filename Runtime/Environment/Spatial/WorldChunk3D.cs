@@ -3,8 +3,6 @@ using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
 {
-    using UnityEngine;
-
     /// <summary>
     /// A high-performance, barebones base class for 3D world chunks. 
     /// Focuses on spatial data and state. Registration logic is handled externally.
@@ -46,20 +44,6 @@ namespace Rayforge.Core.Environment.Spatial
 
         /// <summary> Custom dirty flag for internal data changes (e.g., heightmap updates). </summary>
         protected bool _isDirty = true;
-        #endregion
-
-        #region Grid Accessors
-        // These methods utilize SpatialUtils. 
-        // They require an anchor to ensure stable keys during Floating Origin shifts.
-
-        /// <summary> Returns the 3D Grid Key using the global SpatialUtils and the registry anchor. </summary>
-        public Vector3Int GetGridKey3D(float gridSize, Vector3 anchor)
-            => SpatialUtils.PositionToKey3D(transform.position, gridSize, anchor);
-
-        /// <summary> Returns the 2D Grid Key (XZ) using the global SpatialUtils and the registry anchor. </summary>
-        public Vector2Int GetGridKey2D(float gridSize, Vector3 anchor)
-            => SpatialUtils.PositionToKey2D(transform.position, gridSize, anchor);
-
         #endregion
 
         #region Spatial Logic
