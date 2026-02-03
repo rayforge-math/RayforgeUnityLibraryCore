@@ -2,19 +2,16 @@ using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
 {
-    using UnityEngine;
-
     /// <summary>
-    /// A specialized version of WorldChunk3D for 2D/Top-Down logic.
-    /// Uses the base localExtent directly and provides convenient access to 2D grid data.
+    /// A specialized version of Chunk3D for 2D/Top-Down logic.
+    /// Maps 3D spatial data to the XZ plane for easier heightmap management.
     /// </summary>
     /// <typeparam name="T">The derived type for type-safe processing.</typeparam>
-    public abstract class WorldChunk2D<T> : WorldChunk3D<T>
-        where T : WorldChunk2D<T>
+    public abstract class Chunk2D<T> : Chunk3D<T> where T : Chunk2D<T>
     {
         #region 2D Accessors
         /// <summary>
-        /// Gets or sets the horizontal half-size (XZ plane) derived from localExtent.
+        /// Gets or sets the horizontal half-size (XZ plane).
         /// </summary>
         public Vector2 areaExtent
         {
@@ -23,7 +20,7 @@ namespace Rayforge.Core.Environment.Spatial
         }
 
         /// <summary>
-        /// Gets or sets the vertical range (Y-axis) derived from localExtent.
+        /// Gets or sets the vertical range (Y-axis).
         /// </summary>
         public float heightExtent
         {
@@ -32,8 +29,7 @@ namespace Rayforge.Core.Environment.Spatial
         }
 
         /// <summary> 
-        /// Returns the current grid key from the base class as a 2D vector (XZ).
-        /// Maps the 3D key directly to the 2D plane.
+        /// Returns the current grid key as a 2D vector (XZ).
         /// </summary>
         public Vector2Int currentGridKey2D => new Vector2Int(currentGridKey.x, currentGridKey.z);
         #endregion
@@ -51,31 +47,27 @@ namespace Rayforge.Core.Environment.Spatial
         #endregion
 
         #region 2D Logic Helpers
-        /// <summary>
-        /// Returns the full top-down area size (XZ).
-        /// </summary>
-        /// <returns>The full width and length of the chunk.</returns>
+        /// <summary> Returns the full top-down area size (XZ). </summary>
         public Vector2 GetAreaSize() => areaExtent * 2f;
         #endregion
 
         #region Debugging & Gizmos
-        /// <summary>
-        /// Visualizes the 2D area in the Scene View with a floor-plane.
-        /// </summary>
         protected override void OnDrawGizmosSelected()
         {
-            // Draw the 3D wireframe volume from the base class.
+            // Draw the 3D wireframe volume from Chunk3D
             base.OnDrawGizmosSelected();
 
-            // Add a semi-transparent "floor" to emphasize the 2D area on the XZ plane.
-            Gizmos.color = new Color(0, 1, 1, 0.2f);
+            // Add a semi-transparent "floor"
+            Gizmos.color = new Color(0, 1, 1, 0.15f);
             Vector3 center = transform.position;
             Vector2 size = GetAreaSize();
 
+            // Drawing a flat cube as a floor indicator
             Gizmos.DrawCube(center, new Vector3(size.x, 0.01f, size.y));
 
-            Gizmos.color = new Color(0, 1, 1, 0.5f);
-            Gizmos.DrawWireCube(center, new Vector3(size.x, 0.01f, size.y));
+            // English: Draw a dashed-line style indicator for the ground level if needed
+            Gizmos.color = new Color(0, 1, 1, 0.4f);
+            Gizmos.DrawWireCube(center, new Vector3(size.x, 0f, size.y));
         }
         #endregion
     }

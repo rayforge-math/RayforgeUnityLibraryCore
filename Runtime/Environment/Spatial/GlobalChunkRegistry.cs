@@ -9,30 +9,18 @@ namespace Rayforge.Core.Environment.Spatial
     /// </summary>
     /// <typeparam name="T">The type of WorldChunk3D managed by this registry.</typeparam>
     public static class GlobalChunkRegistry<T>
-        where T : WorldChunk3D<T>
+        where T : Chunk3D<T>
     {
+        private const float k_GridSize = 100.0f;
+
         /// <summary> The underlying singleton instance of the registry. </summary>
-        public static readonly ChunkRegistry<T> Instance = new ChunkRegistry<T>();
+        public static readonly ChunkRegistry<T> Instance = new ChunkRegistry<T>(k_GridSize, Vector3.zero);
 
-        /// <summary> 
-        /// Gets or sets the physical size of one side of a chunk cell. 
-        /// This should be synchronized with your Fog Feature settings.
-        /// </summary>
-        public static float GridSize
-        {
-            get => Instance.GridSize;
-            set => Instance.GridSize = value;
-        }
+        /// <summary> Read-only access to the physical size of one side of a chunk cell. </summary>
+        public static float GridSize => Instance.GridSize;
 
-        /// <summary> 
-        /// Gets or sets the world-space origin offset. 
-        /// In Floating Origin systems, update this whenever the origin shifts.
-        /// </summary>
-        public static Vector3 Anchor
-        {
-            get => Instance.Anchor;
-            set => Instance.Anchor = value;
-        }
+        /// <summary> Current world-space origin offset. </summary>
+        public static Vector3 Anchor => Instance.Anchor;
 
         /// <summary> 
         /// Maps a world position to a grid key and registers the chunk. 
@@ -69,11 +57,6 @@ namespace Rayforge.Core.Environment.Spatial
         /// Returns true if the registry structure has changed or any individual chunk is marked as dirty. 
         /// </summary>
         public static bool NeedsGPUUpdate() => Instance.NeedsGPUUpdate();
-
-        /// <summary> 
-        /// Forces the registry into a dirty state, ensuring a full synchronization in the next update cycle. 
-        /// </summary>
-        public static void MarkGlobalDirty() => Instance.MarkGlobalDirty();
 
         /// <summary> 
         /// Clears all dirty flags for the registry and all contained chunks. 
