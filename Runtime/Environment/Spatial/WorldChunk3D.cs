@@ -3,6 +3,8 @@ using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
 {
+    using UnityEngine;
+
     /// <summary>
     /// A high-performance, barebones base class for 3D world chunks. 
     /// Focuses on spatial data and state. Registration logic is handled externally.
@@ -13,9 +15,12 @@ namespace Rayforge.Core.Environment.Spatial
     {
         #region Spatial Settings
         [Header("Spatial Settings")]
-        /// <summary> The half-size of the chunk in local space. </summary>
-        [Tooltip("The half-size of the chunk in local space (Radius = magnitude).")]
-        public Vector3 localExtent = new Vector3(50, 50, 50);
+        /// <summary> 
+        /// The half-size of the chunk in local space. 
+        /// Protected setter allows derived classes (like WorldChunk2D) to sync their area settings.
+        /// </summary>
+        [field: SerializeField]
+        public Vector3 localExtent { get; protected set; } = new Vector3(50, 50, 50);
 
         /// <summary> If true, the chunk flags itself as dirty when the transform moves. </summary>
         [Tooltip("Automatically detect transform changes via transform.hasChanged.")]
@@ -24,28 +29,35 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Identity & GPU Data
         [Header("Identity & GPU")]
-        /// <summary> Generic ID for GPU buffers, managed by an external registry or pool. </summary>
-        [HideInInspector] public int gpuIdentifier = -1;
+        /// <summary> 
+        /// Generic ID for GPU buffers, managed by an external registry or pool. 
+        /// Internal setter: Only the Registry or the Chunk Manager should assign this ID.
+        /// </summary>
+        [field: SerializeField, HideInInspector]
+        public int gpuIdentifier { get; internal set; } = -1;
 
         /// <summary> 
         /// Stores the last known grid key. 
-        /// Essential for the Registry to identify this chunk's slot in the dictionary. 
+        /// Essential for the Registry to identify this chunk's slot in the dictionary.
+        /// Internal setter: Managed by the Registry during the (Un)Register process.
         /// </summary>
-        [HideInInspector] public Vector3Int currentGridKey;
+        [field: SerializeField, HideInInspector]
+        public Vector3Int currentGridKey { get; internal set; }
 
         /// <summary> Custom dirty flag for internal data changes (e.g., heightmap updates). </summary>
         protected bool _isDirty = true;
         #endregion
 
         #region Grid Accessors
-        // These methods utilize the SpatialUtils for consistent coordinate mapping.
+        // These methods utilize SpatialUtils. 
+        // They require an anchor to ensure stable keys during Floating Origin shifts.
 
-        /// <summary> Returns the 3D Grid Key using the global SpatialUtils. </summary>
-        public Vector3Int GetGridKey3D(float gridSize, Vector3 anchor = default)
+        /// <summary> Returns the 3D Grid Key using the global SpatialUtils and the registry anchor. </summary>
+        public Vector3Int GetGridKey3D(float gridSize, Vector3 anchor)
             => SpatialUtils.PositionToKey3D(transform.position, gridSize, anchor);
 
-        /// <summary> Returns the 2D Grid Key (XZ) using the global SpatialUtils. </summary>
-        public Vector2Int GetGridKey2D(float gridSize, Vector3 anchor = default)
+        /// <summary> Returns the 2D Grid Key (XZ) using the global SpatialUtils and the registry anchor. </summary>
+        public Vector2Int GetGridKey2D(float gridSize, Vector3 anchor)
             => SpatialUtils.PositionToKey2D(transform.position, gridSize, anchor);
 
         #endregion
@@ -95,6 +107,7 @@ namespace Rayforge.Core.Environment.Spatial
         {
             Bounds b = GetWorldBounds();
 
+            // Calculate the distance to the box on each axis.
             float dx = Mathf.Max(0, b.min.x - worldPos.x, worldPos.x - b.max.x);
             float dy = Mathf.Max(0, b.min.y - worldPos.y, worldPos.y - b.max.y);
             float dz = Mathf.Max(0, b.min.z - worldPos.z, worldPos.z - b.max.z);
@@ -123,7 +136,8 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public virtual bool IsDirty()
         {
-            return _isDirty || (updateOnTransformChange && transform.hasChanged);
+            // If gpuIdentifier is -1, the chunk is considered dirty because it hasn't synced yet.
+            return _isDirty || gpuIdentifier == -1 || (updateOnTransformChange && transform.hasChanged);
         }
 
         /// <summary>
@@ -132,7 +146,8 @@ namespace Rayforge.Core.Environment.Spatial
         public virtual void ClearDirty()
         {
             _isDirty = false;
-            transform.hasChanged = false;
+            // Crucial to reset hasChanged to prevent infinite dirty-loops after a move/shift.
+            if (transform != null) transform.hasChanged = false;
         }
 
         #endregion
