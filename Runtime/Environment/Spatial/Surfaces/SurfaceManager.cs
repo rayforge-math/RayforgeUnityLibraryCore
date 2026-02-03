@@ -1,3 +1,5 @@
+using Rayforge.Core.Common.Rendering;
+using Rayforge.Core.Common.Rendering.Helpers;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -16,10 +18,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         [Header("LOD & Culling")]
         [Tooltip("The reference point for LOD calculations (usually Main Camera).")]
         public Transform lodReference;
-        [Range(1, 8)]
-        public int globalLodBias = 1;
-        [Tooltip("Active radius in chunks around the lodReference.")]
-        public int viewDistance = 5;
+        [Tooltip("Define LOD levels. Use the +/- buttons. The system auto-validates distances and resolutions.")]
+        public SurfaceLODLevel[] lodLevels;
 
         [Header("Detection Settings")]
         [Tooltip("If enabled, the manager automatically scans all children of this GameObject.")]
@@ -74,6 +74,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         private void OnValidate()
         {
             SetupDependencies();
+            SyncLodLevels();
         }
 
         #endregion
@@ -103,6 +104,50 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         private void HandleOriginShift(Vector3 delta)
         {
             //_registry.ApplyOriginShift(delta);
+        }
+
+        /// <summary>
+        /// Ensures the lodLevels array matches the defined lodCount while preserving existing data.
+        /// </summary>
+        private void SyncLodLevels()
+        {
+            if (lodLevels == null || lodLevels.Length == 0) return;
+
+            for (int i = 0; i < lodLevels.Length; i++)
+            {
+                var current = lodLevels[i];
+
+                if (i > 0)
+                {
+                    var prev = lodLevels[i - 1];
+
+                    if (current.distanceThreshold == prev.distanceThreshold)
+                    {
+                        current.distanceThreshold = prev.distanceThreshold + 100f;
+                    }
+                    else if (current.distanceThreshold < prev.distanceThreshold)
+                    {
+                        current.distanceThreshold = prev.distanceThreshold + 1.0f;
+                    }
+
+                    if (!current.mapResolution.IsLowerThan(prev.mapResolution))
+                    {
+                        current.mapResolution = prev.mapResolution.Downscale();
+                    }
+                    if (current.mapResolution == prev.mapResolution)
+                    {
+                        System.Array.Resize(ref lodLevels, i);
+                        break;
+                    }
+                }
+                else
+                {
+                    if (current.distanceThreshold == 0) current.distanceThreshold = 100f;
+                    if (current.mapResolution == 0) current.mapResolution = PowerOfTwoResolution.Resolution512;
+                }
+
+                lodLevels[i] = current;
+            }
         }
 
         #endregion
