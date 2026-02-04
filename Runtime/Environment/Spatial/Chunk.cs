@@ -26,17 +26,21 @@ namespace Rayforge.Core.Environment.Spatial
         [field: SerializeField, HideInInspector]
         public Vector3Int GridKey { get; internal set; }
 
+        private static SpatialAxes _axes = SpatialAxes.Voxel;
+
         /// <summary>
         /// Defines which axes are active. Drives distance calculations and gizmos.
         /// Overriding this in derived classes (e.g. Chunk2D) flattens the math automatically.
         /// </summary>
-        public abstract SpatialAxes ActiveAxes { get; }
+        public static SpatialAxes ActiveAxes
+        {
+            get => _axes;
+            internal set => _axes = value;
+        }
 
         /// <summary> Internal dirty flag for state tracking. </summary>
         protected bool _isDirty = true;
 
-        /// <summary> Explicit implementation for ISpatialEntry compatibility. </summary>
-        public GameObject gameObject => this.gameObject;
         #endregion
 
         #region Universal Distance Calculations

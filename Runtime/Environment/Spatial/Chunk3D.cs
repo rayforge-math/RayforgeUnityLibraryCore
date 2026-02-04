@@ -13,11 +13,10 @@ namespace Rayforge.Core.Environment.Spatial
     {
         #region Identity Configuration
 
-        /// <summary>
-        /// Overrides the abstract property to define this chunk as a full 3D volume.
-        /// This drives the distance calculations in the base class to include the Y-axis.
-        /// </summary>
-        public override SpatialAxes ActiveAxes => SpatialAxes.Voxel;
+        static Chunk3D()
+        {
+            ActiveAxes = SpatialAxes.Voxel;
+        }
 
         #endregion
 

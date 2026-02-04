@@ -1,4 +1,5 @@
 using Rayforge.Core.Environment.Spatial.Helpers;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
@@ -30,12 +31,7 @@ namespace Rayforge.Core.Environment.Spatial
         {
             GridSize = (int)gridSize;
             Anchor = initialAnchor;
-
-            // Extract ActiveAxes from type T to drive the registry's logic.
-            GameObject temp = new GameObject("AxisCheck");
-            T instance = temp.AddComponent<T>();
-            _axes = instance.ActiveAxes;
-            Object.DestroyImmediate(temp);
+            _axes = Chunk<T>.ActiveAxes;
         }
 
         #region Factory Implementation
@@ -93,6 +89,56 @@ namespace Rayforge.Core.Environment.Spatial
                 ((_axes & SpatialAxes.Y) != 0) ? (Anchor.y + key.y * GridSize + half) : Anchor.y,
                 ((_axes & SpatialAxes.Z) != 0) ? (Anchor.z + key.z * GridSize + half) : Anchor.z
             );
+        }
+
+        /// <summary>
+        /// Calculates the anchor-relative AABB for a given grid key.
+        /// Useful for intersection tests without needing an actual Chunk instance.
+        /// </summary>
+        public Bounds GetBoundsForKey(Vector3Int key)
+        {
+            // Get the center using your existing logic (handles Anchor + GridSize).
+            Vector3 center = GridToWorld(key);
+
+            // The size is always the GridSize on active axes. 
+            Vector3 size = new Vector3(
+                ((_axes & SpatialAxes.X) != 0) ? GridSize : 0,
+                ((_axes & SpatialAxes.Y) != 0) ? GridSize : 0,
+                ((_axes & SpatialAxes.Z) != 0) ? GridSize : 0
+            );
+
+            return new Bounds(center, size);
+        }
+
+        /// <summary>
+        /// Calculates the anchor-relative AABB for the chunk that contains the given world position.
+        /// </summary>
+        public Bounds GetBoundsAtWorldPos(Vector3 worldPos)
+        {
+            Vector3Int key = WorldToGrid(worldPos);
+            return GetBoundsForKey(key);
+        }
+
+        /// <summary>
+        /// Returns all grid keys covered by the given bounds.
+        /// This method handles 1D, 2D, and 3D registries automatically via ActiveAxes.
+        /// </summary>
+        public IEnumerable<Vector3Int> GetKeysInBounds(Bounds relativeBounds)
+        {
+            Vector3Int minKey = WorldToGrid(relativeBounds.min);
+            Vector3Int maxKey = WorldToGrid(relativeBounds.max);
+
+            for (int x = minKey.x; x <= maxKey.x; x++)
+            {
+                for (int y = minKey.y; y <= maxKey.y; y++)
+                {
+                    for (int z = minKey.z; z <= maxKey.z; z++)
+                    {
+                        // Return the key. Masking is already handled by WorldToGrid.
+                        yield return new Vector3Int(x, y, z);
+                    }
+                }
+            }
         }
 
         #endregion

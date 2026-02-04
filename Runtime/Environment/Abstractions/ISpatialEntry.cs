@@ -22,12 +22,5 @@ namespace Rayforge.Core.Environment.Spatial
         /// The Unity GameObject associated with this entry for scene management.
         /// </summary>
         GameObject gameObject { get; }
-
-        /// <summary>
-        /// Defines which axes are "active" for this entry.
-        /// This determines if a dimension is used for centering within a grid cell 
-        /// or included in distance-based calculations (LOD).
-        /// </summary>
-        SpatialAxes ActiveAxes { get; }
     }
 }

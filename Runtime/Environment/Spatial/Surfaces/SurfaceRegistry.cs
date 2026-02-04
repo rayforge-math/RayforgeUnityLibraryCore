@@ -7,28 +7,26 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 {
     /// <summary>
     /// Manages the registration and state tracking of spatial objects for heightmap projection.
-    /// English: Only accepts objects with valid Mesh data. Uses anchor-relative coordinates 
-    /// to remain stable during Origin Shifts by synchronizing with a LODChunkRegistry.
+    /// Uses a spatial hash (buckets) to avoid O(N) searches during baking.
     /// </summary>
     public class SurfaceRegistry
     {
         #region Fields
-        /// <summary> Internal storage for all tracked object states, indexed by their Unity InstanceID. </summary>
+        /// <summary> Primary storage: InstanceID -> State. </summary>
         private readonly Dictionary<int, SpatialObjectState> _registry = new Dictionary<int, SpatialObjectState>();
 
         /// <summary> 
-        /// Collection of chunk coordinates that require a re-bake. 
-        /// English: Uses Vector2Int for 2D XZ-grid mapping.
+        /// Spatial Index: ChunkKey -> Set of InstanceIDs.
+        /// Allows O(1) access to objects relevant to a specific chunk.
         /// </summary>
+        private readonly Dictionary<Vector2Int, HashSet<int>> _spatialBuckets = new Dictionary<Vector2Int, HashSet<int>>();
+
+        /// <summary> Collection of chunk coordinates that require a re-bake. </summary>
         private readonly HashSet<Vector2Int> _dirtyChunks = new HashSet<Vector2Int>();
 
         /// <summary> Reference to the spatial grid provider. </summary>
         private readonly LODChunkRegistry<SurfaceChunk> _chunkRegistry;
 
-        /// <summary> Gets the current reference anchor from the ChunkRegistry. </summary>
-        private Vector2 CurrentAnchor => new Vector2(_chunkRegistry.Anchor.x, _chunkRegistry.Anchor.z);
-
-        /// <summary> Gets the world-scale size of a single chunk. </summary>
         private float ChunkSize => (float)_chunkRegistry.GridSize;
         #endregion
 
@@ -38,12 +36,13 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         }
 
         #region Registration Logic
+
         public bool TryRegisterSurface(GameObject obj, bool triggerImmediateBake = false)
         {
             if (obj == null) return false;
-
             int id = obj.GetInstanceID();
 
+            // Create the relative state (Assumes this method exists in your context).
             if (!TryCreateRelativeState(obj, out SpatialObjectState newState))
                 return false;
 
@@ -53,14 +52,20 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             {
                 if (!oldState.Equals(newState))
                 {
+                    // Position or mesh changed. Clear old buckets, add to new ones.
+                    RemoveFromBuckets(id, oldState.anchorBounds);
                     MarkAreaDirty(oldState.anchorBounds);
+
                     _registry[id] = newState;
+                    AddToBuckets(id, newState.anchorBounds);
                     changed = true;
                 }
             }
             else
             {
+                // New object registration.
                 _registry.Add(id, newState);
+                AddToBuckets(id, newState.anchorBounds);
                 changed = true;
             }
 
@@ -77,34 +82,64 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         {
             if (_registry.TryGetValue(id, out SpatialObjectState state))
             {
+                RemoveFromBuckets(id, state.anchorBounds);
                 MarkAreaDirty(state.anchorBounds);
                 _registry.Remove(id);
 
-                if (triggerImmediateBake)
-                    ApplyChanges();
-
+                if (triggerImmediateBake) ApplyChanges();
                 return true;
             }
             return false;
         }
 
-        public IEnumerable<int> GetAllIds() => _registry.Keys;
+        #endregion
+
+        #region Bucket Management
+
+        private void AddToBuckets(int id, Bounds bounds)
+        {
+            // Use Registry to find all affected keys.
+            foreach (var key3D in _chunkRegistry.GetKeysInBounds(bounds))
+            {
+                Vector2Int key2D = new Vector2Int(key3D.x, key3D.z);
+                if (!_spatialBuckets.TryGetValue(key2D, out var bucket))
+                {
+                    bucket = new HashSet<int>();
+                    _spatialBuckets[key2D] = bucket;
+                }
+                bucket.Add(id);
+            }
+        }
+
+        private void RemoveFromBuckets(int id, Bounds bounds)
+        {
+            foreach (var key3D in _chunkRegistry.GetKeysInBounds(bounds))
+            {
+                Vector2Int key2D = new Vector2Int(key3D.x, key3D.z);
+                if (_spatialBuckets.TryGetValue(key2D, out var bucket))
+                {
+                    bucket.Remove(id);
+                    if (bucket.Count == 0) _spatialBuckets.Remove(key2D);
+                }
+            }
+        }
+
         #endregion
 
         #region Bake Logic
+
         public void ApplyChanges()
         {
-            // 1. English: Sync with chunks that flagged themselves (e.g. LOD changed).
+            // 1. Collect chunks that requested a bake (e.g. via LOD change).
             foreach (var chunk in _chunkRegistry.AllEntries)
             {
-                // English: Using the Vector2Int convenience property of the chunk.
                 if (chunk != null && chunk.IsDirty)
                     _dirtyChunks.Add(chunk.GridKey2D);
             }
 
             if (_dirtyChunks.Count == 0) return;
 
-            // 2. English: Bake all unique XZ-coordinates.
+            // 2. Process all dirty coordinates.
             foreach (Vector2Int key in _dirtyChunks)
             {
                 BakeChunk(key);
@@ -115,51 +150,38 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         private void BakeChunk(Vector2Int key)
         {
-            // English: ChunkRegistry handles the conversion from Vector2Int key to world position internally.
             SurfaceChunk chunk = _chunkRegistry.GetOrCreateChunk(key);
-            int resolution = GetResolutionForLOD(chunk.CurrentLOD);
+            // Resolution logic depends on your specific LOD implementation.
+            int resolution = 512; // Example fallback
 
             List<SpatialObjectState> relevantStates = new List<SpatialObjectState>();
-            foreach (var state in _registry.Values)
+
+            // 3. Instead of checking ALL objects, we only look at this chunk's bucket.
+            if (_spatialBuckets.TryGetValue(key, out HashSet<int> objectIds))
             {
-                if (IsObjectInChunk(state, key))
-                    relevantStates.Add(state);
+                foreach (int id in objectIds)
+                {
+                    if (_registry.TryGetValue(id, out var state))
+                        relevantStates.Add(state);
+                }
             }
 
+            // Ready for rendering.
             // HeightmapBaker.Render(chunk, relevantStates, resolution);
+
             chunk.ClearDirty();
+        }
+
+        private void MarkAreaDirty(Bounds relativeBounds)
+        {
+            foreach (var key3D in _chunkRegistry.GetKeysInBounds(relativeBounds))
+            {
+                _dirtyChunks.Add(new Vector2Int(key3D.x, key3D.z));
+            }
         }
         #endregion
 
-        #region Helpers (XZ-Grid & Mesh Aware)
-        /// <summary>
-        /// English: Marks all XZ-grid cells overlapping the bounds as dirty.
-        /// </summary>
-        private void MarkAreaDirty(Bounds relativeBounds)
-        {
-            Vector2Int min = _chunkRegistry.WorldToGrid(relativeBounds.min);
-            Vector2Int max = WorldToGridRelative(relativeBounds.max);
-
-            for (int x = min.x; x <= max.x; x++)
-            {
-                for (int z = min.y; z <= max.y; z++) // Note: Vector2Int.y maps to World Z
-                {
-                    _dirtyChunks.Add(new Vector2Int(x, z));
-                }
-            }
-        }
-
-        private bool IsObjectInChunk(SpatialObjectState state, Vector2Int key)
-        {
-            float half = ChunkSize * 0.5f;
-            // English: Reconstruct center in anchor-relative space.
-            Vector3 relCenter = new Vector3(key.x * ChunkSize + half, 0, key.y * ChunkSize + half);
-
-            // English: Huge Y-extent to capture any object height for projection.
-            Bounds chunkRelBounds = new Bounds(relCenter, new Vector3(ChunkSize, 4000f, ChunkSize));
-
-            return state.anchorBounds.Intersects(chunkRelBounds);
-        }
+        #region Helpers
 
         /// <summary>
         /// Validates and prepares the spatial state of a GameObject relative to the current world anchor.

@@ -12,11 +12,10 @@ namespace Rayforge.Core.Environment.Spatial
     {
         #region Configuration
 
-        /// <summary>
-        /// Override to mark this chunk as a surface-only object (XZ plane).
-        /// This drives the logic in the base Chunk class to ignore the Y-axis.
-        /// </summary>
-        public override SpatialAxes ActiveAxes => SpatialAxes.Surface;
+        static Chunk2D()
+        {
+            ActiveAxes = SpatialAxes.Surface;
+        }
 
         #endregion
 
