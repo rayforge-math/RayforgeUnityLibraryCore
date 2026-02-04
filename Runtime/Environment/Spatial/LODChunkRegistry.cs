@@ -5,17 +5,18 @@ namespace Rayforge.Core.Environment.Spatial
 {
     /// <summary>
     /// A high-performance registry that centralizes LOD logic for chunks.
-    /// Chunks stay "dumb" while the registry dictates state changes based on distance.
+    /// Chunks stay "dumb" while the registry dictates state changes based on distance, 
+    /// automatically respecting ActiveAxes for 2D or 3D distance checks.
     /// </summary>
     /// <typeparam name="T">The chunk type implementing both spatial and LOD interfaces.</typeparam>
     public class LODChunkRegistry<T> : ChunkRegistry<T>
-        where T : Chunk3D<T>, ILODSpatialEntry
+        where T : Chunk<T>, ILODSpatialEntry
     {
         #region Fields & Config
-        private readonly float[] _lodSqrDistances;
+        private float[] _lodSqrDistances;
         private Transform _viewer;
 
-        // Helper to get the current focus position without repeating null-checks.
+        /// <summary> Helper to get the current focus position without repeating null-checks. </summary>
         private Vector3 ViewerPos => (_viewer != null) ? _viewer.position : Vector3.zero;
         #endregion
 
@@ -23,23 +24,21 @@ namespace Rayforge.Core.Environment.Spatial
             : base(gridSize, initialAnchor, container)
         {
             _viewer = viewer;
-            _lodSqrDistances = new float[lodDistances.Length];
-            for (int i = 0; i < lodDistances.Length; i++)
-            {
-                _lodSqrDistances[i] = lodDistances[i] * lodDistances[i];
-            }
+            UpdateLodDistances(lodDistances);
         }
 
         #region Factory Overrides
         /// <summary>
         /// Overrides the base factory to ensure a valid LOD is set immediately upon creation.
-        /// This prevents visual popping where a chunk might exist for one frame without LOD.
+        /// Prevents visual popping by calculating the LOD before the first frame is rendered.
         /// </summary>
         public override T GetOrCreateChunk(Vector3Int key)
         {
             T chunk = base.GetOrCreateChunk(key);
 
-            float sqrDist = chunk.GetSqrDistanceTo(ViewerPos);
+            // Use the optimized flag-aware distance check from the Chunk base class.
+            // Note: Using ClosestEdge is often more stable for LODs in grid systems.
+            float sqrDist = chunk.GetSqrDistanceToClosestEdge(ViewerPos);
             chunk.UpdateLOD(CalculateTargetLOD(sqrDist));
 
             return chunk;
@@ -47,17 +46,22 @@ namespace Rayforge.Core.Environment.Spatial
         #endregion
 
         #region Core LOD Logic
+
+        /// <summary> Triggers a full LOD update using the current viewer position. </summary>
         public void UpdateLODs() => UpdateLODs(ViewerPos);
 
         /// <summary>
         /// Evaluates and updates the LOD level for all active chunks.
-        /// Only triggers the chunk's logic if the LOD actually changed.
+        /// Only triggers the chunk's update logic if the LOD index actually changed.
         /// </summary>
         public void UpdateLODs(Vector3 focusPos)
         {
             foreach (T chunk in AllEntries)
             {
-                float sqrDist = chunk.GetSqrDistanceTo(focusPos);
+                if (chunk == null) continue;
+
+                // This distance check automatically ignores Y if the chunk is 2D/Surface.
+                float sqrDist = chunk.GetSqrDistanceToClosestEdge(focusPos);
                 int targetLod = CalculateTargetLOD(sqrDist);
 
                 if (chunk.CurrentLOD != targetLod)
@@ -76,13 +80,32 @@ namespace Rayforge.Core.Environment.Spatial
             {
                 if (sqrDistance < _lodSqrDistances[i]) return i;
             }
-            return _lodSqrDistances.Length;
+            return _lodSqrDistances.Length; // Lowest detail / Culled
         }
         #endregion
 
         #region Management & Origin Shift
 
+        /// <summary> Updates the viewer reference (e.g., when switching cameras). </summary>
         public void SetViewer(Transform viewer) => _viewer = viewer;
+
+        /// <summary>
+        /// Updates the internal squared distance thresholds.
+        /// Re-calculates squared values to keep the Update loop math simple and fast.
+        /// </summary>
+        public void UpdateLodDistances(float[] newDistances)
+        {
+            if (newDistances == null) return;
+
+            _lodSqrDistances = new float[newDistances.Length];
+            for (int i = 0; i < newDistances.Length; i++)
+            {
+                _lodSqrDistances[i] = newDistances[i] * newDistances[i];
+            }
+
+            // Optional: immediate update to apply new distances.
+            if (Application.isPlaying) UpdateLODs();
+        }
 
         #endregion
     }

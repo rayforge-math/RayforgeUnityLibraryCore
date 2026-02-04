@@ -8,14 +8,14 @@ namespace Rayforge.Core.Environment.Spatial
     {
         /// <summary>
         /// The bounding box of the object relative to the Registry's Anchor.
-        /// English: Using relative coordinates prevents re-bakes after an Origin Shift.
+        /// Using relative coordinates prevents re-bakes after an Origin Shift.
         /// </summary>
         [Header("Relative Spatial Data")]
         public Bounds anchorBounds;
 
         /// <summary>
         /// The matrix converting local space to Anchor-relative space.
-        /// English: This matrix is immune to world-space fluctuations.
+        /// This matrix is immune to world-space fluctuations.
         /// </summary>
         public Matrix4x4 localToAnchor;
 
@@ -30,7 +30,7 @@ namespace Rayforge.Core.Environment.Spatial
 
         /// <summary>
         /// Creates a relative spatial state from world-space data.
-        /// English: Neutralizes world coordinates by shifting them into anchor-space.
+        /// Neutralizes world coordinates by shifting them into anchor-space.
         /// </summary>
         /// <param name="worldBounds">The current bounds in Unity world space.</param>
         /// <param name="localToWorld">The current localToWorld matrix of the GameObject.</param>
@@ -62,7 +62,7 @@ namespace Rayforge.Core.Environment.Spatial
 
         /// <summary>
         /// Checks if the object has effectively moved OR changed its geometry.
-        /// English: This remains stable even if Unity's world origin shifts.
+        /// This remains stable even if Unity's world origin shifts.
         /// </summary>
         public bool Equals(SpatialObjectState other)
         {

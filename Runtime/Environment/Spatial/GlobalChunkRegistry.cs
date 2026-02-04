@@ -11,7 +11,7 @@ namespace Rayforge.Core.Environment.Spatial
     public static class GlobalChunkRegistry<T>
         where T : Chunk3D<T>
     {
-        private const float k_GridSize = 100.0f;
+        private const ChunkSize k_GridSize = (ChunkSize)ChunkSizeBinary.Medium;
 
         /// <summary> 
         /// The underlying singleton instance of the registry. 
@@ -93,7 +93,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// Adjusts the global anchor to handle floating origin shifts and suppresses transform alerts.
         /// </summary>
         /// <param name="delta">The shift offset.</param>
-        public static void ApplyOriginShift(Vector3 delta) => Instance.ApplyOriginShift(delta);
+        public static void ApplyOriginShift(Vector3 delta) => Instance.NotifyOriginShift(delta);
         #endregion
     }
 }

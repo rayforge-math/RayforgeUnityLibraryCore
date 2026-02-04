@@ -7,77 +7,135 @@ namespace Rayforge.Core.Environment.Spatial
     /// A specialized registry for fixed-grid WorldChunk3D instances.
     /// Implements spatial indexing, factory logic, and Floating Origin support.
     /// </summary>
+    /// <typeparam name="T">The specific chunk type.</typeparam>
     public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T>
-        where T : Chunk3D<T>
+        where T : Chunk<T>
     {
         #region Grid Settings
         /// <summary> The physical size of one side of a chunk cell. </summary>
         public int GridSize { get; }
 
-        /// <summary> The world-space origin offset for the grid calculation. </summary>
+        /// <summary> 
+        /// The world-space origin offset for the grid calculation. 
+        /// Treated as a full 3D point to allow vertical offsets even for 2D grids.
+        /// </summary>
         public Vector3 Anchor { get; protected set; }
+
+        /// <summary> Cached mask to determine which axes are handled by this registry's indexing. </summary>
+        private readonly SpatialAxes _axes;
         #endregion
 
         public ChunkRegistry(ChunkSize gridSize, Vector3 initialAnchor, Transform container = null)
-            : base(container)
+        : base(container, $"ChunkRegistry_{gridSize}")
         {
             GridSize = (int)gridSize;
             Anchor = initialAnchor;
+
+            // Extract ActiveAxes from type T to drive the registry's logic.
+            GameObject temp = new GameObject("AxisCheck");
+            T instance = temp.AddComponent<T>();
+            _axes = instance.ActiveAxes;
+            Object.DestroyImmediate(temp);
         }
 
-        #region Factory & Queries
-        /// <summary>
-        /// Retrieves an existing chunk or creates a new one if the coordinate is empty.
-        /// </summary>
+        #region Factory Implementation
+
         public virtual T GetOrCreateChunk(Vector3Int key)
         {
-            T existing = GetEntry(key);
-            if (existing != null) return existing;
+            Vector3Int validKey = MaskKey(key);
 
-            GameObject go = new GameObject($"Chunk_{key.x}_{key.y}_{key.z}");
-            if (_container != null) go.transform.SetParent(_container);
-            go.transform.position = GridToWorld(key);
+            return GetOrCreate(
+                validKey,
+                $"Chunk_{validKey.x}_{validKey.y}_{validKey.z}",
+                GridToWorld(validKey),
+                (go, k) => {
+                    T chunk = go.AddComponent<T>();
+                    chunk.GridKey = k;
 
-            T chunk = go.AddComponent<T>();
-            chunk.currentGridKey = key;
+                    // Configure AABB extents for the chunk.
+                    float half = GridSize * 0.5f;
+                    chunk.localExtent = new Vector3(half, half, half);
 
-            _storage[key] = chunk;
-            _globalDirty = true;
-
-            return chunk;
+                    chunk.SuppressTransformDirtyOnce();
+                    return chunk;
+                }
+            );
         }
 
-        /// <summary> Ensures a chunk exists at the given world position. </summary>
-        public T GetOrCreateChunkAtWorldPos(Vector3 pos) => GetOrCreateChunk(WorldToGrid(pos));
+        public T GetOrCreateChunkAtWorldPos(Vector3 pos)
+            => GetOrCreateChunk(WorldToGrid(pos));
 
-        /// <summary> Retrieves a chunk at world position without creating it. </summary>
-        public T GetChunkAtWorldPos(Vector3 pos) => GetEntry(WorldToGrid(pos));
+        public T GetChunkAtWorldPos(Vector3 pos)
+            => GetEntry(WorldToGrid(pos));
+
         #endregion
 
         #region Spatial Mapping
-        /// <summary> Maps world position to grid key via Anchor. </summary>
-        public Vector3Int WorldToGrid(Vector3 pos)
-            => SpatialUtils.PositionToKey3D(pos, GridSize, Anchor);
 
-        /// <summary> Calculates the world-space center of a grid cell. </summary>
+        /// <summary> 
+        /// Maps position to key, masking out inactive axes for dictionary storage. 
+        /// </summary>
+        public Vector3Int WorldToGrid(Vector3 pos)
+        {
+            Vector3Int rawKey = SpatialUtils.PositionToKey3D(pos, GridSize, Anchor);
+            return MaskKey(rawKey);
+        }
+
+        /// <summary> 
+        /// Calculates world-space center. 
+        /// Inactive axes default to the Anchor's position, allowing vertical shifts for XZ grids.
+        /// </summary>
         public Vector3 GridToWorld(Vector3Int key)
         {
-            return Anchor + new Vector3(
-                key.x * GridSize + (GridSize * 0.5f),
-                key.y * GridSize + (GridSize * 0.5f),
-                key.z * GridSize + (GridSize * 0.5f)
+            float half = GridSize * 0.5f;
+            return new Vector3(
+                ((_axes & SpatialAxes.X) != 0) ? (Anchor.x + key.x * GridSize + half) : Anchor.x,
+                ((_axes & SpatialAxes.Y) != 0) ? (Anchor.y + key.y * GridSize + half) : Anchor.y,
+                ((_axes & SpatialAxes.Z) != 0) ? (Anchor.z + key.z * GridSize + half) : Anchor.z
             );
         }
+
         #endregion
 
         #region Origin Shift
-        /// <summary> Adjusts the anchor and suppresses transform updates. </summary>
+
+        /// <summary> 
+        /// Synchronizes the anchor and all chunks with a world origin shift. 
+        /// The Anchor shifts as a full 3D vector to stay aligned with world geometry.
+        /// </summary>
         public void NotifyOriginShift(Vector3 delta)
         {
+            // We remove the axis-check for the Anchor itself. 
+            // If the world origin moves, our reference point must move identically.
             Anchor += delta;
+
             foreach (var chunk in AllEntries)
+            {
+                if (chunk == null) continue;
+
+                // Re-calculate the new world position based on the shifted anchor.
+                chunk.transform.position = GridToWorld(chunk.GridKey);
                 chunk.SuppressTransformDirtyOnce();
+            }
         }
+
+        #endregion
+
+        #region Helpers
+
+        /// <summary> 
+        /// Forces inactive axes to 0 for consistent dictionary keys. 
+        /// This defines the "dimensionality" of the grid (e.g., 2D XZ vs 3D).
+        /// </summary>
+        private Vector3Int MaskKey(Vector3Int key)
+        {
+            return new Vector3Int(
+                ((_axes & SpatialAxes.X) != 0) ? key.x : 0,
+                ((_axes & SpatialAxes.Y) != 0) ? key.y : 0,
+                ((_axes & SpatialAxes.Z) != 0) ? key.z : 0
+            );
+        }
+
         #endregion
     }
 }
