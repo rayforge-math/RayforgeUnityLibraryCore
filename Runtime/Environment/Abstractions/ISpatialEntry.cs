@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Abstractions
 {
     /// <summary>
     /// Minimum requirements for an object to be managed by a SpatialRegistry.

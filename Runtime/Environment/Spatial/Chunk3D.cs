@@ -1,4 +1,5 @@
 using UnityEngine;
+using Rayforge.Core.Environment.Abstractions;
 
 namespace Rayforge.Core.Environment.Spatial
 {
@@ -32,18 +33,23 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Distance Calculations
 
-        /// <summary> Fast squared distance to chunk center. </summary>
-        public float GetSqrDistanceTo(Vector3 worldPos)
+        /// <summary>
+        /// Calculates the squared distance to the viewer.
+        /// Virtual base implementation uses full 3D distance.
+        /// </summary>
+        public virtual float GetSqrDistanceTo(Vector3 worldPos)
         {
             Vector3 diff = transform.position - worldPos;
             return diff.sqrMagnitude;
         }
 
-        /// <summary> Precise squared distance to AABB edge. Returns 0 if inside. </summary>
-        public float GetSqrDistanceToClosestEdge(Vector3 worldPos)
+        /// <summary>
+        /// Precise squared distance to AABB edge.
+        /// Override in 2D to ignore Y-axis for edge detection.
+        /// </summary>
+        public virtual float GetSqrDistanceToClosestEdge(Vector3 worldPos)
         {
             Vector3 center = transform.position;
-            // Calculate the distance to the box on each axis without creating a Bounds object.
             float dx = Mathf.Max(0, (center.x - localExtent.x) - worldPos.x, worldPos.x - (center.x + localExtent.x));
             float dy = Mathf.Max(0, (center.y - localExtent.y) - worldPos.y, worldPos.y - (center.y + localExtent.y));
             float dz = Mathf.Max(0, (center.z - localExtent.z) - worldPos.z, worldPos.z - (center.z + localExtent.z));

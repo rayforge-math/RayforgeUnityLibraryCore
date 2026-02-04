@@ -7,21 +7,21 @@ namespace Rayforge.Core.Environment.Spatial
     /// A specialized registry for fixed-grid WorldChunk3D instances.
     /// Implements spatial indexing, factory logic, and Floating Origin support.
     /// </summary>
-    public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T> 
+    public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T>
         where T : Chunk3D<T>
     {
         #region Grid Settings
         /// <summary> The physical size of one side of a chunk cell. </summary>
-        public float GridSize { get; }
+        public int GridSize { get; }
 
         /// <summary> The world-space origin offset for the grid calculation. </summary>
         public Vector3 Anchor { get; protected set; }
         #endregion
 
-        public ChunkRegistry(float gridSize, Vector3 initialAnchor, Transform container = null)
+        public ChunkRegistry(ChunkSize gridSize, Vector3 initialAnchor, Transform container = null)
             : base(container)
         {
-            GridSize = gridSize;
+            GridSize = (int)gridSize;
             Anchor = initialAnchor;
         }
 
@@ -34,10 +34,8 @@ namespace Rayforge.Core.Environment.Spatial
             T existing = GetEntry(key);
             if (existing != null) return existing;
 
-            // Factory: Create the GameObject
             GameObject go = new GameObject($"Chunk_{key.x}_{key.y}_{key.z}");
             if (_container != null) go.transform.SetParent(_container);
-
             go.transform.position = GridToWorld(key);
 
             T chunk = go.AddComponent<T>();
@@ -74,7 +72,7 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Origin Shift
         /// <summary> Adjusts the anchor and suppresses transform updates. </summary>
-        public void ApplyOriginShift(Vector3 delta)
+        public void NotifyOriginShift(Vector3 delta)
         {
             Anchor += delta;
             foreach (var chunk in AllEntries)

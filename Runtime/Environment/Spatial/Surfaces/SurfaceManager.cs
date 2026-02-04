@@ -18,6 +18,11 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         [Header("LOD & Culling")]
         [Tooltip("The reference point for LOD calculations (usually Main Camera).")]
         public Transform lodReference;
+        [Tooltip("The physical size of a single volumetric chunk in meters.")]
+        public ChunkSize chunkSize = ChunkSize.Medium;
+        [Tooltip("What percentage of the chunk size must the camera move before updating? (e.g., 0.1 = 10%)")]
+        [Range(0.01f, 0.5f)]
+        public float updateSensitivity = 0.1f;
         [Tooltip("Define LOD levels. Use the +/- buttons. The system auto-validates distances and resolutions.")]
         public SurfaceLODLevel[] lodLevels;
 
@@ -136,6 +141,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                     }
                     if (current.mapResolution == prev.mapResolution)
                     {
+                        Debug.LogWarning($"[SurfaceManager] Cannot add more LODs. Minimum resolution reached at LOD {i}.");
                         System.Array.Resize(ref lodLevels, i);
                         break;
                     }

@@ -1,4 +1,4 @@
-using Rayforge.Core.Environment.Spatial;
+using Rayforge.Core.Environment.Abstractions;
 using System.Collections.Generic;
 using UnityEngine;
 

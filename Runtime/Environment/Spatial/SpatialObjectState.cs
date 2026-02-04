@@ -3,63 +3,78 @@ using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
 {
-    /// <summary>
-    /// A universal snapshot of an object's state within the spatial grid.
-    /// Used for heightmaps, visibility, and other world-data pipelines.
-    /// </summary>
     [Serializable]
     public struct SpatialObjectState : IEquatable<SpatialObjectState>
     {
         /// <summary>
-        /// The axis-aligned bounding box of the object in world space.
+        /// The bounding box of the object relative to the Registry's Anchor.
+        /// English: Using relative coordinates prevents re-bakes after an Origin Shift.
         /// </summary>
-        [Header("Spatial Data")]
-        public Bounds worldBounds;
+        [Header("Relative Spatial Data")]
+        public Bounds anchorBounds;
 
         /// <summary>
-        /// The transformation matrix converting local object space to world space.
+        /// The matrix converting local space to Anchor-relative space.
+        /// English: This matrix is immune to world-space fluctuations.
         /// </summary>
-        public Matrix4x4 localToWorld;
+        public Matrix4x4 localToAnchor;
 
-        /// <summary>
-        /// Reference to the mesh asset used for rendering or baking.
-        /// </summary>
         [Header("Geometry Data")]
         public Mesh mesh;
-
-        /// <summary>
-        /// The index of the sub-mesh if the renderer uses multiple materials.
-        /// </summary>
         public int subMeshIndex;
 
         /// <summary>
-        /// A hash representing the internal state of the geometry to detect modifications.
+        /// A hash to detect if the mesh itself has changed (e.g. LOD change).
         /// </summary>
         public int geometryHash;
 
         /// <summary>
-        /// Compares this state with another to determine if a spatial or geometric update is required.
+        /// Creates a relative spatial state from world-space data.
+        /// English: Neutralizes world coordinates by shifting them into anchor-space.
         /// </summary>
-        /// <param name="other">The other state to compare against.</param>
-        /// <returns>True if all spatial and geometric properties are identical.</returns>
+        /// <param name="worldBounds">The current bounds in Unity world space.</param>
+        /// <param name="localToWorld">The current localToWorld matrix of the GameObject.</param>
+        /// <param name="anchor">The current reference anchor of the registry.</param>
+        /// <param name="mesh">The mesh reference for geometry tracking.</param>
+        /// <returns>A stable SpatialObjectState relative to the anchor.</returns>
+        public static SpatialObjectState Create(
+            Bounds worldBounds,
+            Matrix4x4 localToWorld,
+            Vector3 anchor,
+            Mesh mesh)
+        {
+            Vector3 relativeCenter = worldBounds.center - anchor;
+            Bounds anchorBounds = new Bounds(relativeCenter, worldBounds.size);
+
+            // create delta for translation
+            Matrix4x4 worldToAnchor = Matrix4x4.Translate(-anchor);
+            Matrix4x4 localToAnchor = worldToAnchor * localToWorld;
+
+            return new SpatialObjectState
+            {
+                anchorBounds = anchorBounds,
+                localToAnchor = localToAnchor,
+                mesh = mesh,
+                subMeshIndex = 0,
+                geometryHash = (mesh != null) ? mesh.GetInstanceID() : 0
+            };
+        }
+
+        /// <summary>
+        /// Checks if the object has effectively moved OR changed its geometry.
+        /// English: This remains stable even if Unity's world origin shifts.
+        /// </summary>
         public bool Equals(SpatialObjectState other)
         {
             return geometryHash == other.geometryHash &&
                    subMeshIndex == other.subMeshIndex &&
                    mesh == other.mesh &&
-                   localToWorld.Equals(other.localToWorld) &&
-                   worldBounds.Equals(other.worldBounds);
+                   localToAnchor.Equals(other.localToAnchor) &&
+                   anchorBounds.Equals(other.anchorBounds);
         }
 
-        /// <summary>
-        /// Determines whether the specified object is equal to the current state.
-        /// </summary>
         public override bool Equals(object obj) => obj is SpatialObjectState other && Equals(other);
 
-        /// <summary>
-        /// Serves as the default hash function.
-        /// </summary>
-        /// <returns>A hash code for the current state.</returns>
         public override int GetHashCode()
         {
             unchecked
@@ -68,20 +83,13 @@ namespace Rayforge.Core.Environment.Spatial
                 hash = hash * 31 + (mesh != null ? mesh.GetHashCode() : 0);
                 hash = hash * 31 + subMeshIndex;
                 hash = hash * 31 + geometryHash;
-                hash = hash * 31 + localToWorld.GetHashCode();
-                hash = hash * 31 + worldBounds.GetHashCode();
+                hash = hash * 31 + localToAnchor.GetHashCode();
+                hash = hash * 31 + anchorBounds.GetHashCode();
                 return hash;
             }
         }
 
-        /// <summary>
-        /// Equality operator.
-        /// </summary>
         public static bool operator ==(SpatialObjectState left, SpatialObjectState right) => left.Equals(right);
-
-        /// <summary>
-        /// Inequality operator.
-        /// </summary>
         public static bool operator !=(SpatialObjectState left, SpatialObjectState right) => !left.Equals(right);
     }
 }

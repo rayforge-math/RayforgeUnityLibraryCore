@@ -34,7 +34,41 @@ namespace Rayforge.Core.Environment.Spatial
         public Vector2Int currentGridKey2D => new Vector2Int(currentGridKey.x, currentGridKey.z);
         #endregion
 
+        #region Distance Overrides (2D Logic)
+
+        /// <summary> 
+        /// Overrides distance calculation to ignore the Y-axis. 
+        /// English: Provides a top-down distance ideal for LODs and Terrain-Surface logic.
+        /// </summary>
+        public override float GetSqrDistanceTo(Vector3 worldPos)
+        {
+            Vector3 center = transform.position;
+            float dx = center.x - worldPos.x;
+            float dz = center.z - worldPos.z;
+
+            // English: Ignore Y to keep LODs stable regardless of height.
+            return dx * dx + dz * dz;
+        }
+
+        /// <summary> 
+        /// Precise squared distance to AABB edge in the XZ plane.
+        /// English: Effectively checks distance to the bounding square instead of the cube.
+        /// </summary>
+        public override float GetSqrDistanceToClosestEdge(Vector3 worldPos)
+        {
+            Vector3 center = transform.position;
+
+            // English: Only calculate horizontal offsets.
+            float dx = Mathf.Max(0, (center.x - localExtent.x) - worldPos.x, worldPos.x - (center.x + localExtent.x));
+            float dz = Mathf.Max(0, (center.z - localExtent.z) - worldPos.z, worldPos.z - (center.z + localExtent.z));
+
+            return dx * dx + dz * dz;
+        }
+
+        #endregion
+
         #region Configuration
+
         /// <summary>
         /// Configures the dimensions of the chunk. 
         /// </summary>
@@ -44,14 +78,18 @@ namespace Rayforge.Core.Environment.Spatial
         {
             localExtent = new Vector3(area.x, height, area.y);
         }
+
         #endregion
 
         #region 2D Logic Helpers
+
         /// <summary> Returns the full top-down area size (XZ). </summary>
         public Vector2 GetAreaSize() => areaExtent * 2f;
+
         #endregion
 
         #region Debugging & Gizmos
+
         protected override void OnDrawGizmosSelected()
         {
             // Draw the 3D wireframe volume from Chunk3D
@@ -69,6 +107,7 @@ namespace Rayforge.Core.Environment.Spatial
             Gizmos.color = new Color(0, 1, 1, 0.4f);
             Gizmos.DrawWireCube(center, new Vector3(size.x, 0f, size.y));
         }
+
         #endregion
     }
 }
