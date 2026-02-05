@@ -26,16 +26,14 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         }
         #endregion
 
-        #region Configuration: General & Debug
+        #region Serialized Fields: Configuration
         [Header("Debug & Diagnostics")]
         public bool showDebugLogs = false;
 
         [Header("Floating Origin")]
         [Tooltip("Monitors world movement to handle coordinate shifts.")]
         public OriginShiftRelay shiftRelay;
-        #endregion
 
-        #region Configuration: LOD & Grid
         [Header("LOD & Culling Settings")]
         [Tooltip("The reference point for LOD calculations (usually Main Camera).")]
         public Transform lodReference;
@@ -49,9 +47,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         [Tooltip("Define LOD levels (Distances and Resolutions).")]
         public SurfaceLODLevel[] lodLevels;
-        #endregion
 
-        #region Configuration: Detection
         [Header("Surface Detection Settings")]
         [Tooltip("If enabled, the manager automatically scans all children of this GameObject.")]
         public bool scanHierarchy = true;
@@ -70,13 +66,14 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         public List<GameObject> surfaces = new List<GameObject>();
         #endregion
 
-        #region Private State
+        #region Private Runtime State
         private readonly HashSet<int> _surfaceIds = new HashSet<int>();
         private readonly List<int> _cleanupBuffer = new List<int>(32);
 
         private LODChunkRegistry<SurfaceChunk> _chunkRegistry;
         private SpatialObjectRegistry _registry;
         private Vector3 _lastUpdatePos;
+        private bool _needsSpatialSync = false;
 
         private bool IsReady => lodReference != null && _chunkRegistry != null && _registry != null;
         #endregion
@@ -126,7 +123,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         }
         #endregion
 
-        #region Logic: Initialization & Setup
+        #region Initialization & Dependencies
         private void EnsureSystemsReady(bool force = false)
         {
             CreateObjectRegistry(force);
@@ -153,8 +150,8 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                     (ChunkSize)chunkSize,
                     transform.position,
                     GetValidLodDistances(),
-                    lodReference,
-                    this.transform
+                    lodReference
+                    //this.transform
                 );
 
                 _chunkRegistry.showDebugLogs = this.showDebugLogs;
@@ -163,8 +160,6 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 LogDebug($"Chunk Registry created. GridSize: {(int)chunkSize}m");
             }
         }
-
-        public void ResetTrackingPosition() => _lastUpdatePos = lodReference ? lodReference.position : Vector3.zero;
 
         public void SetupDependencies()
         {
@@ -175,7 +170,11 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 lodReference = Camera.main.transform;
         }
 
-        public void UpdateLODSettings()
+        #endregion
+
+        #region Configuration & Validation
+
+        private void UpdateLODSettings()
         {
             if (_chunkRegistry == null)
             {
@@ -187,12 +186,10 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             _chunkRegistry.SetViewer(lodReference);
             _chunkRegistry.UpdateLodDistances(distances);
 
-            foreach (var c in _chunkRegistry.AllEntries) c?.MarkDirty();
-
             LogDebug("LOD Settings synchronized.");
         }
 
-        public void UpdateGridSize()
+        private void UpdateGridSize()
         {
             if (_chunkRegistry == null)
             {
@@ -205,241 +202,6 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 LogDebug($"Grid size change detected ({(int)_chunkRegistry.GridSize}m -> {(int)chunkSize}m). Recreating...");
                 CreateChunkRegistry(true);
             }
-        }
-        #endregion
-
-        #region Logic: Updates & Baking
-        private bool CheckMovementThreshold()
-        {
-            float distSqr = (lodReference.position - _lastUpdatePos).sqrMagnitude;
-            float threshold = (float)chunkSize * updateSensitivity;
-
-            if (distSqr > threshold * threshold)
-            {
-                _lastUpdatePos = lodReference.position;
-                return true;
-            }
-            return false;
-        }
-
-        private void ProcessBaking()
-        {
-            foreach (Vector3Int dirtyKey in _registry.GetDirtyBuckets())
-            {
-                if (_chunkRegistry.TryGetEntry(dirtyKey, out var chunk))
-                    chunk.MarkDirty();
-            }
-            _registry.ClearDirtyBuckets();
-
-            foreach (var chunk in _chunkRegistry.AllEntries)
-            {
-                if (chunk == null || !chunk.IsDirty) continue;
-
-                PerformChunkBake(chunk);
-                chunk.ClearDirty();
-            }
-        }
-
-        private void PerformChunkBake(SurfaceChunk chunk)
-        {
-            var relevantObjects = _registry.GetObjectsInCell(chunk.GridKey);
-            int resolution = GetResolutionForLod(chunk.CurrentLOD);
-
-            if (showDebugLogs)
-                LogDebug($"Baking Chunk {chunk.GridKey} | LOD {chunk.CurrentLOD} | Res {resolution}px | Objects: {relevantObjects.Count}");
-
-            // English: HeightmapBaker.Bake(chunk, relevantObjects, resolution);
-        }
-
-        private int GetResolutionForLod(int lodLevel)
-        {
-            if (lodLevels == null || lodLevels.Length == 0) return 256;
-            int index = Mathf.Clamp(lodLevel, 0, lodLevels.Length - 1);
-            return (int)lodLevels[index].mapResolution;
-        }
-        #endregion
-
-        #region Logic: Registry & Hierarchy Scan
-        public void RebuildRegistry()
-        {
-            LogDebug("Rebuilding Registry...");
-            SyncFromList();
-            if (scanHierarchy) ScanHierarchyRecursive(transform);
-        }
-
-        public void SyncFromList()
-        {
-            _surfaceIds.Clear();
-
-            for (int i = surfaces.Count - 1; i >= 0; i--)
-            {
-                GameObject obj = surfaces[i];
-                if (obj == null) { surfaces.RemoveAt(i); continue; }
-
-                if (!IsValidCandidate(obj.transform))
-                {
-                    ForceRemoveSurface(obj.GetInstanceID());
-                    continue;
-                }
-
-                if (TryAddSurface(obj))
-                    _surfaceIds.Add(obj.GetInstanceID());
-            }
-
-            _cleanupBuffer.Clear();
-            foreach (int id in _registry.GetAllIds())
-            {
-                if (!_surfaceIds.Contains(id)) _cleanupBuffer.Add(id);
-            }
-
-            foreach (int idToRemove in _cleanupBuffer) ForceRemoveSurface(idToRemove);
-        }
-
-        private void ScanHierarchyRecursive(Transform parent)
-        {
-            foreach (Transform child in parent)
-            {
-                int id = child.gameObject.GetInstanceID();
-
-                if (!_surfaceIds.Contains(id) && IsValidCandidate(child))
-                {
-                    if (TryAddSurface(child.gameObject))
-                        _surfaceIds.Add(id);
-                }
-
-                if (child.childCount > 0) ScanHierarchyRecursive(child);
-            }
-        }
-
-        public bool TryAddSurface(GameObject obj)
-        {
-            if (obj == null || !IsInitializedRegistry()) return false;
-            if (!IsValidCandidate(obj.transform)) return false;
-
-            if (_registry.TryRegister(obj))
-            {
-                if (!_surfaceIds.Contains(obj.GetInstanceID())) _surfaceIds.Add(obj.GetInstanceID());
-                if (!surfaces.Contains(obj)) surfaces.Add(obj);
-                return true;
-            }
-            return false;
-        }
-
-        public bool ForceRemoveSurface(int id)
-        {
-            _registry.Unregister(id);
-            _surfaceIds.Remove(id);
-            surfaces.RemoveAll(s => s == null || s.GetInstanceID() == id);
-            return true;
-        }
-
-        /// <summary>
-        /// English: Completely wipes all registered surfaces, destroys all chunks, 
-        /// and resets the registries to a clean state.
-        /// </summary>
-        public void ClearAll()
-        {
-            LogDebug("Performing full system cleanup...");
-
-            _surfaceIds.Clear();
-            surfaces.Clear();
-            _cleanupBuffer.Clear();
-
-            if (_registry != null)
-            {
-                _registry = new SpatialObjectRegistry { showDebugLogs = this.showDebugLogs };
-                _registry.Initialize(_chunkRegistry);
-            }
-
-            if (_chunkRegistry != null)
-            {
-                _chunkRegistry.Dispose();
-                CreateChunkRegistry(true);
-            }
-
-            ResetTrackingPosition();
-
-            LogDebug("System cleared. All chunks destroyed and registries reset.");
-        }
-        #endregion
-
-        #region Logic: Integrity
-        private bool IsValidCandidate(Transform t)
-        {
-            if (!string.IsNullOrEmpty(nameFilter) && !t.name.Contains(nameFilter)) return false;
-
-            if (enableAreaCheck)
-            {
-                Bounds b;
-                if (t.TryGetComponent<Renderer>(out var r)) b = r.bounds;
-                else if (t.TryGetComponent<Collider>(out var c)) b = c.bounds;
-                else return false;
-
-                return (b.size.x * b.size.z) > minAreaThreshold;
-            }
-            return true;
-        }
-
-        private void HandleOriginShift(Vector3 delta)
-        {
-            _chunkRegistry?.NotifyOriginShift(delta);
-            _lastUpdatePos += delta;
-        }
-
-        private SurfaceLODLevel[] GetValidLodLevels()
-        {
-            if (lodLevels == null || lodLevels.Length == 0)
-            {
-                LogDebug("GetValidLodLevels: No LOD levels defined.");
-                return new SurfaceLODLevel[0];
-            }
-
-            List<SurfaceLODLevel> validLevels = new List<SurfaceLODLevel>(capacity: lodLevels.Length);
-            SurfaceLODLevel lastAccepted = default;
-
-            for (int i = 0; i < lodLevels.Length; i++)
-            {
-                var cur = lodLevels[i];
-
-                if (i == 0)
-                {
-                    validLevels.Add(cur);
-                    lastAccepted = cur;
-                    continue;
-                }
-
-                bool resDrops = lastAccepted.mapResolution.IsHigherThan(cur.mapResolution);
-                bool distGrows = cur.distanceThreshold > lastAccepted.distanceThreshold;
-
-                if (resDrops && distGrows)
-                {
-                    validLevels.Add(cur);
-                    lastAccepted = cur;
-                }
-                else
-                {
-                    string reason = "";
-                    if (!resDrops) reason += $"Resolution {cur.mapResolution} is not lower than {lastAccepted.mapResolution}. ";
-                    if (!distGrows) reason += $"Distance {cur.distanceThreshold}m is not further than {lastAccepted.distanceThreshold}m.";
-
-                    LogDebug($"LOD Level [{i}] ignored: {reason}");
-                }
-            }
-
-            LogDebug($"LOD Validation complete: {validLevels.Count} valid levels extracted from {lodLevels.Length} entries.");
-            return validLevels.ToArray();
-        }
-
-        private float[] GetValidLodDistances()
-        {
-            var lods = GetValidLodLevels();
-            var distances = new float[lods.Length];
-            for(int i = 0; i < lods.Length; ++i)
-            {
-                distances[i] = lods[i].distanceThreshold;
-            }
-
-            return distances;
         }
 
         private void SanitizeLODLevels()
@@ -486,7 +248,255 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             }
         }
 
-        private bool IsInitializedRegistry() => _registry != null && _registry.IsInitialized;
+        private float[] GetValidLodDistances()
+        {
+            var lods = GetValidLodLevels();
+            var distances = new float[lods.Length];
+            for (int i = 0; i < lods.Length; ++i)
+            {
+                distances[i] = lods[i].distanceThreshold;
+            }
+
+            return distances;
+        }
+
+        private SurfaceLODLevel[] GetValidLodLevels()
+        {
+            if (lodLevels == null || lodLevels.Length == 0)
+            {
+                LogDebug("GetValidLodLevels: No LOD levels defined.");
+                return new SurfaceLODLevel[0];
+            }
+
+            List<SurfaceLODLevel> validLevels = new List<SurfaceLODLevel>(capacity: lodLevels.Length);
+            SurfaceLODLevel lastAccepted = default;
+
+            for (int i = 0; i < lodLevels.Length; i++)
+            {
+                var cur = lodLevels[i];
+
+                if (i == 0)
+                {
+                    validLevels.Add(cur);
+                    lastAccepted = cur;
+                    continue;
+                }
+
+                bool resDrops = lastAccepted.mapResolution.IsHigherThan(cur.mapResolution);
+                bool distGrows = cur.distanceThreshold > lastAccepted.distanceThreshold;
+
+                if (resDrops && distGrows)
+                {
+                    validLevels.Add(cur);
+                    lastAccepted = cur;
+                }
+                else
+                {
+                    string reason = "";
+                    if (!resDrops) reason += $"Resolution {cur.mapResolution} is not lower than {lastAccepted.mapResolution}. ";
+                    if (!distGrows) reason += $"Distance {cur.distanceThreshold}m is not further than {lastAccepted.distanceThreshold}m.";
+
+                    LogDebug($"LOD Level [{i}] ignored: {reason}");
+                }
+            }
+
+            LogDebug($"LOD Validation complete: {validLevels.Count} valid levels extracted from {lodLevels.Length} entries.");
+            return validLevels.ToArray();
+        }
+
+        #endregion
+
+        #region Surface Tracking & Hierarchy Scanning
+
+        public void RebuildRegistry()
+        {
+            LogDebug("Rebuilding Registry...");
+            SyncFromList();
+            if (scanHierarchy) ScanHierarchyRecursive(transform);
+        }
+
+        public void SyncFromList()
+        {
+            _surfaceIds.Clear();
+
+            for (int i = surfaces.Count - 1; i >= 0; i--)
+            {
+                GameObject obj = surfaces[i];
+                if (obj == null) { surfaces.RemoveAt(i); continue; }
+
+                if (!IsValidCandidate(obj.transform))
+                {
+                    RemoveSurface(obj.GetInstanceID());
+                    continue;
+                }
+
+                TryAddSurface(obj);
+            }
+
+            _cleanupBuffer.Clear();
+            foreach (int id in _registry.GetAllIds())
+            {
+                if (!_surfaceIds.Contains(id)) _cleanupBuffer.Add(id);
+            }
+
+            foreach (int idToRemove in _cleanupBuffer) RemoveSurface(idToRemove);
+        }
+
+        private void ScanHierarchyRecursive(Transform parent)
+        {
+            foreach (Transform child in parent)
+            {
+                int id = child.gameObject.GetInstanceID();
+
+                if (!_surfaceIds.Contains(id) && IsValidCandidate(child))
+                {
+                    TryAddSurface(child.gameObject);
+                }
+
+                if (child.childCount > 0) ScanHierarchyRecursive(child);
+            }
+        }
+
+        public bool TryAddSurface(GameObject obj)
+        {
+            if (obj == null) return false;
+            if (!IsValidCandidate(obj.transform)) return false;
+
+            if (_registry.TryRegister(obj))
+            {
+                if (!_surfaceIds.Contains(obj.GetInstanceID())) _surfaceIds.Add(obj.GetInstanceID());
+                if (!surfaces.Contains(obj)) surfaces.Add(obj);
+
+                _needsSpatialSync = true;
+                return true;
+            }
+            return false;
+        }
+
+        public bool RemoveSurface(int id)
+        {
+            if (_registry.Unregister(id))
+            {
+                _surfaceIds.Remove(id);
+                surfaces.RemoveAll(s => s == null || s.GetInstanceID() == id);
+
+                _needsSpatialSync = true;
+                return true;
+            }
+            
+            return false;
+        }
+
+        private bool IsValidCandidate(Transform t)
+        {
+            if (!string.IsNullOrEmpty(nameFilter) && !t.name.Contains(nameFilter)) return false;
+
+            if (enableAreaCheck)
+            {
+                Bounds b;
+                if (t.TryGetComponent<Renderer>(out var r)) b = r.bounds;
+                else if (t.TryGetComponent<Collider>(out var c)) b = c.bounds;
+                else return false;
+
+                return (b.size.x * b.size.z) > minAreaThreshold;
+            }
+            return true;
+        }
+
+        #endregion
+
+        #region Runtime Processing & Baking
+
+        private void ProcessBaking()
+        {
+            LogDebug($"Beginning Baking Cycle...");
+
+            foreach (Vector3Int dirtyKey in _registry.GetDirtyBuckets())
+            {
+                if (_chunkRegistry.TryGetEntry(dirtyKey, out var chunk))
+                    chunk.MarkDirty();
+            }
+            _registry.ClearDirtyBuckets();
+
+            foreach (var chunk in _chunkRegistry.AllEntries)
+            {
+                if (chunk == null || !chunk.IsDirty) continue;
+
+                PerformChunkBake(chunk);
+                chunk.ClearDirty();
+            }
+        }
+
+        private void PerformChunkBake(SurfaceChunk chunk)
+        {
+            var relevantObjects = _registry.GetObjectsInCell(chunk.GridKey);
+            int resolution = GetResolutionForLod(chunk.CurrentLOD);
+
+            LogDebug($"Baking Chunk {chunk.GridKey} | LOD {chunk.CurrentLOD} | Res {resolution}px | Objects: {relevantObjects.Count}");
+
+            // English: HeightmapBaker.Bake(chunk, relevantObjects, resolution);
+        }
+
+        private bool CheckMovementThreshold()
+        {
+            float distSqr = (lodReference.position - _lastUpdatePos).sqrMagnitude;
+            float threshold = (float)chunkSize * updateSensitivity;
+
+            if (distSqr > threshold * threshold)
+            {
+                _lastUpdatePos = lodReference.position;
+                return true;
+            }
+            return false;
+        }
+
+        private int GetResolutionForLod(int lodLevel)
+        {
+            if (lodLevels == null || lodLevels.Length == 0) return 64;
+            int index = Mathf.Clamp(lodLevel, 0, lodLevels.Length - 1);
+            return (int)lodLevels[index].mapResolution;
+        }
+
+        #endregion
+
+        #region System Events & Cleanup
+
+        private void HandleOriginShift(Vector3 delta)
+        {
+            _chunkRegistry?.NotifyOriginShift(delta);
+            _lastUpdatePos += delta;
+        }
+
+        public void ResetTrackingPosition() => _lastUpdatePos = lodReference ? lodReference.position : Vector3.zero;
+
+        /// <summary>
+        /// English: Completely wipes all registered surfaces, destroys all chunks, 
+        /// and resets the registries to a clean state.
+        /// </summary>
+        public void ClearAll()
+        {
+            LogDebug("Performing full system cleanup...");
+
+            _surfaceIds.Clear();
+            surfaces.Clear();
+            _cleanupBuffer.Clear();
+
+            if (_registry != null)
+            {
+                _registry = new SpatialObjectRegistry { showDebugLogs = this.showDebugLogs };
+                _registry.Initialize(_chunkRegistry);
+            }
+
+            if (_chunkRegistry != null)
+            {
+                _chunkRegistry.Dispose();
+                CreateChunkRegistry(true);
+            }
+
+            ResetTrackingPosition();
+
+            LogDebug("System cleared. All chunks destroyed and registries reset.");
+        }
         #endregion
 
         #region Debug Helper

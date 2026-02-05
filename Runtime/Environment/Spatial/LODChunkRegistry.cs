@@ -83,22 +83,23 @@ namespace Rayforge.Core.Environment.Spatial
                 }
             }
 
-            if (changeCount > 0)
-            {
-                LogDebug($"LOD Update: {changeCount} chunks changed their LOD level.");
-            }
+            LogDebug($"LOD Update: {changeCount} chunks changed their LOD level.");
         }
 
         /// <summary>
-        /// Maps a squared distance to an LOD index.
+        /// Maps a squared distance to an LOD index based on defined thresholds.
+        /// Returns the index of the first threshold the distance falls under.
+        /// Returns -1 if the distance exceeds all defined LOD ranges (Out of Range).
         /// </summary>
+        /// <param name="sqrDistance">The squared distance to check against thresholds.</param>
+        /// <returns>The LOD index (0 to N-1) or -1 for culled state.</returns>
         protected int CalculateTargetLOD(float sqrDistance)
         {
             for (int i = 0; i < _lodSqrDistances.Length; i++)
             {
                 if (sqrDistance < _lodSqrDistances[i]) return i;
             }
-            return _lodSqrDistances.Length;
+            return -1;
         }
         #endregion
 

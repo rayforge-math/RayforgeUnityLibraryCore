@@ -26,12 +26,14 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// Triggered by LODChunkRegistry. Changing the LOD usually requires a resolution change.
         /// </summary>
         /// <param name="newLod">The new LOD level calculated by the registry.</param>
-        public void UpdateLOD(int newLod)
+        public bool UpdateLOD(int newLod)
         {
-            if (CurrentLOD == newLod) return;
+            if (CurrentLOD == newLod) return false;
 
             CurrentLOD = newLod;
             MarkDirty();
+
+            return true;
         }
 
         /// <summary>

@@ -10,9 +10,13 @@ namespace Rayforge.Core.Environment.Abstractions
         int CurrentLOD { get; }
 
         /// <summary>
-        /// Updates the LOD state. 
-        /// Implementation should check if the value changed before triggering expensive logic.
+        /// Updates the Level of Detail (LOD) state of the entry.
         /// </summary>
-        void UpdateLOD(int newLod);
+        /// <param name="newLod">The new LOD index (0 for highest detail, -1 for culled/inactive).</param>
+        /// <returns>
+        /// True if the LOD level actually changed; otherwise, false. 
+        /// Use this return value to avoid redundant updates or expensive re-baking logic.
+        /// </returns>
+        bool UpdateLOD(int newLod);
     }
 }

@@ -67,6 +67,13 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         #region Registration Logic
 
+        /// <summary>
+        /// Registers or updates a GameObject in the spatial registry.
+        /// </summary>
+        /// <returns>
+        /// True if the registry was actually modified (new object or spatial change). 
+        /// False if the object is already up-to-date or registration failed.
+        /// </returns>
         public bool TryRegister(GameObject obj)
         {
             if (obj == null || !IsInitialized) return false;
@@ -77,7 +84,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
             if (_registry.TryGetValue(id, out SpatialObjectState oldState))
             {
-                if (oldState.Equals(newState)) return true;
+                if (oldState.Equals(newState)) return false;
 
                 LogDebug($"Updating object: {obj.name}. Spatial state changed.");
 
@@ -95,6 +102,10 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             return true;
         }
 
+        /// <summary>
+        /// Removes an object from the registry and its spatial buckets.
+        /// </summary>
+        /// <returns>True if the object was found and removed, false otherwise.</returns>
         public bool Unregister(int id)
         {
             if (_registry.TryGetValue(id, out SpatialObjectState state))

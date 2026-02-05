@@ -72,7 +72,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="position">The initial world position.</param>
         /// <param name="factory">Factory method for initialization.</param>
         /// <returns>The existing or newly created entry.</returns>
-        protected TValue GetOrCreate(TKey key, string name, Vector3 position, System.Func<GameObject, TKey, TValue> factory)
+        protected TValue GetOrCreate(TKey key, string name, Vector3 position, Func<GameObject, TKey, TValue> factory)
         {
             if (_storage.TryGetValue(key, out TValue existing))
             {
