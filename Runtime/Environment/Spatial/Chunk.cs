@@ -1,3 +1,4 @@
+using System.Reflection;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
@@ -26,17 +27,21 @@ namespace Rayforge.Core.Environment.Spatial
         [field: SerializeField, HideInInspector]
         public Vector3Int GridKey { get; internal set; }
 
-        private static SpatialAxes _axes = SpatialAxes.Voxel;
-
         /// <summary>
-        /// Defines which axes are active. Drives distance calculations and gizmos.
-        /// Overriding this in derived classes (e.g. Chunk2D) flattens the math automatically.
+        /// Static cache for the axes configuration. 
+        /// Initialized once per unique type T.
         /// </summary>
-        public static SpatialAxes ActiveAxes
+        public static SpatialAxes ActiveAxes { get; private set; }
+
+        static Chunk()
         {
-            get => _axes;
-            internal set => _axes = value;
+            var config = typeof(T).GetCustomAttribute<ChunkConfigAttribute>(true);
+            ActiveAxes = config?.Axes ?? SpatialAxes.Voxel;
         }
+
+        public bool IsXActive => (ActiveAxes & SpatialAxes.X) != 0;
+        public bool IsYActive => (ActiveAxes & SpatialAxes.Y) != 0;
+        public bool IsZActive => (ActiveAxes & SpatialAxes.Z) != 0;
 
         /// <summary> Internal dirty flag for state tracking. </summary>
         protected bool _isDirty = true;
@@ -86,19 +91,19 @@ namespace Rayforge.Core.Environment.Spatial
             Vector3 center = transform.position;
 
             // Check X-Axis overlap if active
-            if ((ActiveAxes & SpatialAxes.X) != 0)
+            if (IsXActive)
             {
                 if (Mathf.Abs(center.x - worldPos.x) > localExtent.x) return false;
             }
 
             // Check Y-Axis overlap if active
-            if ((ActiveAxes & SpatialAxes.Y) != 0)
+            if (IsYActive)
             {
                 if (Mathf.Abs(center.y - worldPos.y) > localExtent.y) return false;
             }
 
             // Check Z-Axis overlap if active
-            if ((ActiveAxes & SpatialAxes.Z) != 0)
+            if (IsZActive)
             {
                 if (Mathf.Abs(center.z - worldPos.z) > localExtent.z) return false;
             }
@@ -113,9 +118,9 @@ namespace Rayforge.Core.Environment.Spatial
         {
             Vector3 center = transform.position;
 
-            float dx = ((ActiveAxes & SpatialAxes.X) != 0) ? (center.x - worldPos.x) : 0;
-            float dy = ((ActiveAxes & SpatialAxes.Y) != 0) ? (center.y - worldPos.y) : 0;
-            float dz = ((ActiveAxes & SpatialAxes.Z) != 0) ? (center.z - worldPos.z) : 0;
+            float dx = (IsXActive) ? (center.x - worldPos.x) : 0;
+            float dy = (IsYActive) ? (center.y - worldPos.y) : 0;
+            float dz = (IsZActive) ? (center.z - worldPos.z) : 0;
 
             return dx * dx + dy * dy + dz * dz;
         }
@@ -129,19 +134,19 @@ namespace Rayforge.Core.Environment.Spatial
             Vector3 center = transform.position;
             float dx = 0, dy = 0, dz = 0;
 
-            if ((ActiveAxes & SpatialAxes.X) != 0)
+            if (IsXActive)
             {
                 float deltaX = Mathf.Abs(center.x - worldPos.x) - localExtent.x;
                 dx = Mathf.Max(0, deltaX);
             }
 
-            if ((ActiveAxes & SpatialAxes.Y) != 0)
+            if (IsYActive)
             {
                 float deltaY = Mathf.Abs(center.y - worldPos.y) - localExtent.y;
                 dy = Mathf.Max(0, deltaY);
             }
 
-            if ((ActiveAxes & SpatialAxes.Z) != 0)
+            if (IsZActive)
             {
                 float deltaZ = Mathf.Abs(center.z - worldPos.z) - localExtent.z;
                 dz = Mathf.Max(0, deltaZ);
@@ -178,7 +183,7 @@ namespace Rayforge.Core.Environment.Spatial
         #region Debugging
         protected virtual void OnDrawGizmosSelected()
         {
-            bool isFull3D = (ActiveAxes & SpatialAxes.Y) != 0;
+            bool isFull3D = IsYActive;
             Gizmos.color = isFull3D ? Color.cyan : Color.green;
 
             Vector3 pos = transform.position;

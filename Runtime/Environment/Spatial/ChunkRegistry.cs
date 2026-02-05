@@ -1,7 +1,10 @@
+using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Helpers;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Reflection;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
@@ -57,6 +60,16 @@ namespace Rayforge.Core.Environment.Spatial
             if (IsZActive) count++;
             return count;
         }
+
+        #region Debug Helper
+        public bool showDebugLogs = false;
+
+        [Conditional("UNITY_EDITOR")]
+        private void LogDebug(string message, string color = "#FFAB91")
+        {
+            DebugOutput.Log(message, showDebugLogs, color);
+        }
+        #endregion
         #endregion
 
         public ChunkRegistry(ChunkSize gridSize, Vector3 initialAnchor, Transform container = null)
@@ -65,6 +78,8 @@ namespace Rayforge.Core.Environment.Spatial
             GridSize = (int)gridSize;
             Anchor = initialAnchor;
             _axes = Chunk<T>.ActiveAxes;
+
+            LogDebug($"Initialized: Size={GridSize}, Anchor={Anchor}, Axes={_axes}");
         }
 
         #region Factory Implementation
@@ -114,6 +129,8 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         private T CreateInternal(Vector3Int validKey)
         {
+            LogDebug($"Creating Chunk at {validKey}");
+
             return GetOrCreate(
                 validKey,
                 $"Chunk_{validKey.x}_{validKey.y}_{validKey.z}",
@@ -225,9 +242,9 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public void NotifyOriginShift(Vector3 delta)
         {
-            // We remove the axis-check for the Anchor itself. 
-            // If the world origin moves, our reference point must move identically.
             Anchor += delta;
+
+            LogDebug($"Origin Shift detected: Delta {delta}. New Anchor: {Anchor}");
 
             foreach (var chunk in AllEntries)
             {

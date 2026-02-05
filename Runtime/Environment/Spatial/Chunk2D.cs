@@ -7,18 +7,10 @@ namespace Rayforge.Core.Environment.Spatial
     /// Maps 3D spatial data to the XZ plane for easier heightmap management.
     /// </summary>
     /// <typeparam name="T">The derived type for type-safe processing.</typeparam>
+    [ChunkConfig(SpatialAxes.Surface)]
     public abstract class Chunk2D<T> : Chunk3D<T>
         where T : Chunk2D<T>
     {
-        #region Configuration
-
-        static Chunk2D()
-        {
-            ActiveAxes = SpatialAxes.Surface;
-        }
-
-        #endregion
-
         #region 2D Accessors
 
         /// <summary> Gets the horizontal half-size (XZ plane). </summary>

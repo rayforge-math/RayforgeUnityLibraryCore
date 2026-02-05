@@ -8,18 +8,10 @@ namespace Rayforge.Core.Environment.Spatial
     /// Pre-configured for volumetric objects where X, Y, and Z axes are all active.
     /// </summary>
     /// <typeparam name="T">The derived type for type-safe processing.</typeparam>
+    [ChunkConfig(SpatialAxes.Voxel)]
     public abstract class Chunk3D<T> : Chunk<T>
         where T : Chunk3D<T>
     {
-        #region Identity Configuration
-
-        static Chunk3D()
-        {
-            ActiveAxes = SpatialAxes.Voxel;
-        }
-
-        #endregion
-
         #region 3D Convenience Methods
 
         /// <summary>

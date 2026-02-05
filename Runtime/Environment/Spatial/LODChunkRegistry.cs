@@ -1,4 +1,6 @@
+using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
+using System.Diagnostics;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
@@ -15,6 +17,14 @@ namespace Rayforge.Core.Environment.Spatial
         #region Fields & Config
         private float[] _lodSqrDistances;
         private Transform _viewer;
+
+        #region Debug Helper
+        [Conditional("UNITY_EDITOR")]
+        private void LogDebug(string message, string color = "#FFAB91")
+        {
+            DebugOutput.Log(message, showDebugLogs, color);
+        }
+        #endregion
 
         /// <summary> Helper to get the current focus position without repeating null-checks. </summary>
         private Vector3 ViewerPos => (_viewer != null) ? _viewer.position : Vector3.zero;
@@ -36,10 +46,11 @@ namespace Rayforge.Core.Environment.Spatial
         {
             T chunk = base.GetOrCreateChunk(key);
 
-            // Use the optimized flag-aware distance check from the Chunk base class.
-            // Note: Using ClosestEdge is often more stable for LODs in grid systems.
             float sqrDist = chunk.GetSqrDistanceToClosestEdge(ViewerPos);
-            chunk.UpdateLOD(CalculateTargetLOD(sqrDist));
+            int targetLod = CalculateTargetLOD(sqrDist);
+            chunk.UpdateLOD(targetLod);
+
+            LogDebug($"Created Chunk {key} with initial LOD {targetLod}");
 
             return chunk;
         }
@@ -56,18 +67,25 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public void UpdateLODs(Vector3 focusPos)
         {
+            int changeCount = 0;
+
             foreach (T chunk in AllEntries)
             {
                 if (chunk == null) continue;
 
-                // This distance check automatically ignores Y if the chunk is 2D/Surface.
                 float sqrDist = chunk.GetSqrDistanceToClosestEdge(focusPos);
                 int targetLod = CalculateTargetLOD(sqrDist);
 
                 if (chunk.CurrentLOD != targetLod)
                 {
                     chunk.UpdateLOD(targetLod);
+                    changeCount++;
                 }
+            }
+
+            if (changeCount > 0)
+            {
+                LogDebug($"LOD Update: {changeCount} chunks changed their LOD level.");
             }
         }
 
@@ -80,14 +98,18 @@ namespace Rayforge.Core.Environment.Spatial
             {
                 if (sqrDistance < _lodSqrDistances[i]) return i;
             }
-            return _lodSqrDistances.Length; // Lowest detail / Culled
+            return _lodSqrDistances.Length;
         }
         #endregion
 
         #region Management & Origin Shift
 
         /// <summary> Updates the viewer reference (e.g., when switching cameras). </summary>
-        public void SetViewer(Transform viewer) => _viewer = viewer;
+        public void SetViewer(Transform viewer)
+        {
+            LogDebug($"Viewer changed to: {(viewer != null ? viewer.name : "NULL")}");
+            _viewer = viewer;
+        }
 
         /// <summary>
         /// Updates the internal squared distance thresholds.
@@ -103,8 +125,8 @@ namespace Rayforge.Core.Environment.Spatial
                 _lodSqrDistances[i] = newDistances[i] * newDistances[i];
             }
 
-            // Optional: immediate update to apply new distances.
-            if (Application.isPlaying) UpdateLODs();
+            LogDebug($"LOD Distances synchronized. Levels: {newDistances.Length}");
+            UpdateLODs();
         }
 
         #endregion

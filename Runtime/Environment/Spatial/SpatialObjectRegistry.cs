@@ -1,5 +1,5 @@
 using Rayforge.Core.Environment.Abstractions;
-using Rayforge.Core.Environment.Spatial.Surfaces;
+using Rayforge.Core.Diagnostics;
 using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
@@ -38,10 +38,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         [Conditional("UNITY_EDITOR")]
         private void LogDebug(string message)
         {
-            if (showDebugLogs)
-            {
-                UnityEngine.Debug.Log($"<color=#4FC3F7>[ChunkObjectRegistry]</color> {message}");
-            }
+            DebugOutput.Log(message, showDebugLogs);
         }
         #endregion
 
@@ -170,6 +167,9 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         {
             if (!IsInitialized) return;
 
+            System.Text.StringBuilder sb = showDebugLogs ? new System.Text.StringBuilder() : null;
+            int affectedCount = 0;
+
             foreach (Vector3Int key in _gridProvider.GetKeysInBounds(bounds))
             {
                 _dirtyBuckets.Add(key);
@@ -191,6 +191,19 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                         if (bucket.Count == 0) _spatialBuckets.Remove(key);
                     }
                 }
+
+                if (showDebugLogs)
+                {
+                    if (affectedCount > 0) sb.Append(", ");
+                    sb.Append(key.ToString());
+                    affectedCount++;
+                }
+            }
+
+            if (showDebugLogs)
+            {
+                string op = add ? "Mapped to" : "Removed from";
+                LogDebug($"{op} {affectedCount} buckets: [{sb}] (ID: {id})");
             }
         }
 
@@ -203,14 +216,23 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             state = default;
             if (!IsInitialized) return false;
 
-            bool hasMesh = TryGetMesh(obj, out Mesh mesh);
+            TryGetMesh(obj, out Mesh mesh);
+
             bool isTerrain = obj.TryGetComponent<Terrain>(out var terrain);
+            if (isTerrain)
+            {
+                bool hasCollider = obj.TryGetComponent<TerrainCollider>(out var tc) && tc.enabled;
+                if (terrain.terrainData == null || !hasCollider)
+                {
+                    isTerrain = false;
+                    terrain = null;
+                }
+            }
 
-            if (!hasMesh && !isTerrain) return false;
+            if (mesh == null && !isTerrain) return false;
 
-            if (!TryGetMeshWorldBounds(obj, out Bounds worldBounds)) return false;
+            if (!TryGetSpatialBounds(obj, out Bounds worldBounds)) return false;
 
-            // Use the Anchor from our Interface
             state = SpatialObjectState.Create(
                 worldBounds,
                 obj.transform.localToWorldMatrix,
@@ -226,30 +248,28 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         {
             mesh = null;
 
-            if (obj.TryGetComponent<MeshFilter>(out var filter))
+            if (obj.TryGetComponent<MeshFilter>(out var filter) && filter.sharedMesh != null)
             {
-                if (filter.sharedMesh != null)
-                {
-                    mesh = filter.sharedMesh;
-                    return true;
-                }
-                LogDebug($"MeshFilter found on {obj.name}, but sharedMesh is null.");
+                mesh = filter.sharedMesh;
+                return true;
             }
 
-            if (obj.TryGetComponent<MeshCollider>(out var meshCol))
+            if (obj.TryGetComponent<SkinnedMeshRenderer>(out var skinned) && skinned.sharedMesh != null)
             {
-                if (meshCol.sharedMesh != null)
-                {
-                    mesh = meshCol.sharedMesh;
-                    return true;
-                }
-                LogDebug($"MeshCollider found on {obj.name}, but sharedMesh is null.");
+                mesh = skinned.sharedMesh;
+                return true;
+            }
+
+            if (obj.TryGetComponent<MeshCollider>(out var meshCol) && meshCol.sharedMesh != null)
+            {
+                mesh = meshCol.sharedMesh;
+                return true;
             }
 
             return false;
         }
 
-        private bool TryGetMeshWorldBounds(GameObject obj, out Bounds bounds)
+        private bool TryGetSpatialBounds(GameObject obj, out Bounds bounds)
         {
             if (obj.TryGetComponent<Renderer>(out var r))
             {
@@ -257,17 +277,10 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 return true;
             }
 
-            if (obj.TryGetComponent<Terrain>(out var terrain))
+            if (obj.TryGetComponent<Terrain>(out var terrain) && terrain.terrainData != null)
             {
                 Vector3 size = terrain.terrainData.size;
-                Vector3 worldPos = obj.transform.position;
-                bounds = new Bounds(worldPos + size * 0.5f, size);
-                return true;
-            }
-
-            if (obj.TryGetComponent<Collider>(out var c))
-            {
-                bounds = c.bounds;
+                bounds = new Bounds(obj.transform.position + size * 0.5f, size);
                 return true;
             }
 

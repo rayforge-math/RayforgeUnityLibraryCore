@@ -4,7 +4,7 @@ using Rayforge.Core.Environment.Spatial.Surfaces;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
+using Rayforge.Core.Diagnostics;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Surface
@@ -28,7 +28,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         #region Configuration: General & Debug
         [Header("Debug & Diagnostics")]
-        public bool showDebugLogs = true;
+        public bool showDebugLogs = false;
 
         [Header("Floating Origin")]
         [Tooltip("Monitors world movement to handle coordinate shifts.")]
@@ -41,7 +41,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         public Transform lodReference;
 
         [Tooltip("The physical size of a single chunk in meters.")]
-        public ChunkSizeBinary chunkSize = ChunkSizeBinary.Medium;
+        public ChunkSizeBinary chunkSize = ChunkSizeBinary.Huge;
 
         [Tooltip("Movement threshold (% of chunk size) before triggering updates.")]
         [Range(0.01f, 0.5f)]
@@ -85,7 +85,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         private void Awake()
         {
             SetupDependencies();
-            InitializeSystems();
+            EnsureSystemsReady(true);
 
             if (shiftRelay != null)
                 shiftRelay.OnWorldShiftDetected += HandleOriginShift;
@@ -120,15 +120,52 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             SetupDependencies();
             SanitizeLODLevels();
 
-            if (Application.isPlaying && _chunkRegistry != null)
-            {
-                UpdateGridSize();
-                UpdateLODSettings();
-            }
+            EnsureSystemsReady(false);
+            UpdateGridSize();
+            UpdateLODSettings();
         }
         #endregion
 
         #region Logic: Initialization & Setup
+        private void EnsureSystemsReady(bool force = false)
+        {
+            CreateObjectRegistry(force);
+            CreateChunkRegistry(force);
+            ResetTrackingPosition();
+        }
+
+        private void CreateObjectRegistry(bool force = false)
+        {
+            if (_registry == null || force)
+            {
+                _registry = new SpatialObjectRegistry { showDebugLogs = this.showDebugLogs };
+                LogDebug("Spatial Object Registry initialized.");
+            }
+        }
+
+        private void CreateChunkRegistry(bool force = false)
+        {
+            if (_chunkRegistry == null || force)
+            {
+                _chunkRegistry?.Dispose();
+
+                _chunkRegistry = new LODChunkRegistry<SurfaceChunk>(
+                    (ChunkSize)chunkSize,
+                    transform.position,
+                    GetValidLodDistances(),
+                    lodReference,
+                    this.transform
+                );
+
+                _chunkRegistry.showDebugLogs = this.showDebugLogs;
+
+                _registry.Initialize(_chunkRegistry);
+                LogDebug($"Chunk Registry created. GridSize: {(int)chunkSize}m");
+            }
+        }
+
+        public void ResetTrackingPosition() => _lastUpdatePos = lodReference ? lodReference.position : Vector3.zero;
+
         public void SetupDependencies()
         {
             if (shiftRelay == null)
@@ -138,35 +175,37 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 lodReference = Camera.main.transform;
         }
 
-        private void InitializeSystems()
+        public void UpdateLODSettings()
         {
-            if (_registry == null)
+            if (_chunkRegistry == null)
             {
-                _registry = new SpatialObjectRegistry { showDebugLogs = this.showDebugLogs };
-                LogDebug("Spatial Object Registry initialized.");
+                LogDebug("<color=orange>UpdateLODSettings skipped:</color> ChunkRegistry is not initialized yet.");
+                return;
             }
 
-            CreateChunkRegistry();
-            ResetTrackingPosition();
+            float[] distances = GetValidLodDistances();
+            _chunkRegistry.SetViewer(lodReference);
+            _chunkRegistry.UpdateLodDistances(distances);
+
+            foreach (var c in _chunkRegistry.AllEntries) c?.MarkDirty();
+
+            LogDebug("LOD Settings synchronized.");
         }
 
-        private void CreateChunkRegistry(bool disposeOld = false)
+        public void UpdateGridSize()
         {
-            if (disposeOld) _chunkRegistry?.Dispose();
+            if (_chunkRegistry == null)
+            {
+                LogDebug("<color=orange>UpdateGridSize skipped:</color> No existing registry to update.");
+                return;
+            }
 
-            _chunkRegistry = new LODChunkRegistry<SurfaceChunk>(
-                (ChunkSize)chunkSize,
-                transform.position,
-                GetValidLodDistances(),
-                lodReference,
-                this.transform
-            );
-
-            _registry.Initialize(_chunkRegistry);
-            LogDebug($"Chunk Registry created. GridSize: {(int)chunkSize}m");
+            if (_chunkRegistry.GridSize != (int)chunkSize)
+            {
+                LogDebug($"Grid size change detected ({(int)_chunkRegistry.GridSize}m -> {(int)chunkSize}m). Recreating...");
+                CreateChunkRegistry(true);
+            }
         }
-
-        public void ResetTrackingPosition() => _lastUpdatePos = lodReference ? lodReference.position : Vector3.zero;
         #endregion
 
         #region Logic: Updates & Baking
@@ -277,7 +316,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             if (obj == null || !IsInitializedRegistry()) return false;
             if (!IsValidCandidate(obj.transform)) return false;
 
-            if (_registry.TryRegister(obj)) // English: Call to SpatialObjectRegistry
+            if (_registry.TryRegister(obj))
             {
                 if (!_surfaceIds.Contains(obj.GetInstanceID())) _surfaceIds.Add(obj.GetInstanceID());
                 if (!surfaces.Contains(obj)) surfaces.Add(obj);
@@ -294,6 +333,37 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             return true;
         }
 
+        /// <summary>
+        /// English: Completely wipes all registered surfaces, destroys all chunks, 
+        /// and resets the registries to a clean state.
+        /// </summary>
+        public void ClearAll()
+        {
+            LogDebug("Performing full system cleanup...");
+
+            _surfaceIds.Clear();
+            surfaces.Clear();
+            _cleanupBuffer.Clear();
+
+            if (_registry != null)
+            {
+                _registry = new SpatialObjectRegistry { showDebugLogs = this.showDebugLogs };
+                _registry.Initialize(_chunkRegistry);
+            }
+
+            if (_chunkRegistry != null)
+            {
+                _chunkRegistry.Dispose();
+                CreateChunkRegistry(true);
+            }
+
+            ResetTrackingPosition();
+
+            LogDebug("System cleared. All chunks destroyed and registries reset.");
+        }
+        #endregion
+
+        #region Logic: Integrity
         private bool IsValidCandidate(Transform t)
         {
             if (!string.IsNullOrEmpty(nameFilter) && !t.name.Contains(nameFilter)) return false;
@@ -308,25 +378,6 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 return (b.size.x * b.size.z) > minAreaThreshold;
             }
             return true;
-        }
-        #endregion
-
-        #region Logic: Settings & Syncing
-        public void UpdateLODSettings()
-        {
-            if (_chunkRegistry == null) return;
-
-            float[] distances = GetValidLodDistances();
-            _chunkRegistry.SetViewer(lodReference);
-            _chunkRegistry.UpdateLodDistances(distances);
-
-            foreach (var c in _chunkRegistry.AllEntries) c?.MarkDirty();
-        }
-
-        public void UpdateGridSize()
-        {
-            if (_chunkRegistry != null && _chunkRegistry.GridSize != (int)chunkSize)
-                CreateChunkRegistry(true);
         }
 
         private void HandleOriginShift(Vector3 delta)
@@ -379,6 +430,18 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             return validLevels.ToArray();
         }
 
+        private float[] GetValidLodDistances()
+        {
+            var lods = GetValidLodLevels();
+            var distances = new float[lods.Length];
+            for(int i = 0; i < lods.Length; ++i)
+            {
+                distances[i] = lods[i].distanceThreshold;
+            }
+
+            return distances;
+        }
+
         private void SanitizeLODLevels()
         {
             if (lodLevels == null || lodLevels.Length == 0) return;
@@ -423,24 +486,12 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             }
         }
 
-        private float[] GetValidLodDistances()
-        {
-            var lods = GetValidLodLevels();
-            var distances = new float[lods.Length];
-            for(int i = 0; i < lods.Length; ++i)
-            {
-                distances[i] = lods[i].distanceThreshold;
-            }
-
-            return distances;
-        }
-
         private bool IsInitializedRegistry() => _registry != null && _registry.IsInitialized;
         #endregion
 
         #region Debug Helper
         [Conditional("UNITY_EDITOR")]
-        private void LogDebug(string msg) { if (showDebugLogs) UnityEngine.Debug.Log($"<color=#FFEB3B>[SurfaceManager]</color> {msg}"); }
+        private void LogDebug(string msg) { DebugOutput.Log(msg, showDebugLogs); }
         #endregion
     }
 
@@ -466,7 +517,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             GUILayout.Space(10);
             if (GUILayout.Button("Clear Surfaces", GUILayout.Height(30)))
             {
-                //script.ClearAllSurfaces();
+                script.ClearAll();
             }
         }
     }
