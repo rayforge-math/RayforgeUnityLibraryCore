@@ -1,4 +1,6 @@
+using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Helpers;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -9,7 +11,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// Implements spatial indexing, factory logic, and Floating Origin support.
     /// </summary>
     /// <typeparam name="T">The specific chunk type.</typeparam>
-    public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T>
+    public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T>, ISpatialGridProvider
         where T : Chunk<T>
     {
         #region Grid Settings
@@ -17,17 +19,48 @@ namespace Rayforge.Core.Environment.Spatial
         public int GridSize { get; }
 
         /// <summary> 
-        /// The world-space origin offset for the grid calculation. 
+        /// The world-space origin offset for the grid calculation.
         /// Treated as a full 3D point to allow vertical offsets even for 2D grids.
         /// </summary>
         public Vector3 Anchor { get; protected set; }
 
         /// <summary> Cached mask to determine which axes are handled by this registry's indexing. </summary>
         private readonly SpatialAxes _axes;
+
+        public bool IsXActive => (_axes & SpatialAxes.X) != 0;
+        public bool IsYActive => (_axes & SpatialAxes.Y) != 0;
+        public bool IsZActive => (_axes & SpatialAxes.Z) != 0;
+
+        /// <summary>
+        /// Checks if an axis is active by its dimension index (0=X, 1=Y, 2=Z).
+        /// Useful for generic loops over dimensions.
+        /// </summary>
+        public bool IsAxisActive(int axisIndex)
+        {
+            return axisIndex switch
+            {
+                0 => (_axes & SpatialAxes.X) != 0,
+                1 => (_axes & SpatialAxes.Y) != 0,
+                2 => (_axes & SpatialAxes.Z) != 0,
+                _ => false
+            };
+        }
+
+        /// <summary>
+        /// Returns the count of currently active axes (1D, 2D, or 3D).
+        /// </summary>
+        public int ActiveAxisCount()
+        {
+            int count = 0;
+            if (IsXActive) count++;
+            if (IsYActive) count++;
+            if (IsZActive) count++;
+            return count;
+        }
         #endregion
 
         public ChunkRegistry(ChunkSize gridSize, Vector3 initialAnchor, Transform container = null)
-        : base(container, $"ChunkRegistry_{gridSize}")
+            : base(container, $"ChunkRegistry_{gridSize}")
         {
             GridSize = (int)gridSize;
             Anchor = initialAnchor;
@@ -39,30 +72,71 @@ namespace Rayforge.Core.Environment.Spatial
         public virtual T GetOrCreateChunk(Vector3Int key)
         {
             Vector3Int validKey = MaskKey(key);
+            return CreateInternal(validKey);
+        }
 
-            return GetOrCreate(
-                validKey,
-                $"Chunk_{validKey.x}_{validKey.y}_{validKey.z}",
-                GridToWorld(validKey),
-                (go, k) => {
-                    T chunk = go.AddComponent<T>();
-                    chunk.GridKey = k;
+        public virtual T GetOrCreateChunk(Vector2Int key2D)
+        {
+            Vector3Int key3d = Vector3Int.zero;
+            int currentDimension = 0;
+            int targetDimensions = ActiveAxisCount();
 
-                    // Configure AABB extents for the chunk.
-                    float half = GridSize * 0.5f;
-                    chunk.localExtent = new Vector3(half, half, half);
-
-                    chunk.SuppressTransformDirtyOnce();
-                    return chunk;
+            for (int i = 0; i < 3; i++)
+            {
+                if (IsAxisActive(i))
+                {
+                    key3d[i] = key2D[currentDimension++];
+                    if (currentDimension == targetDimensions) break;
                 }
-            );
+            }
+
+            return CreateInternal(MaskKey(key3d));
         }
 
         public T GetOrCreateChunkAtWorldPos(Vector3 pos)
             => GetOrCreateChunk(WorldToGrid(pos));
 
-        public T GetChunkAtWorldPos(Vector3 pos)
-            => GetEntry(WorldToGrid(pos));
+        /// <summary>
+        /// Attempts to retrieve a chunk at a specific world position.
+        /// Automatically converts the position to grid coordinates.
+        /// </summary>
+        /// <param name="pos">The world position to check.</param>
+        /// <param name="chunk">The resulting chunk or null.</param>
+        /// <returns>True if a chunk exists at this location, false otherwise.</returns>
+        public bool TryGetChunkAtWorldPos(Vector3 pos, out T chunk)
+        {
+            Vector3Int key = WorldToGrid(pos);
+            return TryGetEntry(key, out chunk);
+        }
+
+        /// <summary>
+        /// Centralized logic to create and initialize a chunk.
+        /// </summary>
+        private T CreateInternal(Vector3Int validKey)
+        {
+            return GetOrCreate(
+                validKey,
+                $"Chunk_{validKey.x}_{validKey.y}_{validKey.z}",
+                GridToWorld(validKey),
+                InitializeChunk
+            );
+        }
+
+        /// <summary>
+        /// Encapsulates the component setup and initial state.
+        /// </summary>
+        private T InitializeChunk(GameObject go, Vector3Int k)
+        {
+            T chunk = go.AddComponent<T>();
+            chunk.GridKey = k;
+
+            // Configure AABB extents based on the global grid size.
+            float half = GridSize * 0.5f;
+            chunk.localExtent = new Vector3(half, half, half);
+
+            chunk.SuppressTransformDirtyOnce();
+            return chunk;
+        }
 
         #endregion
 
@@ -85,9 +159,9 @@ namespace Rayforge.Core.Environment.Spatial
         {
             float half = GridSize * 0.5f;
             return new Vector3(
-                ((_axes & SpatialAxes.X) != 0) ? (Anchor.x + key.x * GridSize + half) : Anchor.x,
-                ((_axes & SpatialAxes.Y) != 0) ? (Anchor.y + key.y * GridSize + half) : Anchor.y,
-                ((_axes & SpatialAxes.Z) != 0) ? (Anchor.z + key.z * GridSize + half) : Anchor.z
+                IsXActive ? (Anchor.x + key.x * GridSize + half) : Anchor.x,
+                IsYActive ? (Anchor.y + key.y * GridSize + half) : Anchor.y,
+                IsZActive ? (Anchor.z + key.z * GridSize + half) : Anchor.z
             );
         }
 
@@ -102,9 +176,9 @@ namespace Rayforge.Core.Environment.Spatial
 
             // The size is always the GridSize on active axes. 
             Vector3 size = new Vector3(
-                ((_axes & SpatialAxes.X) != 0) ? GridSize : 0,
-                ((_axes & SpatialAxes.Y) != 0) ? GridSize : 0,
-                ((_axes & SpatialAxes.Z) != 0) ? GridSize : 0
+                IsXActive ? GridSize : 0,
+                IsYActive ? GridSize : 0,
+                IsZActive ? GridSize : 0
             );
 
             return new Bounds(center, size);
@@ -176,9 +250,9 @@ namespace Rayforge.Core.Environment.Spatial
         private Vector3Int MaskKey(Vector3Int key)
         {
             return new Vector3Int(
-                ((_axes & SpatialAxes.X) != 0) ? key.x : 0,
-                ((_axes & SpatialAxes.Y) != 0) ? key.y : 0,
-                ((_axes & SpatialAxes.Z) != 0) ? key.z : 0
+                IsXActive ? key.x : 0,
+                IsYActive ? key.y : 0,
+                IsZActive ? key.z : 0
             );
         }
 

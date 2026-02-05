@@ -51,16 +51,38 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Spatial Queries
         /// <summary> 
-        /// Retrieves a chunk at the specific grid coordinate. Returns null if no chunk exists there.
+        /// Attempts to retrieve a chunk at the specific grid coordinate.
+        /// Returns true and the chunk if found, otherwise false and null.
         /// </summary>
         /// <param name="key">The integer grid coordinates.</param>
-        public static T GetChunk(Vector3Int key) => Instance.GetEntry(key);
+        /// <param name="chunk">The found chunk or null.</param>
+        public static bool TryGetChunk(Vector3Int key, out T chunk)
+        {
+            if (Instance == null)
+            {
+                chunk = null;
+                return false;
+            }
+
+            return Instance.TryGetEntry(key, out chunk);
+        }
 
         /// <summary> 
         /// Helper to find a chunk based on its absolute world position without creating it.
+        /// Returns true and the chunk if found, otherwise false and null.
         /// </summary>
         /// <param name="pos">The world space position to query.</param>
-        public static T GetChunkAtWorldPos(Vector3 pos) => Instance.GetChunkAtWorldPos(pos);
+        /// <param name="chunk">The found chunk or null.</param>
+        public static bool TryGetChunkAtWorldPos(Vector3 pos, out T chunk)
+        {
+            if (Instance == null)
+            {
+                chunk = null;
+                return false;
+            }
+
+            return Instance.TryGetChunkAtWorldPos(pos, out chunk);
+        }
 
         /// <summary>
         /// Maps a world position to the corresponding grid key using the current Anchor.

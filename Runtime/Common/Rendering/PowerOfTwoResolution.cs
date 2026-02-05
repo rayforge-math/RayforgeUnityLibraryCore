@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace Rayforge.Core.Common.Rendering
 {
-    public enum PowerOfTwoResolution
+    public enum PowerOfTwoResolution : int
     {
         Resolution32 = 32,
         Resolution64 = 64,

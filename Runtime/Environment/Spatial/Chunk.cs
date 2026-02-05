@@ -43,6 +43,38 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
+        #region Lifecycle Management
+
+        /// <summary>
+        /// Forces inheriting classes to release native/GPU resources.
+        /// Even if no resources are used, this must be explicitly implemented (can be empty).
+        /// </summary>
+        protected abstract void OnDispose();
+
+        /// <summary>
+        /// Public entry point to safely remove a chunk from the world.
+        /// Triggers resource cleanup and destroys the GameObject.
+        /// </summary>
+        public void DisposeChunk()
+        {
+            OnDispose();
+
+            if (this != null && gameObject != null)
+            {
+                Destroy(gameObject);
+            }
+        }
+
+        /// <summary>
+        /// Safety fallback for manual deletion via the Unity Editor or Scripts.
+        /// </summary>
+        private void OnDestroy()
+        {
+            OnDispose();
+        }
+
+        #endregion
+
         #region Universal Distance Calculations
 
         /// <summary>

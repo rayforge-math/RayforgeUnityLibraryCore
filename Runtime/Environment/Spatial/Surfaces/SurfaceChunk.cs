@@ -38,7 +38,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// Cleans up GPU resources when the chunk is removed.
         /// Essential to prevent VRAM leaks when chunks are pooled or destroyed.
         /// </summary>
-        protected void OnDestroy()
+        protected override void OnDispose()
         {
             if (Heightmap != null)
             {
