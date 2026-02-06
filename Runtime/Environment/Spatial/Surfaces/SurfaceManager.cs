@@ -40,7 +40,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         public Transform lodReference;
 
         [Tooltip("The physical size of a single chunk in meters.")]
-        public ChunkSizeBinary chunkSize = ChunkSizeBinary.Huge;
+        public GridSizeBinary chunkSize = GridSizeBinary.Huge;
 
         [Tooltip("Movement threshold (% of chunk size) before triggering updates.")]
         [Range(0.01f, 0.5f)]
@@ -86,7 +86,10 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             EnsureSystemsReady(true);
 
             if (shiftRelay != null)
+            {
+                shiftRelay.OnWorldShiftDetected -= HandleOriginShift;
                 shiftRelay.OnWorldShiftDetected += HandleOriginShift;
+            }
         }
 
         private void Start()
@@ -102,21 +105,13 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             {
                 LogDebug("Update: Spatial sync triggered by registry changes.");
                 SynchronizeChunksWithRegistry();
+                _needsSpatialSync = false;
             }
 
-            bool movedEnough = CheckMovementThreshold();
-
-            if (movedEnough)
+            if (CheckMovementThreshold())
             {
                 LogDebug($"Update: LOD refresh triggered by movement.");
                 _chunkRegistry.UpdateLODs(lodReference.position);
-            }
-
-            if (_needsSpatialSync || movedEnough)
-            {
-                LogDebug($"Update: Finalizing frame. Reason: Sync={_needsSpatialSync}, Movement={movedEnough}");
-                // ProcessBaking();
-                _needsSpatialSync = false;
             }
         }
 
@@ -125,16 +120,20 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             if (shiftRelay != null)
                 shiftRelay.OnWorldShiftDetected -= HandleOriginShift;
 
-            if (_chunkRegistry != null)
-                _chunkRegistry.Dispose();
+            _chunkRegistry?.Dispose();
+            _registry?.Clear();
+
+            _chunkRegistry = null;
+            _registry = null;
         }
 
         private void OnValidate()
         {
+            if (!enabled || !gameObject.activeInHierarchy) return;
+
             SetupDependencies();
             SanitizeLODLevels();
 
-            EnsureSystemsReady(false);
             UpdateGridSize();
             UpdateLODSettings();
         }
@@ -152,7 +151,8 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         {
             if (_registry == null || force)
             {
-                _registry = new SpatialObjectRegistry { showDebugLogs = this.showDebugLogs };
+                _registry = new SpatialObjectRegistry();
+                //_registry.showDebugLogs = showDebugLogs;
                 LogDebug("Spatial Object Registry initialized.");
             }
         }
@@ -164,16 +164,15 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 _chunkRegistry?.Dispose();
 
                 _chunkRegistry = new LODChunkRegistry<SurfaceChunk>(
-                    (ChunkSize)chunkSize,
+                    (GridSize)chunkSize,
                     transform.position,
                     GetValidLodDistances(),
                     lodReference,
                     this.transform
                 );
+                //_chunkRegistry.showDebugLogs = showDebugLogs;
 
-                _chunkRegistry.showDebugLogs = this.showDebugLogs;
-
-                _registry.Initialize(_chunkRegistry);
+                _registry?.Initialize(_chunkRegistry);
                 LogDebug($"Chunk Registry created. GridSize: {(int)chunkSize}m");
             }
         }
@@ -191,33 +190,41 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         #region Configuration & Validation
 
-        private void UpdateLODSettings()
-        {
-            if (_chunkRegistry == null)
-            {
-                LogDebug("<color=orange>UpdateLODSettings skipped:</color> ChunkRegistry is not initialized yet.");
-                return;
-            }
-
-            float[] distances = GetValidLodDistances();
-            _chunkRegistry.SetViewer(lodReference);
-            _chunkRegistry.UpdateLodDistances(distances);
-
-            LogDebug("LOD Settings synchronized.");
-        }
-
         private void UpdateGridSize()
         {
-            if (_chunkRegistry == null)
-            {
-                LogDebug("<color=orange>UpdateGridSize skipped:</color> No existing registry to update.");
-                return;
-            }
+            if (_chunkRegistry == null) return;
 
-            if (_chunkRegistry.GridSize != (int)chunkSize)
+            if (_chunkRegistry.GridSize != (GridSize)chunkSize)
             {
-                LogDebug($"Grid size change detected ({(int)_chunkRegistry.GridSize}m -> {(int)chunkSize}m). Recreating...");
-                CreateChunkRegistry(true);
+                _chunkRegistry.SetGridSize((GridSize)chunkSize);
+                _registry?.Initialize(_chunkRegistry);
+                _needsSpatialSync = true;
+
+                LogDebug("Grid Settings synchronized.");
+            }
+            else
+            {
+                LogDebug("Grid size update skipped: Size is already identical.");
+            }
+        }
+
+        private void UpdateLODSettings()
+        {
+            if (_chunkRegistry == null) return;
+
+            float[] distances = GetValidLodDistances();
+
+            bool updateLod = _chunkRegistry.SetViewer(lodReference);
+            updateLod |= _chunkRegistry.UpdateLodDistances(distances);
+
+            if (updateLod)
+            {
+                _chunkRegistry.UpdateLODs();
+                LogDebug("LOD Settings synchronized and LODs recalculated.");
+            }
+            else
+            {
+                LogDebug("LOD update skipped: Viewer and distances have not changed.");
             }
         }
 

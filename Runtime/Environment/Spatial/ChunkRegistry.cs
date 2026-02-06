@@ -1,6 +1,7 @@
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Helpers;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
@@ -17,8 +18,40 @@ namespace Rayforge.Core.Environment.Spatial
     {
         #region Grid Settings
         /// <summary> The physical size of one side of a chunk cell. </summary>
-        public int GridSize { get; }
+        public GridSize GridSize { get; private set; }
 
+        /// <summary> 
+        /// The unique identification string of this registry instance.
+        /// Useful for logging and identifying the container in the hierarchy.
+        /// </summary>
+        public override string RegistryName
+        {
+            get => base.RegistryName;
+            protected set
+            {
+                _baseName = value;
+                base.RegistryName = $"{_baseName}_{GridSize}";
+            }
+        }
+
+        private string _baseName;
+
+        /// <summary>
+        /// English: Updates the grid resolution and destroys all existing chunks
+        /// as their spatial keys are no longer valid for the new size.
+        /// </summary>
+        public void SetGridSize(GridSize newSize)
+        {
+            if (GridSize == newSize) return;
+
+            LogDebug($"Reformatting Grid: {(int)GridSize}m -> {(int)newSize}m. Destroying all chunks.");
+
+            ClearChunks();
+            var oldSize = GridSize;
+            GridSize = newSize;
+            RegistryName = _baseName;
+        }
+        
         /// <summary> 
         /// The world-space origin offset for the grid calculation.
         /// Treated as a full 3D point to allow vertical offsets even for 2D grids.
@@ -69,6 +102,8 @@ namespace Rayforge.Core.Environment.Spatial
             return count;
         }
 
+        #endregion
+
         #region Debug Helper
         public bool showDebugLogs = false;
 
@@ -78,14 +113,15 @@ namespace Rayforge.Core.Environment.Spatial
             DebugOutput.Log(message, showDebugLogs, color);
         }
         #endregion
-        #endregion
 
-        public ChunkRegistry(ChunkSize gridSize, Vector3 initialAnchor, Transform container = null)
-            : base(container, $"ChunkRegistry_{gridSize}")
+        public ChunkRegistry(GridSize gridSize, Vector3 initialAnchor, Transform container = null, string name = "ChunkRegistry")
+            : base(container)
         {
-            GridSize = (int)gridSize;
+            GridSize = gridSize;
             Anchor = initialAnchor;
             _axes = Chunk<T>.ActiveAxes;
+            _baseName = name;
+            RegistryName = _baseName;
 
             LogDebug($"Initialized: Size={GridSize}, Anchor={Anchor}, Axes={_axes}");
         }
@@ -156,7 +192,7 @@ namespace Rayforge.Core.Environment.Spatial
             chunk.GridKey = k;
 
             // Configure AABB extents based on the global grid size.
-            float half = GridSize * 0.5f;
+            float half = (int)GridSize * 0.5f;
             chunk.localExtent = new Vector3(
                 IsXActive ? half : 0,
                 IsYActive ? half : 0,
@@ -176,7 +212,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public Vector3Int WorldToGrid(Vector3 pos)
         {
-            Vector3Int rawKey = SpatialUtils.PositionToKey3D(pos, GridSize, Anchor);
+            Vector3Int rawKey = SpatialUtils.PositionToKey3D(pos, (int)GridSize, Anchor);
             return MaskKey(rawKey);
         }
 
@@ -186,7 +222,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public Vector3Int LocalToGrid(Vector3 localPos)
         {
-            Vector3Int rawKey = SpatialUtils.PositionToKey3D(localPos, GridSize, Vector3.zero);
+            Vector3Int rawKey = SpatialUtils.PositionToKey3D(localPos, (int)GridSize, Vector3.zero);
             return MaskKey(rawKey);
         }
 
@@ -196,7 +232,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public Vector3 GridToWorld(Vector3Int key)
         {
-            Vector3 pos = SpatialUtils.KeyToPosition3D(key, GridSize, Anchor, centered: true);
+            Vector3 pos = SpatialUtils.KeyToPosition3D(key, (int)GridSize, Anchor, centered: true);
             return MaskWorld(pos);
         }
 
@@ -209,9 +245,9 @@ namespace Rayforge.Core.Environment.Spatial
             Vector3 center = GridToWorld(key);
 
             Vector3 size = new Vector3(
-                IsXActive ? GridSize : 0.01f,
-                IsYActive ? GridSize : 0.01f,
-                IsZActive ? GridSize : 0.01f
+                IsXActive ? (int)GridSize : 0.01f,
+                IsYActive ? (int)GridSize : 0.01f,
+                IsZActive ? (int)GridSize : 0.01f
             );
 
             return new Bounds(center, size);

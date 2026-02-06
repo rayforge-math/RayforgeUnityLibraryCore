@@ -1,3 +1,4 @@
+using Codice.CM.Common.Checkin.Partial;
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
 using System.Diagnostics;
@@ -16,7 +17,7 @@ namespace Rayforge.Core.Environment.Spatial
     {
         #region Fields & Config
         private float[] _lodSqrDistances;
-        private Transform _viewer;
+        public Transform Viewer { get; private set; }
 
         #region Debug Helper
         [Conditional("UNITY_EDITOR")]
@@ -27,13 +28,13 @@ namespace Rayforge.Core.Environment.Spatial
         #endregion
 
         /// <summary> Helper to get the current focus position without repeating null-checks. </summary>
-        private Vector3 ViewerPos => (_viewer != null) ? _viewer.position : Vector3.zero;
+        private Vector3 ViewerPos => (Viewer != null) ? Viewer.position : Vector3.zero;
         #endregion
 
-        public LODChunkRegistry(ChunkSize gridSize, Vector3 initialAnchor, float[] lodDistances, Transform viewer = null, Transform container = null)
+        public LODChunkRegistry(GridSize gridSize, Vector3 initialAnchor, float[] lodDistances, Transform viewer = null, Transform container = null)
             : base(gridSize, initialAnchor, container)
         {
-            _viewer = viewer;
+            Viewer = viewer;
             UpdateLodDistances(lodDistances);
         }
 
@@ -106,19 +107,39 @@ namespace Rayforge.Core.Environment.Spatial
         #region Management & Origin Shift
 
         /// <summary> Updates the viewer reference (e.g., when switching cameras). </summary>
-        public void SetViewer(Transform viewer)
+        public bool SetViewer(Transform viewer)
         {
-            LogDebug($"Viewer changed to: {(viewer != null ? viewer.name : "NULL")}");
-            _viewer = viewer;
+            if (Viewer != viewer)
+            {
+                Viewer = viewer;
+                LogDebug($"Viewer changed to: {(viewer != null ? viewer.name : "NULL")}");
+                return true;
+            }
+            return false;
         }
 
         /// <summary>
         /// Updates the internal squared distance thresholds.
         /// Re-calculates squared values to keep the Update loop math simple and fast.
         /// </summary>
-        public void UpdateLodDistances(float[] newDistances)
+        public bool UpdateLodDistances(float[] newDistances)
         {
-            if (newDistances == null) return;
+            if (newDistances == null) return false;
+
+            if (_lodSqrDistances != null && _lodSqrDistances.Length == newDistances.Length)
+            {
+                bool changed = false;
+                for (int i = 0; i < newDistances.Length; i++)
+                {
+                    float sqrDist = newDistances[i] * newDistances[i];
+                    if (!Mathf.Approximately(_lodSqrDistances[i], sqrDist))
+                    {
+                        changed = true;
+                        break;
+                    }
+                }
+                if (!changed) return false;
+            }
 
             _lodSqrDistances = new float[newDistances.Length];
             for (int i = 0; i < newDistances.Length; i++)
@@ -127,7 +148,7 @@ namespace Rayforge.Core.Environment.Spatial
             }
 
             LogDebug($"LOD Distances synchronized. Levels: {newDistances.Length}");
-            UpdateLODs();
+            return true;
         }
 
         #endregion

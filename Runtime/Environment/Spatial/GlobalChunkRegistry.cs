@@ -11,7 +11,7 @@ namespace Rayforge.Core.Environment.Spatial
     public static class GlobalChunkRegistry<T>
         where T : Chunk<T>
     {
-        private const ChunkSize k_GridSize = (ChunkSize)ChunkSizeBinary.Medium;
+        private const GridSize k_GridSize = (GridSize)GridSizeBinary.Medium;
 
         /// <summary> 
         /// The underlying singleton instance of the registry. 
@@ -21,7 +21,7 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Grid Properties
         /// <summary> Read-only access to the physical size of one side of a chunk cell. </summary>
-        public static float GridSize => Instance.GridSize;
+        public static GridSize GridSize => Instance.GridSize;
 
         /// <summary> Current world-space origin offset used for grid calculations. </summary>
         public static Vector3 Anchor => Instance.Anchor;

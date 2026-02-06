@@ -1,3 +1,4 @@
+using System;
 using System.Reflection;
 using UnityEngine;
 
@@ -9,7 +10,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// </summary>
     /// <typeparam name="T">The derived type for type-safe processing and registry management.</typeparam>
     [ChunkConfig(SpatialAxes.Voxel)]
-    public abstract class Chunk<T> : MonoBehaviour, ISpatialEntry
+    public abstract class Chunk<T> : MonoBehaviour, ISpatialEntry, IDisposable
         where T : Chunk<T>
     {
         #region Spatial Settings
@@ -68,17 +69,22 @@ namespace Rayforge.Core.Environment.Spatial
         /// Public entry point to safely remove a chunk from the world.
         /// Triggers resource cleanup and destroys the GameObject.
         /// </summary>
-        public void DisposeChunk()
+        public void Dispose()
         {
             if (_isDisposed) return;
             _isDisposed = true;
 
             OnDispose();
 
-            if (Application.isPlaying)
-                Destroy(gameObject);
-            else
-                DestroyImmediate(gameObject);
+            if (gameObject != null)
+            {
+                if (Application.isPlaying)
+                    Destroy(gameObject);
+                else
+                    DestroyImmediate(gameObject);
+            }
+
+            GC.SuppressFinalize(this);
         }
 
         /// <summary>
@@ -86,7 +92,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         private void OnDestroy()
         {
-            if (!_isDisposed) DisposeChunk();
+            if (!_isDisposed) Dispose();
         }
 
         #endregion

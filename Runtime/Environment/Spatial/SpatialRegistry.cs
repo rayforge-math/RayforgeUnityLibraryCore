@@ -1,7 +1,5 @@
-using Rayforge.Core.Environment.Abstractions;
 using System;
 using System.Collections.Generic;
-using System.Runtime.ConstrainedExecution;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
@@ -14,7 +12,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// <typeparam name="TKey">The type used for spatial indexing (e.g., Vector3Int).</typeparam>
     /// <typeparam name="TValue">The type of spatial object, must be a MonoBehaviour and implement ISpatialEntry.</typeparam>
     public abstract class SpatialRegistry<TKey, TValue> : IDisposable
-        where TValue : ISpatialEntry
+        where TValue : ISpatialEntry, IDisposable
     {
         #region Data Structures
         /// <summary> Internal storage for spatial objects. Encapsulated to ensure dirty-flag integrity. </summary>
@@ -38,7 +36,23 @@ namespace Rayforge.Core.Environment.Spatial
         /// The unique identification string of this registry instance.
         /// Useful for logging and identifying the container in the hierarchy.
         /// </summary>
-        public string RegistryName { get; }
+        public virtual string RegistryName
+        {
+            get => _registryName;
+            protected set
+            {
+                int id = (_container != null) ? _container.gameObject.GetInstanceID() : 0;
+
+                _registryName = $"{value}_{id}";
+
+                if (_container != null)
+                {
+                    _container.name = _registryName;
+                }
+            }
+        }
+        private string _registryName;
+
         #endregion
 
         /// <summary>
@@ -49,10 +63,9 @@ namespace Rayforge.Core.Environment.Spatial
         protected SpatialRegistry(Transform parent = null, string defaultName = "SpatialRegistry_Container")
         {
             GameObject go = new GameObject(defaultName);
-            RegistryName = $"{defaultName}_{go.GetInstanceID()}";
-            go.name = RegistryName;
 
             _container = go.transform;
+            RegistryName = defaultName;
 
             if (parent != null)
             {
@@ -122,13 +135,27 @@ namespace Rayforge.Core.Environment.Spatial
             {
                 if (value != null && value.gameObject != null)
                 {
-                    if (Application.isPlaying) UnityEngine.Object.Destroy(value.gameObject);
-                    else UnityEngine.Object.DestroyImmediate(value.gameObject);
+                    DestroyEntry(value);
                 }
 
                 _globalDirty = true;
-                TryCleanupContainer();
             }
+        }
+
+        /// <summary>
+        /// Clears all entries, destroys their associated GameObjects.
+        /// </summary>
+        public void ClearChunks()
+        {
+            foreach (var value in _storage.Values)
+            {
+                if (value != null && value.gameObject != null)
+                {
+                    DestroyEntry(value);
+                }
+            }
+
+            _storage.Clear();
         }
 
         /// <summary>
@@ -140,33 +167,24 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// Clears all entries, destroys their associated GameObjects, and removes the auto-generated container.
         /// </summary>
-        public virtual void Clear()
+        public void Clear()
         {
-            // Copy keys to avoid modification errors during iteration
-            List<TKey> keys = new List<TKey>(_storage.Keys);
-            foreach (var key in keys)
-                RemoveAndDestroy(key);
+            ClearChunks();
 
-            _storage.Clear();
-            _globalDirty = true;
-
-            TryCleanupContainer();
-        }
-
-        /// <summary>
-        /// Destroys the container if it was auto-generated and has no remaining children.
-        /// </summary>
-        private void TryCleanupContainer()
-        {
-            if (_container != null && _container.childCount == 0)
+            if (_container != null)
             {
                 if (Application.isPlaying) UnityEngine.Object.Destroy(_container.gameObject);
                 else UnityEngine.Object.DestroyImmediate(_container.gameObject);
-
                 _container = null;
-                _containerLinkedToAnchor = false;
             }
         }
+
+        private void DestroyEntry(TValue entry)
+        {
+            if (entry == null) return;
+            entry.Dispose();
+        }
+
         #endregion
 
         #region State Management

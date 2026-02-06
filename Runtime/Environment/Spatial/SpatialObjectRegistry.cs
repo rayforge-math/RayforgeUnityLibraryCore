@@ -164,7 +164,6 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         /// <summary>
         /// Returns all object states that are registered within the given cell.
-        /// Used by the Manager to gather bake data for a specific chunk.
         /// </summary>
         public List<SpatialObjectState> GetObjectsInCell(Vector3Int key)
         {
@@ -182,7 +181,6 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         /// <summary>
         /// Checks if a specific cell contains any registered objects.
-        /// Useful for the Manager to decide if a chunk shell is needed.
         /// </summary>
         public bool HasDataInBucket(Vector3Int key)
         {

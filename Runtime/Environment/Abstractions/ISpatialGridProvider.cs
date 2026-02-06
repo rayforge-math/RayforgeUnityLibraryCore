@@ -1,3 +1,4 @@
+using Rayforge.Core.Environment.Spatial;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -6,7 +7,7 @@ namespace Rayforge.Core.Environment.Abstractions
     public interface ISpatialGridProvider
     {
         /// <summary> The size of one grid cell. </summary>
-        int GridSize { get; }
+        GridSize GridSize { get; }
 
         /// <summary> The world-space origin of the grid. </summary>
         Vector3 Anchor { get; }
