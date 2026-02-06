@@ -162,9 +162,9 @@ namespace Rayforge.Core.Environment.Spatial
             // Configure AABB extents based on the global grid size.
             float half = GridSize * 0.5f;
             chunk.localExtent = new Vector3(
-                IsXActive ? half : 0.05f,
-                IsYActive ? half : 0.05f,
-                IsZActive ? half : 0.05f
+                IsXActive ? half : 0,
+                IsYActive ? half : 0,
+                IsZActive ? half : 0
             );
 
             chunk.SuppressTransformDirtyOnce();
@@ -200,8 +200,8 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public Vector3 GridToWorld(Vector3Int key)
         {
-            var validKey = MaskKey(key);
-            return SpatialUtils.KeyToPosition3D(validKey, GridSize, Anchor, centered: true);
+            Vector3 pos = SpatialUtils.KeyToPosition3D(key, GridSize, Anchor, centered: true);
+            return MaskWorld(pos);
         }
 
         /// <summary>
@@ -301,6 +301,19 @@ namespace Rayforge.Core.Environment.Spatial
                 IsXActive ? key.x : 0,
                 IsYActive ? key.y : 0,
                 IsZActive ? key.z : 0
+            );
+        }
+
+        /// <summary> 
+        /// Forces inactive world-space axes to the Anchor's position. 
+        /// Prevents 2D grids from having 3D floating-point offsets.
+        /// </summary>
+        private Vector3 MaskWorld(Vector3 pos)
+        {
+            return new Vector3(
+                IsXActive ? pos.x : Anchor.x,
+                IsYActive ? pos.y : Anchor.y,
+                IsZActive ? pos.z : Anchor.z
             );
         }
 
