@@ -161,7 +161,11 @@ namespace Rayforge.Core.Environment.Spatial
 
             // Configure AABB extents based on the global grid size.
             float half = GridSize * 0.5f;
-            chunk.localExtent = new Vector3(half, half, half);
+            chunk.localExtent = new Vector3(
+                IsXActive ? half : 0.05f,
+                IsYActive ? half : 0.05f,
+                IsZActive ? half : 0.05f
+            );
 
             chunk.SuppressTransformDirtyOnce();
             return chunk;
@@ -196,12 +200,8 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public Vector3 GridToWorld(Vector3Int key)
         {
-            float half = GridSize * 0.5f;
-            return new Vector3(
-                IsXActive ? (Anchor.x + key.x * GridSize + half) : Anchor.x,
-                IsYActive ? (Anchor.y + key.y * GridSize + half) : Anchor.y,
-                IsZActive ? (Anchor.z + key.z * GridSize + half) : Anchor.z
-            );
+            var validKey = MaskKey(key);
+            return SpatialUtils.KeyToPosition3D(validKey, GridSize, Anchor, centered: true);
         }
 
         /// <summary>
@@ -210,14 +210,12 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public Bounds GetBoundsForKey(Vector3Int key)
         {
-            // Get the center using your existing logic (handles Anchor + GridSize).
             Vector3 center = GridToWorld(key);
 
-            // The size is always the GridSize on active axes. 
             Vector3 size = new Vector3(
-                IsXActive ? GridSize : 0,
-                IsYActive ? GridSize : 0,
-                IsZActive ? GridSize : 0
+                IsXActive ? GridSize : 0.01f,
+                IsYActive ? GridSize : 0.01f,
+                IsZActive ? GridSize : 0.01f
             );
 
             return new Bounds(center, size);
