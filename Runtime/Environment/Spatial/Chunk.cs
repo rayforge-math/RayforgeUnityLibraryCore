@@ -168,6 +168,74 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
+        #region Advanced Geometry
+
+        /// <summary> Calculates the full volumetric size (W x H x D). </summary>
+        public float GetVolume()
+        {
+            Vector3 size = localExtent * 2f;
+            return size.x * size.y * size.z;
+        }
+
+        /// <summary> Calculates the total surface area of the 3D bounds. </summary>
+        public float GetTotalSurfaceArea()
+        {
+            Vector3 s = localExtent * 2f;
+            return 2f * (s.x * s.y + s.x * s.z + s.y * s.z);
+        }
+
+        /// <summary> Gets the area of the XZ plane (Top-Down). Ideal for Heightmaps. </summary>
+        public float GetAreaXZ() => (localExtent.x * 2f) * (localExtent.z * 2f);
+
+        /// <summary> Gets the area of the XY plane (Front-View). Ideal for Side-Scrollers. </summary>
+        public float GetAreaXY() => (localExtent.x * 2f) * (localExtent.y * 2f);
+
+        /// <summary> Gets the area of the YZ plane (Side-View). </summary>
+        public float GetAreaYZ() => (localExtent.y * 2f) * (localExtent.z * 2f);
+
+        /// <summary> 
+        /// Returns the area of the currently active plane. 
+        /// Automatically picks the right one based on ActiveAxes. 
+        /// </summary>
+        public float GetActiveArea()
+        {
+            if (ActiveAxes == SpatialAxes.XZ) return GetAreaXZ();
+            if (ActiveAxes == SpatialAxes.XY) return GetAreaXY();
+            if (ActiveAxes == SpatialAxes.YZ) return GetAreaYZ();
+            return GetTotalSurfaceArea();
+        }
+
+        /// <summary> Returns the total length along the X-Axis. </summary>
+        public float LengthX => localExtent.x * 2f;
+
+        /// <summary> Returns the total length along the Y-Axis. </summary>
+        public float LengthY => localExtent.y * 2f;
+
+        /// <summary> Returns the total length along the Z-Axis. </summary>
+        public float LengthZ => localExtent.z * 2f;
+
+        /// <summary> Returns the dimensions of the XZ plane (e.g. for Terrain resolution). </summary>
+        public Vector2 SizeXZ => new Vector2(LengthX, LengthZ);
+
+        /// <summary> Returns the dimensions of the XY plane (e.g. for 2D UI/Sprites). </summary>
+        public Vector2 SizeXY => new Vector2(LengthX, LengthY);
+
+        /// <summary> Returns the dimensions of the YZ plane. </summary>
+        public Vector2 SizeYZ => new Vector2(LengthY, LengthZ);
+
+        /// <summary> 
+        /// Returns the size of the footprint on the active plane based on ChunkConfig. 
+        /// If Voxel (3D), it defaults to XZ or simply the 3D Vector.
+        /// </summary>
+        public Vector2 ActiveSize2D => ActiveAxes switch
+        {
+            SpatialAxes.XY => SizeXY,
+            SpatialAxes.YZ => SizeYZ,
+            _ => SizeXZ
+        };
+
+        #endregion
+
         #region State Management
 
         /// <summary> Flags the chunk as dirty. </summary>
