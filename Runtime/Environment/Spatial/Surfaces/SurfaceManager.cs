@@ -166,8 +166,8 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                     (ChunkSize)chunkSize,
                     transform.position,
                     GetValidLodDistances(),
-                    lodReference
-                    //this.transform
+                    lodReference,
+                    this.transform
                 );
 
                 _chunkRegistry.showDebugLogs = this.showDebugLogs;

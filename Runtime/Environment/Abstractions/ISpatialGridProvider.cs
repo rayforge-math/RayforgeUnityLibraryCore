@@ -5,15 +5,20 @@ namespace Rayforge.Core.Environment.Abstractions
 {
     public interface ISpatialGridProvider
     {
-        /// <summary> English: The size of one grid cell. </summary>
+        /// <summary> The size of one grid cell. </summary>
         int GridSize { get; }
 
-        /// <summary> English: The world-space origin of the grid. </summary>
+        /// <summary> The world-space origin of the grid. </summary>
         Vector3 Anchor { get; }
 
         /// <summary> 
-        /// English: Returns all grid coordinates (keys) that are touched by the given bounds. 
+        /// Returns all grid coordinates (keys) that are touched by the given world bounds. 
         /// </summary>
         IEnumerable<Vector3Int> GetKeysInBounds(Bounds bounds);
+
+        /// <summary> 
+        /// Returns all grid coordinates (keys) that are touched by the given local bounds. 
+        /// </summary>
+        public IEnumerable<Vector3Int> GetKeysInRelativeBounds(Bounds relativeBounds);
     }
 }

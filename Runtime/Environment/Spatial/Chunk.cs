@@ -183,16 +183,21 @@ namespace Rayforge.Core.Environment.Spatial
         #region Debugging
         protected virtual void OnDrawGizmosSelected()
         {
-            bool isFull3D = IsYActive;
-            Gizmos.color = isFull3D ? Color.cyan : Color.green;
+            Vector3 displaySize = new Vector3(
+                IsXActive ? localExtent.x * 2f : 0.1f,
+                IsYActive ? localExtent.y * 2f : 0.1f,
+                IsZActive ? localExtent.z * 2f : 0.1f
+            );
 
+            Gizmos.color = IsYActive ? Color.cyan : Color.green;
             Vector3 pos = transform.position;
-            Gizmos.DrawWireCube(pos, localExtent * 2f);
 
-            if (!isFull3D)
+            Gizmos.DrawWireCube(pos, displaySize);
+
+            if (!IsYActive)
             {
                 Gizmos.color = new Color(0, 1, 0, 0.2f);
-                Gizmos.DrawCube(pos, new Vector3(localExtent.x * 2f, 0.05f, localExtent.z * 2f));
+                Gizmos.DrawCube(pos, displaySize);
             }
         }
         #endregion

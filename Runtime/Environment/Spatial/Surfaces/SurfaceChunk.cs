@@ -7,7 +7,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// A specialized 2D chunk representing a portion of the world surface.
     /// Stores surface-specific data like heightmaps and reacts to LOD changes to trigger re-bakes.
     /// </summary>
-    public class SurfaceChunk : Chunk2D<SurfaceChunk>, ILODSpatialEntry
+    public class SurfaceChunk : Chunk2D<SurfaceChunk>, ISpatialLOD
     {
         /// <summary>
         /// The current Level of Detail index. Initialized to -1 to ensure the first update triggers.
@@ -60,5 +60,26 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
             Heightmap = map;
         }
+
+        #region Debugging
+        protected override void OnDrawGizmosSelected()
+        {
+            Vector3 pos = transform.position;
+            Vector3 size = new Vector3(localExtent.x * 2f, 0.1f, localExtent.z * 2f);
+
+            // Draw the flat slab for the surface
+            Gizmos.DrawCube(pos, size);
+
+            // Draw the wireframe outline with full opacity for better contrast
+            Gizmos.color = GetLODColor(CurrentLOD);
+            Gizmos.DrawWireCube(pos, size);
+        }
+
+        private Color GetLODColor(int lod)
+        {
+            if (lod == -1) return Color.red;
+            return new Color(0, 1.0f, 0, 1.0f);
+        }
+        #endregion
     }
 }

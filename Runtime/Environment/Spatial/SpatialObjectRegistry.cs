@@ -204,7 +204,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             System.Text.StringBuilder sb = showDebugLogs ? new System.Text.StringBuilder() : null;
             int affectedCount = 0;
 
-            foreach (Vector3Int key in _gridProvider.GetKeysInBounds(bounds))
+            foreach (Vector3Int key in _gridProvider.GetKeysInRelativeBounds(bounds))
             {
                 _dirtyBuckets.Add(key);
 

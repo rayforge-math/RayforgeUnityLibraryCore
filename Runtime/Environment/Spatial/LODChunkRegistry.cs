@@ -12,7 +12,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// </summary>
     /// <typeparam name="T">The chunk type implementing both spatial and LOD interfaces.</typeparam>
     public class LODChunkRegistry<T> : ChunkRegistry<T>
-        where T : Chunk<T>, ILODSpatialEntry
+        where T : Chunk<T>, ISpatialLOD
     {
         #region Fields & Config
         private float[] _lodSqrDistances;
