@@ -3,6 +3,7 @@ using Rayforge.Core.Diagnostics;
 using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
+using System.Runtime.CompilerServices;
 
 namespace Rayforge.Core.Environment.Spatial.Surface
 {
@@ -36,9 +37,9 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         #region Debug Helper
         [Conditional("UNITY_EDITOR")]
-        private void LogDebug(string message)
+        private void LogDebug(string message, [CallerLineNumber] int line = 0)
         {
-            DebugOutput.Log(message, showDebugLogs);
+            DebugOutput.Log(message, showDebugLogs, lineNumber: line);
         }
         #endregion
 
@@ -61,6 +62,19 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             {
                 UpdateBucketsForObject(entry.Key, entry.Value.anchorBounds, true);
             }
+        }
+
+        /// <summary>
+        /// Completely wipes all registered objects and spatial data.
+        /// Use this before a full scene rescan to ensure no "ghost" objects remain.
+        /// </summary>
+        public void Clear()
+        {
+            LogDebug("Registry: Performing full clear of all objects and buckets.");
+
+            _registry.Clear();
+            _spatialBuckets.Clear();
+            _dirtyBuckets.Clear();
         }
 
         #endregion
@@ -166,6 +180,15 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             return result;
         }
 
+        /// <summary>
+        /// Checks if a specific cell contains any registered objects.
+        /// Useful for the Manager to decide if a chunk shell is needed.
+        /// </summary>
+        public bool HasDataInBucket(Vector3Int key)
+        {
+            return _spatialBuckets.ContainsKey(key);
+        }
+
         #endregion
 
         #region Bucket Management
@@ -225,7 +248,11 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         private bool TryCreateRelativeState(GameObject obj, out SpatialObjectState state)
         {
             state = default;
-            if (!IsInitialized) return false;
+            if (!IsInitialized)
+            {
+                LogDebug($"Registry: Failed to create state for {obj.name}. Registry not initialized.");
+                return false;
+            }
 
             TryGetMesh(obj, out Mesh mesh);
 
@@ -235,14 +262,23 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 bool hasCollider = obj.TryGetComponent<TerrainCollider>(out var tc) && tc.enabled;
                 if (terrain.terrainData == null || !hasCollider)
                 {
+                    LogDebug($"Registry: {obj.name} has Terrain component but missing data or enabled collider.");
                     isTerrain = false;
                     terrain = null;
                 }
             }
 
-            if (mesh == null && !isTerrain) return false;
+            if (mesh == null && !isTerrain)
+            {
+                LogDebug($"Registry: {obj.name} ignored. No valid Mesh or Terrain found.");
+                return false;
+            }
 
-            if (!TryGetSpatialBounds(obj, out Bounds worldBounds)) return false;
+            if (!TryGetSpatialBounds(obj, out Bounds worldBounds))
+            {
+                LogDebug($"Registry: {obj.name} ignored. Could not calculate world bounds.");
+                return false;
+            }
 
             state = SpatialObjectState.Create(
                 worldBounds,
@@ -251,6 +287,15 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 mesh,
                 terrain
             );
+
+            if (showDebugLogs)
+            {
+                Vector3 localPos = worldBounds.center - _gridProvider.Anchor;
+                LogDebug($"Registry: Created state for '{obj.name}'\n" +
+                         $"  World Center: {worldBounds.center}\n" +
+                         $"  Relative to Anchor: {localPos}\n" +
+                         $"  Bounds Size: {worldBounds.size}");
+            }
 
             return true;
         }

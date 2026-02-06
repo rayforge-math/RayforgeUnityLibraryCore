@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using Rayforge.Core.Diagnostics;
 using UnityEngine;
+using System.Runtime.CompilerServices;
 
 namespace Rayforge.Core.Environment.Spatial.Surface
 {
@@ -58,7 +59,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         public bool enableAreaCheck = true;
         [Tooltip("Minimum XZ-Area in square meters (e.g., 1.0 for a 1x1m area).")]
         public float minAreaThreshold = 1.0f;
-        [Tooltip("If true, RebuildRegistry() is called automatically on Start.")]
+        [Tooltip("If true, RebuildRegistry() is called automatically on Start."), HideInInspector]
         public bool autoUpdate = false;
 
         [Header("Surfaces")]
@@ -90,17 +91,32 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         private void Start()
         {
-            if (autoUpdate) RebuildRegistry();
+            RebuildRegistry();
         }
 
         private void Update()
         {
             if (!IsReady) return;
 
-            if (CheckMovementThreshold())
+            if (_needsSpatialSync)
             {
-                _chunkRegistry.UpdateLODs();
-                ProcessBaking();
+                LogDebug("Update: Spatial sync triggered by registry changes.");
+                SynchronizeChunksWithRegistry();
+            }
+
+            bool movedEnough = CheckMovementThreshold();
+
+            if (movedEnough)
+            {
+                LogDebug($"Update: LOD refresh triggered by movement.");
+                _chunkRegistry.UpdateLODs(lodReference.position);
+            }
+
+            if (_needsSpatialSync || movedEnough)
+            {
+                LogDebug($"Update: Finalizing frame. Reason: Sync={_needsSpatialSync}, Movement={movedEnough}");
+                // ProcessBaking();
+                _needsSpatialSync = false;
             }
         }
 
@@ -311,6 +327,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         public void RebuildRegistry()
         {
             LogDebug("Rebuilding Registry...");
+            _registry.Clear();
             SyncFromList();
             if (scanHierarchy) ScanHierarchyRecursive(transform);
         }
@@ -407,6 +424,43 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         #region Runtime Processing & Baking
 
+        private void SynchronizeChunksWithRegistry()
+        {
+            int createdCount = 0;
+            int updatedCount = 0;
+            int removedCount = 0;
+
+            foreach (var key in _registry.GetDirtyBuckets())
+            {
+                bool hasData = _registry.HasDataInBucket(key);
+                bool exists = _chunkRegistry.TryGetEntry(key, out var chunk);
+
+                if (hasData)
+                {
+                    if (exists)
+                    {
+                        chunk.MarkDirty();
+                        updatedCount++;
+                        LogDebug($"Sync: Marked existing chunk {key} as dirty (data change)");
+                    }
+                    else
+                    {
+                        _chunkRegistry.GetOrCreateChunk(key);
+                        createdCount++;
+                        LogDebug($"Sync: Created new chunk shell at {key}");
+                    }
+                }
+                else if (exists)
+                {
+                    _chunkRegistry.RemoveAndDestroy(key);
+                    removedCount++;
+                    LogDebug($"Sync: Removed empty chunk shell at {key}");
+                }
+            }
+
+            LogDebug($"Spatial Sync Summary: {createdCount} created, {updatedCount} updated, {removedCount} removed.");
+        }
+
         private void ProcessBaking()
         {
             LogDebug($"Beginning Baking Cycle...");
@@ -501,7 +555,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         #region Debug Helper
         [Conditional("UNITY_EDITOR")]
-        private void LogDebug(string msg) { DebugOutput.Log(msg, showDebugLogs); }
+        private void LogDebug(string msg, [CallerLineNumber] int line = 0) { DebugOutput.Log(msg, showDebugLogs, lineNumber: line); }
         #endregion
     }
 
