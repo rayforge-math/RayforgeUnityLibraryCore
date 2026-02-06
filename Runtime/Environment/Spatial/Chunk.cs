@@ -8,6 +8,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// Uses a bitmask (ActiveAxes) to handle distance and positioning for 2D, 3D or custom dimensions.
     /// </summary>
     /// <typeparam name="T">The derived type for type-safe processing and registry management.</typeparam>
+    [ChunkConfig(SpatialAxes.Voxel)]
     public abstract class Chunk<T> : MonoBehaviour, ISpatialEntry
         where T : Chunk<T>
     {
@@ -16,6 +17,8 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary> The half-size of the chunk in local space. Defines the AABB bounds. </summary>
         [field: SerializeField]
         public Vector3 localExtent { get; internal set; } = new Vector3(50, 50, 50);
+
+        public Vector3 GetWorldSize() => localExtent * 2f;
 
         /// <summary> If true, the chunk flags itself as dirty when the transform moves. </summary>
         public bool updateOnTransformChange = false;
@@ -26,6 +29,9 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary> Managed by the Registry. Identifies the chunk's grid slot. </summary>
         [field: SerializeField, HideInInspector]
         public Vector3Int GridKey { get; internal set; }
+
+        public Vector2Int GridKeyXY => new Vector2Int(GridKey.x, GridKey.y);
+        public Vector2Int GridKeyXZ => new Vector2Int(GridKey.x, GridKey.z);
 
         /// <summary>
         /// Static cache for the axes configuration. 
@@ -56,18 +62,23 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         protected abstract void OnDispose();
 
+        private bool _isDisposed = false;
+
         /// <summary>
         /// Public entry point to safely remove a chunk from the world.
         /// Triggers resource cleanup and destroys the GameObject.
         /// </summary>
         public void DisposeChunk()
         {
+            if (_isDisposed) return;
+            _isDisposed = true;
+
             OnDispose();
 
-            if (this != null && gameObject != null)
-            {
+            if (Application.isPlaying)
                 Destroy(gameObject);
-            }
+            else
+                DestroyImmediate(gameObject);
         }
 
         /// <summary>
@@ -75,7 +86,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         private void OnDestroy()
         {
-            OnDispose();
+            if (!_isDisposed) DisposeChunk();
         }
 
         #endregion
@@ -189,16 +200,13 @@ namespace Rayforge.Core.Environment.Spatial
                 IsZActive ? localExtent.z * 2f : 0.1f
             );
 
-            Gizmos.color = IsYActive ? Color.cyan : Color.green;
             Vector3 pos = transform.position;
 
+            Gizmos.color = Color.cyan;
             Gizmos.DrawWireCube(pos, displaySize);
 
-            if (!IsYActive)
-            {
-                Gizmos.color = new Color(0, 1, 0, 0.2f);
-                Gizmos.DrawCube(pos, displaySize);
-            }
+            Gizmos.color = Color.green;
+            Gizmos.DrawCube(pos, displaySize);
         }
         #endregion
     }

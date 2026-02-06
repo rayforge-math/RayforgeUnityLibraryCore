@@ -7,7 +7,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// A specialized 2D chunk representing a portion of the world surface.
     /// Stores surface-specific data like heightmaps and reacts to LOD changes to trigger re-bakes.
     /// </summary>
-    public class SurfaceChunk : Chunk2D<SurfaceChunk>, ISpatialLOD
+    [ChunkConfig(SpatialAxes.Surface)]
+    public class SurfaceChunk : Chunk<SurfaceChunk>, ISpatialLOD
     {
         /// <summary>
         /// The current Level of Detail index. Initialized to -1 to ensure the first update triggers.

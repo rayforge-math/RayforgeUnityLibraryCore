@@ -9,7 +9,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// </summary>
     /// <typeparam name="T">The type of WorldChunk3D managed by this registry.</typeparam>
     public static class GlobalChunkRegistry<T>
-        where T : Chunk3D<T>
+        where T : Chunk<T>
     {
         private const ChunkSize k_GridSize = (ChunkSize)ChunkSizeBinary.Medium;
 

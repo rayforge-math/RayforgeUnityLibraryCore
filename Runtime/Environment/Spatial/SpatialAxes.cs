@@ -15,8 +15,12 @@ namespace Rayforge.Core.Environment.Spatial
         Z = 1 << 2,
         W = 1 << 3,
 
+        XY = X | Y,
+        XZ = X | Z,
+        YZ = Y | Z,
+
         /// <summary> Horizontal plane only (X and Z). Ideal for Terrain/Heightmaps. </summary>
-        Surface = X | Z,
+        Surface = XZ,
 
         /// <summary> Full volumetric space (X, Y, and Z). Ideal for Voxel/3D worlds. </summary>
         Voxel = X | Y | Z,
