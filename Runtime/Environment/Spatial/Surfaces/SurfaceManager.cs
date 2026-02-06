@@ -125,7 +125,8 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             if (shiftRelay != null)
                 shiftRelay.OnWorldShiftDetected -= HandleOriginShift;
 
-            _chunkRegistry?.Dispose();
+            if (_chunkRegistry != null)
+                _chunkRegistry.Dispose();
         }
 
         private void OnValidate()
