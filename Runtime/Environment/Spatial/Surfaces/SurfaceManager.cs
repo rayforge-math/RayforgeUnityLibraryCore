@@ -92,6 +92,8 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         private readonly HashSet<Vector3Int> _toAssign = new HashSet<Vector3Int>();
         private bool _needsBufferSync = false;
 
+        private readonly HashSet<Vector3Int> _chunksPendingBake = new HashSet<Vector3Int>();
+
         private bool IsReady => lodReference != null && _chunkRegistry != null && _registry != null;
         #endregion
 
@@ -110,7 +112,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 shiftRelay.OnWorldShiftDetected += HandleOriginShift;
             }
 
-            _texturePool.showDebugLogs = true;
+            //_texturePool.showDebugLogs = true;
         }
 
         private void Start()
@@ -140,6 +142,11 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 LogDebug("Update: Heightmap updates triggered by registry changes.");
                 UdpateChunkHandles();
                 _needsBufferSync = false;
+            }
+
+            if (_chunksPendingBake.Count > 0)
+            {
+                ProcessBaking();
             }
         }
 
@@ -435,7 +442,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             if (_registry.Unregister(id))
             {
                 _surfaceIds.Remove(id);
-                surfaces.RemoveAll(s => s == null || s.GetInstanceID() == id);
+                surfaces.RemoveAll(s => s.GetInstanceID() == id);
 
                 _needsSpatialSync = true;
                 return true;
@@ -477,11 +484,12 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
                 if (hasData)
                 {
+                    _chunksPendingBake.Add(key);
+
                     if (exists)
                     {
-                        chunk.MarkDirty();
                         updatedCount++;
-                        LogDebug($"Sync: Marked existing chunk {key} as dirty (data change)");
+                        LogDebug($"Sync: Existing chunk {key} data changed");
                     }
                     else
                     {
@@ -505,6 +513,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                     LogDebug($"Sync: Removed empty chunk shell at {key}");
                 }
             }
+            _registry.ClearDirtyBuckets();
 
             LogDebug($"Spatial Sync Summary: {createdCount} created, {updatedCount} updated, {removedCount} removed.");
         }
@@ -557,42 +566,35 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 {
                     int currentLod = chunk.CurrentLOD;
 
-                    if (currentLod >= 0 && currentLod < _validLodLevels.Length)
-                    {
-                        var settings = _validLodLevels[currentLod];
-                        var res = (int)settings.mapResolution;
+                    var settings = _validLodLevels[currentLod];
+                    var res = (int)settings.mapResolution;
 
-                        var descriptor = new RenderTextureDescriptorWrapper { Descriptor = DefaultDescriptors.HeightmapDefault(res, res) };
-                        var newLease = _texturePool.Rent(descriptor);
+                    var descriptor = new RenderTextureDescriptorWrapper { Descriptor = DefaultDescriptors.HeightmapDefault(res, res) };
+                    var newLease = _texturePool.Rent(descriptor);
 
-                        _leasedBuffers[key] = newLease;
-                        chunk.SetHeightmap(newLease.BufferHandle.Buffer);
+                    _leasedBuffers[key] = newLease;
+                    chunk.SetHeightmap(newLease.BufferHandle.Buffer);
 
-                        LogDebug($"Rented buffer for chunk {key}");
-                    }
+                    _chunksPendingBake.Add(key);
+                    LogDebug($"Rented buffer for chunk {key}");
                 }
             }
             _toAssign.Clear();
         }
-        /*
+        
         private void ProcessBaking()
         {
             LogDebug($"Beginning Baking Cycle...");
 
-            foreach (Vector3Int dirtyKey in _registry.GetDirtyBuckets())
+            foreach (var key in _chunksPendingBake)
             {
-                if (_chunkRegistry.TryGetEntry(dirtyKey, out var chunk))
-                    chunk.MarkDirty();
+                if (_chunkRegistry.TryGetEntry(key, out SurfaceChunk chunk))
+                {
+                    //chunk.Heightmap;
+                }
             }
-            _registry.ClearDirtyBuckets();
 
-            foreach (var chunk in _chunkRegistry.AllEntries)
-            {
-                if (chunk == null || !chunk.IsDirty) continue;
-
-                PerformChunkBake(chunk);
-                chunk.ClearDirty();
-            }
+            _chunksPendingBake.Clear();
         }
 
         private void PerformChunkBake(SurfaceChunk chunk)
@@ -604,7 +606,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
             // English: HeightmapBaker.Bake(chunk, relevantObjects, resolution);
         }
-        */
+        
         private bool CheckMovementThreshold()
         {
             float distSqr = (lodReference.position - _lastUpdatePos).sqrMagnitude;
