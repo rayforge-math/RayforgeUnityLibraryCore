@@ -16,24 +16,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public RenderTexture Heightmap { get; private set; }
 
         /// <summary>
-        /// Cleans up GPU resources when the chunk is removed.
-        /// Essential to prevent VRAM leaks when chunks are pooled or destroyed.
-        /// </summary>
-        protected override void OnDisposeInternal()
-        {
-            if (Heightmap != null)
-            {
-                Heightmap.Release();
-                Heightmap = null;
-            }
-        }
-
-        protected override void OnLODChangedInternal(int oldLod, int newLod)
-        {
-            
-        }
-
-        /// <summary>
         /// Assigns a new heightmap to this chunk. 
         /// Usually called by the Baker after a successful generation.
         /// </summary>

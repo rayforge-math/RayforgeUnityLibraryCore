@@ -58,7 +58,13 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
-        #region Lifecycle Management
+        #region Lifecycle Management & Events
+
+        /// <summary> 
+        /// Callback for cleanup when chunk is disposed.
+        /// (e.g., returning heightmap leases to the pool) during disposal.
+        /// </summary>
+        public event Action<T> OnCleanup;
 
         /// <summary>
         /// Forces inheriting classes to release native/GPU resources.
@@ -77,7 +83,10 @@ namespace Rayforge.Core.Environment.Spatial
             if (_isDisposed) return;
             _isDisposed = true;
 
+            OnCleanup?.Invoke((T)this);
             OnDispose();
+
+            OnCleanup = null;
 
             if (gameObject != null)
             {

@@ -21,10 +21,6 @@ namespace Rayforge.Core.Environment.Spatial
         private float[] _lodSqrDistances;
         public Transform Viewer { get; private set; }
 
-        private readonly HashSet<Vector3Int> _dirtyLODChunks = new HashSet<Vector3Int>();
-
-        public Action<ILODState, int, int> OnAnyChunkLODChanged;
-
         #region Debug Helper
         [Conditional("UNITY_EDITOR")]
         private void LogDebug(string message, string color = "#FFAB91")
@@ -49,32 +45,20 @@ namespace Rayforge.Core.Environment.Spatial
         /// Overrides the base factory to ensure a valid LOD is set immediately upon creation.
         /// Prevents visual popping by calculating the LOD before the first frame is rendered.
         /// </summary>
-        public override bool GetOrCreateChunk(Vector3Int key, out T chunk)
+        public override bool GetOrCreateChunk(Vector3Int key, Action<T> onConfigure, out T chunk)
         {
-            bool isNew = base.GetOrCreateChunk(key, out chunk);
+            bool isNew = base.GetOrCreateChunk(key, onConfigure, out chunk);
             if (isNew)
             {
-                chunk.OnLODChanged += HandleChunkLODChanged;
-
-                float sqrDist = chunk.GetSqrDistanceToClosestEdge(ViewerPos);
-                int targetLod = CalculateTargetLOD(sqrDist);
-                chunk.UpdateLOD(targetLod);
+                UpdateChunkLOD(chunk, ViewerPos);
             }
 
             LogDebug($"Created Chunk {key} with initial LOD {chunk.CurrentLOD}");
-
             return isNew;
         }
         #endregion
 
         #region Core LOD Logic
-
-        private void HandleChunkLODChanged(ILODState sender, int oldLod, int newLod)
-        {
-            _dirtyLODChunks.Add(sender.GridKey);
-            OnAnyChunkLODChanged?.Invoke(sender, oldLod, newLod);
-            UnityEngine.Debug.Log("Added: " + sender.GridKey);
-        }
 
         //private Vector3 _lastViewerPos = Vector3.zero;
         //private float _lastMaxDistance = .0f;
@@ -94,18 +78,21 @@ namespace Rayforge.Core.Environment.Spatial
             {
                 if (chunk == null) continue;
 
-                float sqrDist = chunk.GetSqrDistanceToClosestEdge(focusPos);
-                int targetLod = CalculateTargetLOD(sqrDist);
-
-                if (chunk.CurrentLOD != targetLod)
+                if (UpdateChunkLOD(chunk, focusPos))
                 {
-                    chunk.UpdateLOD(targetLod);
                     changeCount++;
                 }
             }
 
             LogDebug($"LOD Update: {changeCount} chunks changed their LOD level.");
             return changeCount;
+        }
+
+        private bool UpdateChunkLOD(T chunk, Vector3 pos)
+        {
+            float sqrDist = chunk.GetSqrDistanceToClosestEdge(pos);
+            int targetLod = CalculateTargetLOD(sqrDist);
+            return ((ILODReceiver)chunk).UpdateLOD(targetLod);
         }
 
         /// <summary>

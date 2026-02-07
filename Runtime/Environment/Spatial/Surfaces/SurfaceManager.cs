@@ -1,6 +1,7 @@
 using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Diagnostics;
+using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Surfaces;
 using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.ManagedResources.Pooling;
@@ -119,8 +120,10 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             if (CheckMovementThreshold())
             {
                 LogDebug($"Update: LOD refresh triggered by movement.");
-                _chunkRegistry.UpdateLODs(lodReference.position);
+                _chunkRegistry.UpdateLODs();
             }
+
+
         }
 
         private void OnDestroy()
@@ -463,8 +466,12 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                     }
                     else
                     {
-                        _chunkRegistry.GetOrCreateChunk(key, out chunk);
-                        createdCount++;
+                        Action<SurfaceChunk> configChunk = _ => { _.OnLODChanged += HandleChunkLODChanged; };
+
+                        if(_chunkRegistry.GetOrCreateChunk(key, configChunk, out chunk))
+                        {
+                            createdCount++;
+                        }
                         LogDebug($"Sync: Created new chunk shell at {key}");
                     }
                 }
@@ -477,6 +484,11 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             }
 
             LogDebug($"Spatial Sync Summary: {createdCount} created, {updatedCount} updated, {removedCount} removed.");
+        }
+
+        private void HandleChunkLODChanged(ILODState sender, int oldLod, int newLod)
+        {
+            UnityEngine.Debug.LogWarning(sender.GridKey + ": " + oldLod + " -> " + newLod);
         }
 
         private void ProcessBaking()

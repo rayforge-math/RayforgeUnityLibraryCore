@@ -128,13 +128,13 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Factory Implementation
 
-        public virtual bool GetOrCreateChunk(Vector3Int key, out T chunk)
+        public virtual bool GetOrCreateChunk(Vector3Int key, Action<T> onConfigure, out T chunk)
         {
             Vector3Int validKey = MaskKey(key);
-            return CreateInternal(validKey, out chunk);
+            return CreateInternal(validKey, onConfigure, out chunk);
         }
 
-        public bool GetOrCreateChunk(Vector2Int key2D, out T chunk)
+        public bool GetOrCreateChunk(Vector2Int key2D, Action<T> onConfigure, out T chunk)
         {
             Vector3Int key3d = Vector3Int.zero;
             int currentDimension = 0;
@@ -149,11 +149,11 @@ namespace Rayforge.Core.Environment.Spatial
                 }
             }
 
-            return GetOrCreateChunk(key3d, out chunk);
+            return GetOrCreateChunk(key3d, onConfigure, out chunk);
         }
 
-        public bool GetOrCreateChunkAtWorldPos(Vector3 pos, out T chunk)
-            => GetOrCreateChunk(WorldToGrid(pos), out chunk);
+        public bool GetOrCreateChunkAtWorldPos(Vector3 pos, Action<T> onConfigure, out T chunk)
+            => GetOrCreateChunk(WorldToGrid(pos), onConfigure, out chunk);
 
         /// <summary>
         /// Attempts to retrieve a chunk at a specific world position.
@@ -171,7 +171,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// Centralized logic to create and initialize a chunk.
         /// </summary>
-        private bool CreateInternal(Vector3Int validKey, out T chunk)
+        private bool CreateInternal(Vector3Int validKey, Action<T> onConfigure, out T chunk)
         {
             LogDebug($"Creating Chunk at {validKey}");
 
@@ -182,6 +182,7 @@ namespace Rayforge.Core.Environment.Spatial
                 InitializeChunk,
                 out chunk
             );
+            onConfigure?.Invoke(chunk);
             return isNew;
         }
 

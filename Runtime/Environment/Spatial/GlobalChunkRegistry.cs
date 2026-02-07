@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -33,14 +34,14 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         /// <param name="key">The 3D grid coordinate.</param>
         /// <returns>The chunk instance at the given location.</returns>
-        public static bool GetOrCreateChunk(Vector3Int key, out T chunk) => Instance.GetOrCreateChunk(key, out chunk);
+        public static bool GetOrCreateChunk(Vector3Int key, Action<T> onConfigure, out T chunk) => Instance.GetOrCreateChunk(key, onConfigure, out chunk);
 
         /// <summary>
         /// Ensures a chunk exists at the given world position, creating it if necessary.
         /// </summary>
         /// <param name="pos">The world-space position.</param>
         /// <returns>The existing or newly created chunk instance.</returns>
-        public static bool GetOrCreateChunkAtWorldPos(Vector3 pos, out T chunk) => Instance.GetOrCreateChunkAtWorldPos(pos, out chunk);
+        public static bool GetOrCreateChunkAtWorldPos(Vector3 pos, Action<T> onConfigure, out T chunk) => Instance.GetOrCreateChunkAtWorldPos(pos, onConfigure, out chunk);
 
         /// <summary>
         /// Safely removes and destroys a chunk from the grid based on its coordinate.
