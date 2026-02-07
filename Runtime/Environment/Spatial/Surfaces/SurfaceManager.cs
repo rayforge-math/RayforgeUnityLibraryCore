@@ -569,7 +569,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                     var settings = _validLodLevels[currentLod];
                     var res = (int)settings.mapResolution;
 
-                    var descriptor = new RenderTextureDescriptorWrapper { Descriptor = DefaultDescriptors.HeightmapDefault(res, res) };
+                    var descriptor = new RenderTextureDescriptorWrapper { Descriptor = DefaultDescriptors.HeightmapPrecision(res, res) };
                     var newLease = _texturePool.Rent(descriptor);
 
                     _leasedBuffers[key] = newLease;
