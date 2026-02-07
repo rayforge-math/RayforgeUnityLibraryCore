@@ -61,6 +61,7 @@ namespace Rayforge.Core.Rendering.Projection
         /// <param name="minY">Minimum world-Y height (floor of the bake volume).</param>
         /// <param name="maxY">Maximum world-Y height (ceiling of the bake volume).</param>
         /// <param name="renderers">Objects to project into the heightmap.</param>
+        /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
         public static void Bake(
             RenderTexture target,
             Vector3 localCenter,
@@ -68,7 +69,8 @@ namespace Rayforge.Core.Rendering.Projection
             float extent,
             float minY,
             float maxY,
-            IEnumerable<Renderer> renderers)
+            IEnumerable<Renderer> renderers,
+            IEnumerable<Terrain> terrains = null)
         {
             var param = new HeightmapBakeParams
             {
@@ -78,7 +80,7 @@ namespace Rayforge.Core.Rendering.Projection
                 MaxY = maxY
             };
 
-            Bake(target, param, renderers);
+            Bake(target, param, renderers, terrains);
         }
 
         /// <summary>
@@ -91,13 +93,15 @@ namespace Rayforge.Core.Rendering.Projection
         /// <param name="minY">Minimum world-Y height.</param>
         /// <param name="maxY">Maximum world-Y height.</param>
         /// <param name="renderers">Objects to project.</param>
+        /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
         public static void Bake(
             RenderTexture target,
             Vector3 worldCenter,
             float extent,
             float minY,
             float maxY,
-            IEnumerable<Renderer> renderers)
+            IEnumerable<Renderer> renderers,
+            IEnumerable<Terrain> terrains = null)
         {
             var param = new HeightmapBakeParams
             {
@@ -107,7 +111,7 @@ namespace Rayforge.Core.Rendering.Projection
                 MaxY = maxY
             };
 
-            Bake(target, param, renderers);
+            Bake(target, param, renderers, terrains);
         }
 
         /// <summary>
@@ -117,13 +121,14 @@ namespace Rayforge.Core.Rendering.Projection
         /// <param name="target">The RFloat/R32 destination texture.</param>
         /// <param name="param">Spatial parameters for the bake area.</param>
         /// <param name="renderers">Objects to project.</param>
+        /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
         /// <exception cref="ArgumentNullException">Thrown if target is null.</exception>
-        public static void Bake(RenderTexture target, HeightmapBakeParams param, IEnumerable<Renderer> renderers)
+        public static void Bake(RenderTexture target, HeightmapBakeParams param, IEnumerable<Renderer> renderers, IEnumerable<Terrain> terrains = null)
         {
             if (target == null) throw new ArgumentNullException(nameof(target));
 
             k_Cmd.Clear();
-            SetupBakeCommandBuffer(k_Cmd, target, param, renderers);
+            SetupBakeCommandBuffer(k_Cmd, target, param, renderers, terrains);
             Graphics.ExecuteCommandBuffer(k_Cmd);
         }
 
@@ -143,6 +148,7 @@ namespace Rayforge.Core.Rendering.Projection
         /// <param name="minY">The bottom Y-level in world space.</param>
         /// <param name="maxY">The top Y-level in world space.</param>
         /// <param name="renderers">Objects to project.</param>
+        /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
         public static void SetupBakeCommandBuffer(
             CommandBuffer cmd,
             RenderTexture target,
@@ -151,7 +157,8 @@ namespace Rayforge.Core.Rendering.Projection
             float extent,
             float minY,
             float maxY,
-            IEnumerable<Renderer> renderers)
+            IEnumerable<Renderer> renderers,
+            IEnumerable<Terrain> terrains = null)
         {
             var param = new HeightmapBakeParams
             {
@@ -161,7 +168,7 @@ namespace Rayforge.Core.Rendering.Projection
                 MaxY = maxY
             };
 
-            SetupBakeCommandBuffer(cmd, target, param, renderers);
+            SetupBakeCommandBuffer(cmd, target, param, renderers, terrains);
         }
 
         /// <summary>
@@ -174,6 +181,7 @@ namespace Rayforge.Core.Rendering.Projection
         /// <param name="minY">The bottom Y-level in world space.</param>
         /// <param name="maxY">The top Y-level in world space.</param>
         /// <param name="renderers">Objects to project.</param>
+        /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
         public static void SetupBakeCommandBuffer(
             CommandBuffer cmd,
             RenderTexture target,
@@ -181,7 +189,8 @@ namespace Rayforge.Core.Rendering.Projection
             float extent,
             float minY,
             float maxY,
-            IEnumerable<Renderer> renderers)
+            IEnumerable<Renderer> renderers,
+            IEnumerable<Terrain> terrains = null)
         {
             var param = new HeightmapBakeParams
             {
@@ -191,7 +200,7 @@ namespace Rayforge.Core.Rendering.Projection
                 MaxY = maxY
             };
 
-            SetupBakeCommandBuffer(cmd, target, param, renderers);
+            SetupBakeCommandBuffer(cmd, target, param, renderers, terrains);
         }
 
         /// <summary>
@@ -202,12 +211,14 @@ namespace Rayforge.Core.Rendering.Projection
         /// <param name="target">The destination RenderTexture.</param>
         /// <param name="param">The bake volume parameters.</param>
         /// <param name="renderers">Objects to project.</param>
+        /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
         /// <exception cref="ArgumentNullException">Thrown if cmd or target is null.</exception>
         public static void SetupBakeCommandBuffer(
             CommandBuffer cmd,
             RenderTexture target,
             HeightmapBakeParams param,
-            IEnumerable<Renderer> renderers)
+            IEnumerable<Renderer> renderers,
+            IEnumerable<Terrain> terrains = null)
         {
             if (cmd == null) throw new ArgumentNullException(nameof(cmd));
             if (target == null) throw new ArgumentNullException(nameof(target));
@@ -226,10 +237,23 @@ namespace Rayforge.Core.Rendering.Projection
 
             cmd.SetViewProjectionMatrices(viewMatrix, projMatrix);
 
-            foreach (var renderer in renderers)
+            if (renderers != null)
             {
-                if (renderer == null) continue;
-                cmd.DrawRenderer(renderer, k_BakeMaterial);
+                foreach (var renderer in renderers)
+                {
+                    if (renderer == null) continue;
+                    cmd.DrawRenderer(renderer, k_BakeMaterial);
+                }
+            }
+
+            if (terrains != null)
+            {
+                foreach (var terrain in terrains)
+                {
+                    if (terrain == null || terrain.terrainData == null) continue;
+
+                    cmd.DrawRenderer(terrain.GetComponent<Renderer>(), k_BakeMaterial);
+                }
             }
         }
 
