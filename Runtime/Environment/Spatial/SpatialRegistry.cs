@@ -90,11 +90,14 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="position">The initial world position.</param>
         /// <param name="factory">Factory method for initialization.</param>
         /// <returns>The existing or newly created entry.</returns>
-        protected TValue GetOrCreate(TKey key, string name, Vector3 position, Func<GameObject, TKey, TValue> factory)
+        protected bool GetOrCreate(TKey key, string name, Vector3 position, Func<GameObject, TKey, TValue> factory, out TValue result)
         {
-            if (_storage.TryGetValue(key, out TValue existing))
+            if (_storage.TryGetValue(key, out result))
             {
-                if (existing != null && existing.gameObject != null) return existing;
+                if (result != null && result.gameObject != null)
+                {
+                    return false;
+                }
                 _storage.Remove(key);
             }
 
@@ -102,18 +105,12 @@ namespace Rayforge.Core.Environment.Spatial
             if (_container != null) go.transform.SetParent(_container);
             go.transform.position = position;
 
-            TValue entry = factory.Invoke(go, key);
+            result = factory.Invoke(go, key);
 
-            if (entry == null)
-            {
-                if (Application.isPlaying) UnityEngine.Object.Destroy(go);
-                else UnityEngine.Object.DestroyImmediate(go);
-                throw new System.Exception($"Registry {GetType().Name}: Factory lambda returned null for key {key}.");
-            }
-
-            _storage[key] = entry;
+            _storage[key] = result;
             _globalDirty = true;
-            return entry;
+
+            return true;
         }
 
         /// <summary>

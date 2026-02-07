@@ -52,5 +52,48 @@ namespace Rayforge.Core.Rendering.Helpers
         /// </exception>
         public static RenderTextureDescriptor DepthBufferFullScreen(bool enableRandomWrite = true, int msaaSamples = 1)
             => DepthBuffer(Screen.width, Screen.height, enableRandomWrite, msaaSamples);
+
+        /// <summary>
+        /// Returns a high-precision heightmap descriptor suitable for fog, terrain, or simulation data.
+        /// Uses <see cref="RenderTextureFormat.RFloat"/> (32-bit) to prevent "stepping" artifacts in height gradients.
+        /// </summary>
+        /// <param name="width">Texture width in pixels.</param>
+        /// <param name="height">Texture height in pixels.</param>
+        /// <param name="enableRandomWrite">Whether the texture allows random write access by a ComputeShader. Default is <c>true</c>.</param>
+        /// <returns>A configured <see cref="RenderTextureDescriptor"/> with 32-bit float precision.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="width"/> or <paramref name="height"/> is less than or equal to zero.</exception>
+        public static RenderTextureDescriptor HeightmapPrecision(int width, int height, bool enableRandomWrite = true)
+        {
+            if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+            if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
+
+            return new RenderTextureDescriptor(width, height)
+            {
+                colorFormat = RenderTextureFormat.RFloat,
+                depthBufferBits = 0,
+                dimension = TextureDimension.Tex2D,
+                useMipMap = false,
+                autoGenerateMips = false,
+                msaaSamples = 1,
+                sRGB = false,
+                enableRandomWrite = enableRandomWrite
+            };
+        }
+
+        /// <summary>
+        /// Returns an optimized heightmap descriptor suitable for visual effects like ground fog.
+        /// Uses <see cref="RenderTextureFormat.R16"/> (16-bit) to provide a good balance between precision and VRAM usage.
+        /// </summary>
+        /// <param name="width">Texture width in pixels.</param>
+        /// <param name="height">Texture height in pixels.</param>
+        /// <param name="enableRandomWrite">Whether the texture allows random write access by a ComputeShader. Default is <c>true</c>.</param>
+        /// <returns>A configured <see cref="RenderTextureDescriptor"/> with 16-bit precision.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="width"/> or <paramref name="height"/> is less than or equal to zero.</exception>
+        public static RenderTextureDescriptor HeightmapDefault(int width, int height, bool enableRandomWrite = true)
+        {
+            var desc = HeightmapPrecision(width, height, enableRandomWrite);
+            desc.colorFormat = RenderTextureFormat.R16;
+            return desc;
+        }
     }
 }

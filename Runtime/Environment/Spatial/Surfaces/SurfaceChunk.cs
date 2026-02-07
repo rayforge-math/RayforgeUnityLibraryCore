@@ -1,4 +1,3 @@
-using Rayforge.Core.Environment.Abstractions;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Surfaces
@@ -8,14 +7,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// Stores surface-specific data like heightmaps and reacts to LOD changes to trigger re-bakes.
     /// </summary>
     [ChunkConfig(SpatialAxes.Surface)]
-    public class SurfaceChunk : Chunk<SurfaceChunk>, ISpatialLOD
+    public class SurfaceChunk : LODChunk<SurfaceChunk>
     {
-        /// <summary>
-        /// The current Level of Detail index. Initialized to -1 to ensure the first update triggers.
-        /// Used by the Registry to determine if an update is necessary.
-        /// </summary>
-        public int CurrentLOD { get; private set; } = -1;
-
         /// <summary>
         /// The GPU texture holding height data for this chunk.
         /// This reference is managed by the SurfaceRegistry or a Baker system.
@@ -23,31 +16,21 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public RenderTexture Heightmap { get; private set; }
 
         /// <summary>
-        /// Updates the LOD state and marks the chunk as dirty for the baking system.
-        /// Triggered by LODChunkRegistry. Changing the LOD usually requires a resolution change.
-        /// </summary>
-        /// <param name="newLod">The new LOD level calculated by the registry.</param>
-        public bool UpdateLOD(int newLod)
-        {
-            if (CurrentLOD == newLod) return false;
-
-            CurrentLOD = newLod;
-            MarkDirty();
-
-            return true;
-        }
-
-        /// <summary>
         /// Cleans up GPU resources when the chunk is removed.
         /// Essential to prevent VRAM leaks when chunks are pooled or destroyed.
         /// </summary>
-        protected override void OnDispose()
+        protected override void OnDisposeInternal()
         {
             if (Heightmap != null)
             {
                 Heightmap.Release();
                 Heightmap = null;
             }
+        }
+
+        protected override void OnLODChangedInternal(int oldLod, int newLod)
+        {
+            
         }
 
         /// <summary>
@@ -68,18 +51,20 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             Vector3 pos = transform.position;
             Vector3 size = new Vector3(localExtent.x * 2f, 0.1f, localExtent.z * 2f);
 
-            // Draw the flat slab for the surface
-            Gizmos.DrawCube(pos, size);
-
-            // Draw the wireframe outline with full opacity for better contrast
             Gizmos.color = GetLODColor(CurrentLOD);
+            Gizmos.DrawCube(pos, size);
             Gizmos.DrawWireCube(pos, size);
         }
 
         private Color GetLODColor(int lod)
         {
-            if (lod == -1) return Color.red;
-            return new Color(0, 1.0f, 0, 1.0f);
+            return lod switch
+            {
+                -1 => Color.red,
+                0 => Color.green,
+                1 => Color.yellow,
+                _ => Color.orange
+            };
         }
         #endregion
     }

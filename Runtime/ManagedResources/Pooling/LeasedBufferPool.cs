@@ -17,7 +17,7 @@ namespace Rayforge.Core.ManagedResources.Pooling
         /// </summary>
         /// <param name="createFunc">Factory function to create a new buffer when the pool is empty.</param>
         /// <param name="releaseFunc">Function to permanently release a buffer.</param>
-        public LeasedBufferPool(BufferCreateFunc createFunc, BufferReleaseFunc releaseFunc)
+        public LeasedBufferPool(BufferCreateFunc<TDesc, TBuffer> createFunc, BufferReleaseFunc<TBuffer> releaseFunc)
             : base(createFunc, releaseFunc) { }
 
         /// <summary>

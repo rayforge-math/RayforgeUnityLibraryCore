@@ -34,8 +34,8 @@ namespace Rayforge.Core.ManagedResources.Pooling
         /// <param name="batchSize">Batch size for rounding allocations.</param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="baseSize"/> is less than 1 or <paramref name="batchSize"/> is negative.</exception>
         public BatchedLeasedBufferPool(
-            BufferCreateFunc createFunc,
-            BufferReleaseFunc releaseFunc,
+            BufferCreateFunc<TDesc, TBuffer> createFunc,
+            BufferReleaseFunc<TBuffer> releaseFunc,
             int baseSize = 1,
             int batchSize = 0)
             : base(createFunc, releaseFunc)

@@ -37,7 +37,7 @@ namespace Rayforge.Core.Environment.Spatial
         private string _baseName;
 
         /// <summary>
-        /// English: Updates the grid resolution and destroys all existing chunks
+        /// Updates the grid resolution and destroys all existing chunks
         /// as their spatial keys are no longer valid for the new size.
         /// </summary>
         public void SetGridSize(GridSize newSize)
@@ -128,13 +128,13 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Factory Implementation
 
-        public virtual T GetOrCreateChunk(Vector3Int key)
+        public virtual bool GetOrCreateChunk(Vector3Int key, out T chunk)
         {
             Vector3Int validKey = MaskKey(key);
-            return CreateInternal(validKey);
+            return CreateInternal(validKey, out chunk);
         }
 
-        public virtual T GetOrCreateChunk(Vector2Int key2D)
+        public bool GetOrCreateChunk(Vector2Int key2D, out T chunk)
         {
             Vector3Int key3d = Vector3Int.zero;
             int currentDimension = 0;
@@ -149,11 +149,11 @@ namespace Rayforge.Core.Environment.Spatial
                 }
             }
 
-            return CreateInternal(MaskKey(key3d));
+            return GetOrCreateChunk(key3d, out chunk);
         }
 
-        public T GetOrCreateChunkAtWorldPos(Vector3 pos)
-            => GetOrCreateChunk(WorldToGrid(pos));
+        public bool GetOrCreateChunkAtWorldPos(Vector3 pos, out T chunk)
+            => GetOrCreateChunk(WorldToGrid(pos), out chunk);
 
         /// <summary>
         /// Attempts to retrieve a chunk at a specific world position.
@@ -171,16 +171,18 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// Centralized logic to create and initialize a chunk.
         /// </summary>
-        private T CreateInternal(Vector3Int validKey)
+        private bool CreateInternal(Vector3Int validKey, out T chunk)
         {
             LogDebug($"Creating Chunk at {validKey}");
 
-            return GetOrCreate(
+            bool isNew = GetOrCreate(
                 validKey,
                 $"Chunk_{validKey.x}_{validKey.y}_{validKey.z}",
                 GridToWorld(validKey),
-                InitializeChunk
+                InitializeChunk,
+                out chunk
             );
+            return isNew;
         }
 
         /// <summary>
@@ -301,6 +303,43 @@ namespace Rayforge.Core.Environment.Spatial
                     {
                         yield return new Vector3Int(x, y, z);
                     }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns only keys whose chunk center is within the actual spherical radius (World Space).
+        /// </summary>
+        public IEnumerable<Vector3Int> GetKeysInRadius(Vector3 center, float radius)
+        {
+            float sqrRadius = radius * radius;
+            Bounds searchBounds = new Bounds(center, Vector3.one * radius * 2f);
+
+            foreach (var key in GetKeysInBounds(searchBounds))
+            {
+                Vector3 chunkPos = GridToWorld(key);
+                if (Vector3.SqrMagnitude(chunkPos - center) <= sqrRadius)
+                {
+                    yield return key;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns only keys whose chunk center is within the actual spherical radius (Relative to Anchor).
+        /// This is preferred for internal logic to remain stable during origin shifts.
+        /// </summary>
+        public IEnumerable<Vector3Int> GetKeysInRelativeRadius(Vector3 localCenter, float radius)
+        {
+            float sqrRadius = radius * radius;
+            Bounds localBounds = new Bounds(localCenter, Vector3.one * radius * 2f);
+
+            foreach (var key in GetKeysInRelativeBounds(localBounds))
+            {
+                Vector3 chunkLocalPos = GridToWorld(key);
+                if (Vector3.SqrMagnitude(chunkLocalPos - (localCenter + Anchor)) <= sqrRadius)
+                {
+                    yield return key;
                 }
             }
         }

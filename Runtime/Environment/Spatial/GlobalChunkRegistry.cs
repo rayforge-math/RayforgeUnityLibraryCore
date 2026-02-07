@@ -33,14 +33,14 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         /// <param name="key">The 3D grid coordinate.</param>
         /// <returns>The chunk instance at the given location.</returns>
-        public static T GetOrCreateChunk(Vector3Int key) => Instance.GetOrCreateChunk(key);
+        public static bool GetOrCreateChunk(Vector3Int key, out T chunk) => Instance.GetOrCreateChunk(key, out chunk);
 
         /// <summary>
         /// Ensures a chunk exists at the given world position, creating it if necessary.
         /// </summary>
         /// <param name="pos">The world-space position.</param>
         /// <returns>The existing or newly created chunk instance.</returns>
-        public static T GetOrCreateChunkAtWorldPos(Vector3 pos) => Instance.GetOrCreateChunkAtWorldPos(pos);
+        public static bool GetOrCreateChunkAtWorldPos(Vector3 pos, out T chunk) => Instance.GetOrCreateChunkAtWorldPos(pos, out chunk);
 
         /// <summary>
         /// Safely removes and destroys a chunk from the grid based on its coordinate.

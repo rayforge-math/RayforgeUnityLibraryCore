@@ -1,6 +1,8 @@
 using Codice.CM.Common.Checkin.Partial;
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
 
@@ -13,11 +15,15 @@ namespace Rayforge.Core.Environment.Spatial
     /// </summary>
     /// <typeparam name="T">The chunk type implementing both spatial and LOD interfaces.</typeparam>
     public class LODChunkRegistry<T> : ChunkRegistry<T>
-        where T : Chunk<T>, ISpatialLOD
+        where T : LODChunk<T>
     {
         #region Fields & Config
         private float[] _lodSqrDistances;
         public Transform Viewer { get; private set; }
+
+        private readonly HashSet<Vector3Int> _dirtyLODChunks = new HashSet<Vector3Int>();
+
+        public Action<ILODState, int, int> OnAnyChunkLODChanged;
 
         #region Debug Helper
         [Conditional("UNITY_EDITOR")]
@@ -43,21 +49,35 @@ namespace Rayforge.Core.Environment.Spatial
         /// Overrides the base factory to ensure a valid LOD is set immediately upon creation.
         /// Prevents visual popping by calculating the LOD before the first frame is rendered.
         /// </summary>
-        public override T GetOrCreateChunk(Vector3Int key)
+        public override bool GetOrCreateChunk(Vector3Int key, out T chunk)
         {
-            T chunk = base.GetOrCreateChunk(key);
+            bool isNew = base.GetOrCreateChunk(key, out chunk);
+            if (isNew)
+            {
+                chunk.OnLODChanged += HandleChunkLODChanged;
 
-            float sqrDist = chunk.GetSqrDistanceToClosestEdge(ViewerPos);
-            int targetLod = CalculateTargetLOD(sqrDist);
-            chunk.UpdateLOD(targetLod);
+                float sqrDist = chunk.GetSqrDistanceToClosestEdge(ViewerPos);
+                int targetLod = CalculateTargetLOD(sqrDist);
+                chunk.UpdateLOD(targetLod);
+            }
 
-            LogDebug($"Created Chunk {key} with initial LOD {targetLod}");
+            LogDebug($"Created Chunk {key} with initial LOD {chunk.CurrentLOD}");
 
-            return chunk;
+            return isNew;
         }
         #endregion
 
         #region Core LOD Logic
+
+        private void HandleChunkLODChanged(ILODState sender, int oldLod, int newLod)
+        {
+            _dirtyLODChunks.Add(sender.GridKey);
+            OnAnyChunkLODChanged?.Invoke(sender, oldLod, newLod);
+            UnityEngine.Debug.Log("Added: " + sender.GridKey);
+        }
+
+        //private Vector3 _lastViewerPos = Vector3.zero;
+        //private float _lastMaxDistance = .0f;
 
         /// <summary> Triggers a full LOD update using the current viewer position. </summary>
         public void UpdateLODs() => UpdateLODs(ViewerPos);
@@ -66,7 +86,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// Evaluates and updates the LOD level for all active chunks.
         /// Only triggers the chunk's update logic if the LOD index actually changed.
         /// </summary>
-        public void UpdateLODs(Vector3 focusPos)
+        public int UpdateLODs(Vector3 focusPos)
         {
             int changeCount = 0;
 
@@ -85,6 +105,7 @@ namespace Rayforge.Core.Environment.Spatial
             }
 
             LogDebug($"LOD Update: {changeCount} chunks changed their LOD level.");
+            return changeCount;
         }
 
         /// <summary>

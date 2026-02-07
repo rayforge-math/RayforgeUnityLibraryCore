@@ -23,8 +23,8 @@ namespace Rayforge.Core.ManagedResources.Pooling
         /// <param name="createFunc">Factory function to create a new buffer.</param>
         /// <param name="releaseFunc">Function to release a buffer permanently.</param>
         public ManagedTexture2DArrayPool(
-            BufferCreateFunc createFunc,
-            BufferReleaseFunc releaseFunc)
+            BufferCreateFunc<Texture2dArrayDescriptor, ManagedTexture2DArray> createFunc,
+            BufferReleaseFunc<ManagedTexture2DArray> releaseFunc)
             : base(createFunc, releaseFunc)
         { }
     }

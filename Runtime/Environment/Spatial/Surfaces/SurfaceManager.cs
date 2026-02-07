@@ -1,12 +1,14 @@
 using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Common.Rendering.Helpers;
+using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Spatial.Surfaces;
+using Rayforge.Core.ManagedResources.NativeMemory;
+using Rayforge.Core.ManagedResources.Pooling;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using Rayforge.Core.Diagnostics;
-using UnityEngine;
 using System.Runtime.CompilerServices;
+using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Surface
 {
@@ -76,6 +78,12 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         private Vector3 _lastUpdatePos;
         private bool _needsSpatialSync = false;
 
+        private static readonly BufferCreateFunc<RenderTextureDescriptorWrapper, ManagedRenderTexture> s_Create =
+            _ => ManagedRenderTexture.Create(_, FilterMode.Point, TextureWrapMode.Clamp);
+        private ManagedRenderTexturePool _texturePool = new ManagedRenderTexturePool(s_Create);
+
+        private readonly Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>> _leasedBuffers = new Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>>();
+
         private bool IsReady => lodReference != null && _chunkRegistry != null && _registry != null;
         #endregion
 
@@ -125,6 +133,8 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
             _chunkRegistry = null;
             _registry = null;
+
+            _texturePool?.Dispose();
         }
 
         private void OnValidate()
@@ -453,7 +463,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                     }
                     else
                     {
-                        _chunkRegistry.GetOrCreateChunk(key);
+                        _chunkRegistry.GetOrCreateChunk(key, out chunk);
                         createdCount++;
                         LogDebug($"Sync: Created new chunk shell at {key}");
                     }

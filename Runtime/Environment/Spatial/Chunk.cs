@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using UnityEngine;
+using Rayforge.Core.Environment.Abstractions;
 
 namespace Rayforge.Core.Environment.Spatial
 {
@@ -10,7 +11,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// </summary>
     /// <typeparam name="T">The derived type for type-safe processing and registry management.</typeparam>
     [ChunkConfig(SpatialAxes.Voxel)]
-    public abstract class Chunk<T> : MonoBehaviour, ISpatialEntry, IDisposable
+    public abstract class Chunk<T> : MonoBehaviour, ISpatialEntry, IChunk, IDisposable
         where T : Chunk<T>
     {
         #region Spatial Settings
@@ -33,6 +34,8 @@ namespace Rayforge.Core.Environment.Spatial
 
         public Vector2Int GridKeyXY => new Vector2Int(GridKey.x, GridKey.y);
         public Vector2Int GridKeyXZ => new Vector2Int(GridKey.x, GridKey.z);
+
+        public Vector3 WorldPosition => transform.position;
 
         /// <summary>
         /// Static cache for the axes configuration. 

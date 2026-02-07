@@ -1,9 +1,20 @@
+using NUnit.Framework.Internal;
 using Rayforge.Core.Diagnostics;
 using System;
 using System.Collections.Generic;
 
 namespace Rayforge.Core.ManagedResources.Pooling
 {
+    /// <summary>
+    /// Factory to create a new buffer from a descriptor.
+    /// </summary>
+    public delegate TBuffer BufferCreateFunc<in TDesc, out TBuffer>(TDesc desc);
+
+    /// <summary>
+    /// Callback invoked when a buffer is permanently released from the pool.
+    /// </summary>
+    public delegate void BufferReleaseFunc<in TBuffer>(TBuffer buffer);
+
     /// <summary>
     /// Base class for buffer pools that manage reusable buffer objects and hand them out as lease wrappers.
     /// This pool is *not* thread-safe; derived classes must implement any required thread-safety, eviction policy, 
@@ -25,12 +36,12 @@ namespace Rayforge.Core.ManagedResources.Pooling
         /// <summary>
         /// Factory used to create new buffers on demand.
         /// </summary>
-        protected readonly BufferCreateFunc m_CreateFunc;
+        protected readonly BufferCreateFunc<TDesc, TBuffer> m_CreateFunc;
 
         /// <summary>
         /// Factory used to permanently release a buffer.
         /// </summary>
-        protected readonly BufferReleaseFunc m_ReleaseFunc;
+        protected readonly BufferReleaseFunc<TBuffer> m_ReleaseFunc;
 
         /// <summary>
         /// Free buffers grouped by descriptor for quick reuse.
@@ -43,16 +54,6 @@ namespace Rayforge.Core.ManagedResources.Pooling
         protected readonly HashSet<TBuffer> m_Reserved = new();
 
         /// <summary>
-        /// Factory to create a new buffer from a descriptor.
-        /// </summary>
-        public delegate TBuffer BufferCreateFunc(TDesc desc);
-
-        /// <summary>
-        /// Callback invoked when a buffer is permanently released from the pool.
-        /// </summary>
-        public delegate void BufferReleaseFunc(TBuffer buffer);
-
-        /// <summary>
         /// Constructs a new base buffer pool with the provided create and release functions.
         /// </summary>
         /// <param name="createFunc">Function used to create a new buffer when the pool has no free buffers.</param>
@@ -60,7 +61,7 @@ namespace Rayforge.Core.ManagedResources.Pooling
         /// <exception cref="ArgumentNullException">
         /// Thrown if <paramref name="createFunc"/> or <paramref name="releaseFunc"/> is null.
         /// </exception>
-        protected LeasedBufferPoolBase(BufferCreateFunc createFunc, BufferReleaseFunc releaseFunc)
+        protected LeasedBufferPoolBase(BufferCreateFunc<TDesc, TBuffer> createFunc, BufferReleaseFunc<TBuffer> releaseFunc)
         {
             m_CreateFunc = createFunc ?? 
                 throw new ArgumentNullException(nameof(createFunc));
