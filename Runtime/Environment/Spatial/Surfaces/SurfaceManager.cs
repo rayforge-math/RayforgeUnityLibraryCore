@@ -5,11 +5,13 @@ using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Surfaces;
 using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.ManagedResources.Pooling;
+using Rayforge.Core.Rendering.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace Rayforge.Core.Environment.Spatial.Surface
 {
@@ -79,11 +81,16 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         private Vector3 _lastUpdatePos;
         private bool _needsSpatialSync = false;
 
+        SurfaceLODLevel[] _validLodLevels = Array.Empty<SurfaceLODLevel>();
+
         private static readonly BufferCreateFunc<RenderTextureDescriptorWrapper, ManagedRenderTexture> s_Create =
             _ => ManagedRenderTexture.Create(_, FilterMode.Point, TextureWrapMode.Clamp);
-        private ManagedRenderTexturePool _texturePool = new ManagedRenderTexturePool(s_Create);
+        private readonly ManagedRenderTexturePool _texturePool = new ManagedRenderTexturePool(s_Create);
 
         private readonly Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>> _leasedBuffers = new Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>>();
+        private readonly HashSet<Vector3Int> _toRelease = new HashSet<Vector3Int>();
+        private readonly HashSet<Vector3Int> _toAssign = new HashSet<Vector3Int>();
+        private bool _needsBufferSync = false;
 
         private bool IsReady => lodReference != null && _chunkRegistry != null && _registry != null;
         #endregion
@@ -92,6 +99,9 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         private void Awake()
         {
             SetupDependencies();
+            SanitizeLODLevels();
+            CacheValidLodLevels();
+
             EnsureSystemsReady(true);
 
             if (shiftRelay != null)
@@ -99,6 +109,8 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 shiftRelay.OnWorldShiftDetected -= HandleOriginShift;
                 shiftRelay.OnWorldShiftDetected += HandleOriginShift;
             }
+
+            _texturePool.showDebugLogs = true;
         }
 
         private void Start()
@@ -123,7 +135,12 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 _chunkRegistry.UpdateLODs();
             }
 
-
+            if (_needsBufferSync)
+            {
+                LogDebug("Update: Heightmap updates triggered by registry changes.");
+                UdpateChunkHandles();
+                _needsBufferSync = false;
+            }
         }
 
         private void OnDestroy()
@@ -146,6 +163,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
             SetupDependencies();
             SanitizeLODLevels();
+            CacheValidLodLevels();
 
             UpdateGridSize();
             UpdateLODSettings();
@@ -180,6 +198,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                     (GridSize)chunkSize,
                     transform.position,
                     GetValidLodDistances(),
+                    true,
                     lodReference,
                     this.transform
                 );
@@ -287,22 +306,22 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         private float[] GetValidLodDistances()
         {
-            var lods = GetValidLodLevels();
-            var distances = new float[lods.Length];
-            for (int i = 0; i < lods.Length; ++i)
+            var distances = new float[_validLodLevels.Length];
+            for (int i = 0; i < _validLodLevels.Length; ++i)
             {
-                distances[i] = lods[i].distanceThreshold;
+                distances[i] = _validLodLevels[i].distanceThreshold;
             }
 
             return distances;
         }
 
-        private SurfaceLODLevel[] GetValidLodLevels()
+        private void CacheValidLodLevels()
         {
             if (lodLevels == null || lodLevels.Length == 0)
             {
                 LogDebug("GetValidLodLevels: No LOD levels defined.");
-                return new SurfaceLODLevel[0];
+                _validLodLevels = new SurfaceLODLevel[0];
+                return;
             }
 
             List<SurfaceLODLevel> validLevels = new List<SurfaceLODLevel>(capacity: lodLevels.Length);
@@ -338,7 +357,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             }
 
             LogDebug($"LOD Validation complete: {validLevels.Count} valid levels extracted from {lodLevels.Length} entries.");
-            return validLevels.ToArray();
+            _validLodLevels = validLevels.ToArray();
         }
 
         #endregion
@@ -466,7 +485,11 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                     }
                     else
                     {
-                        Action<SurfaceChunk> configChunk = _ => { _.OnLODChanged += HandleChunkLODChanged; };
+                        Action<SurfaceChunk> configChunk = _ =>
+                        {
+                            _.OnLODChanged += HandleChunkLODChanged;
+                            _.OnCleanup += HandleChunkCleanup;
+                        };
 
                         if(_chunkRegistry.GetOrCreateChunk(key, configChunk, out chunk))
                         {
@@ -488,9 +511,70 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         private void HandleChunkLODChanged(ILODState sender, int oldLod, int newLod)
         {
-            UnityEngine.Debug.LogWarning(sender.GridKey + ": " + oldLod + " -> " + newLod);
+            if (oldLod != newLod)
+            {
+                if (oldLod >= 0)
+                {
+                    _toRelease.Add(sender.GridKey);
+                }
+
+                if (newLod >= 0)
+                {
+                    _toAssign.Add(sender.GridKey);
+                }
+                else
+                {
+                    _toAssign.Remove(sender.GridKey);
+                }
+
+                _needsBufferSync = true;
+            }
         }
 
+        private void HandleChunkCleanup(SurfaceChunk sender)
+        {
+            _toRelease.Add(sender.GridKey);
+        }
+
+        private void UdpateChunkHandles()
+        {
+            foreach (var key in _toRelease)
+            {
+                if (_leasedBuffers.TryGetValue(key, out var lease))
+                {
+                    lease.Return();
+                    _leasedBuffers.Remove(key);
+
+                    LogDebug($"Returned buffer for chunk {key}");
+                }
+            }
+            _toRelease.Clear();
+
+
+            foreach (var key in _toAssign)
+            { 
+                if (_chunkRegistry.TryGetEntry(key, out SurfaceChunk chunk))
+                {
+                    int currentLod = chunk.CurrentLOD;
+
+                    if (currentLod >= 0 && currentLod < _validLodLevels.Length)
+                    {
+                        var settings = _validLodLevels[currentLod];
+                        var res = (int)settings.mapResolution;
+
+                        var descriptor = new RenderTextureDescriptorWrapper { Descriptor = DefaultDescriptors.HeightmapDefault(res, res) };
+                        var newLease = _texturePool.Rent(descriptor);
+
+                        _leasedBuffers[key] = newLease;
+                        chunk.SetHeightmap(newLease.BufferHandle.Buffer);
+
+                        LogDebug($"Rented buffer for chunk {key}");
+                    }
+                }
+            }
+            _toAssign.Clear();
+        }
+        /*
         private void ProcessBaking()
         {
             LogDebug($"Beginning Baking Cycle...");
@@ -520,7 +604,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
             // English: HeightmapBaker.Bake(chunk, relevantObjects, resolution);
         }
-
+        */
         private bool CheckMovementThreshold()
         {
             float distSqr = (lodReference.position - _lastUpdatePos).sqrMagnitude;

@@ -21,9 +21,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         public void SetHeightmap(RenderTexture map)
         {
-            if (Heightmap != null && Heightmap != map)
-                Heightmap.Release();
-
             Heightmap = map;
         }
 

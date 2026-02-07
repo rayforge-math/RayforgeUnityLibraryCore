@@ -19,7 +19,11 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         public Texture2dDescriptor Descriptor
         {
             get => descriptor;
-            set => descriptor.CopyFrom(value);
+            set
+            {
+                descriptor = value;
+                descriptor.Validate();
+            }
         }
 
         /// <summary>

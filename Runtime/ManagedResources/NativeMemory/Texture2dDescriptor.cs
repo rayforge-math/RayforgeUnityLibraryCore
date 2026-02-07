@@ -69,17 +69,11 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         public TextureWrapMode WrapMode { get => wrapMode; set => wrapMode = value; }
 
         /// <summary>
-        /// Copies all fields from another descriptor, using property setters (assertions applied).
+        /// Validates the texture properties to ensure they are compatible with Unity's Texture2D requirements.
         /// </summary>
-        public void CopyFrom(Texture2dDescriptor other)
+        public void Validate()
         {
-            Width = other.Width;
-            Height = other.Height;
-            ColorFormat = other.ColorFormat;
-            MipCount = other.MipCount;
-            Linear = other.Linear;
-            FilterMode = other.FilterMode;
-            WrapMode = other.WrapMode;
+            if (mipCount <= 0) mipCount = 1;
         }
 
         /// <summary>

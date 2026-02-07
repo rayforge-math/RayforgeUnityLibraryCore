@@ -1,8 +1,6 @@
-using Codice.CM.Common.Checkin.Partial;
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
 
@@ -21,6 +19,8 @@ namespace Rayforge.Core.Environment.Spatial
         private float[] _lodSqrDistances;
         public Transform Viewer { get; private set; }
 
+        private readonly bool _deactivateOnCulled;
+
         #region Debug Helper
         [Conditional("UNITY_EDITOR")]
         private void LogDebug(string message, string color = "#FFAB91")
@@ -33,9 +33,10 @@ namespace Rayforge.Core.Environment.Spatial
         private Vector3 ViewerPos => (Viewer != null) ? Viewer.position : Vector3.zero;
         #endregion
 
-        public LODChunkRegistry(GridSize gridSize, Vector3 initialAnchor, float[] lodDistances, Transform viewer = null, Transform container = null)
+        public LODChunkRegistry(GridSize gridSize, Vector3 initialAnchor, float[] lodDistances, bool deactivateOnCulled = true, Transform viewer = null, Transform container = null)
             : base(gridSize, initialAnchor, container)
         {
+            _deactivateOnCulled = deactivateOnCulled;
             Viewer = viewer;
             UpdateLodDistances(lodDistances);
         }
@@ -92,7 +93,7 @@ namespace Rayforge.Core.Environment.Spatial
         {
             float sqrDist = chunk.GetSqrDistanceToClosestEdge(pos);
             int targetLod = CalculateTargetLOD(sqrDist);
-            return ((ILODReceiver)chunk).UpdateLOD(targetLod);
+            return ((ILODReceiver)chunk).UpdateLOD(targetLod, _deactivateOnCulled);
         }
 
         /// <summary>

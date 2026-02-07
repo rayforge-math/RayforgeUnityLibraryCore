@@ -72,6 +72,7 @@ namespace Rayforge.Core.Rendering.Helpers
                 colorFormat = RenderTextureFormat.RFloat,
                 depthBufferBits = 0,
                 dimension = TextureDimension.Tex2D,
+                volumeDepth = 1,
                 useMipMap = false,
                 autoGenerateMips = false,
                 msaaSamples = 1,

@@ -16,7 +16,11 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         public RenderTextureDescriptor Descriptor
         {
             get => descriptor;
-            set => CopyFrom(value);
+            set
+            {
+                descriptor = value;
+                Validate();
+            }
         }
 
         /// <summary>The width of the render texture. Must be > 0.</summary>
@@ -66,6 +70,17 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         {
             get => descriptor.dimension;
             set => descriptor.dimension = value;
+        }
+
+        /// <summary>Volume depth (must be at least 1 for 2D textures).</summary>
+        public int VolumeDepth
+        {
+            get => descriptor.volumeDepth;
+            set
+            {
+                Assertions.AtLeastOne(value, "VolumeDepth must be at least one.");
+                descriptor.volumeDepth = value;
+            }
         }
 
         /// <summary>MSAA sample count (1, 2, 4, 8).</summary>
@@ -154,32 +169,13 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             => !left.Equals(right);
 
         /// <summary>
-        /// Copies all fields from another descriptor wrapper into this one.
-        /// Validates width, height, depth, MSAA, etc. using assertions.
+        /// Validates the descriptor fields to ensure they meet Unity's requirements.
+        /// Prevents ArgumentExceptions by enforcing minimum values for dimensions and samples.
         /// </summary>
-        /// <param name="other">The source descriptor wrapper to copy from.</param>
-        public void CopyFrom(RenderTextureDescriptorWrapper other)
-            => CopyFrom(other.descriptor);
-
-        /// <summary>
-        /// Copies all fields from another descriptor into this one.
-        /// Validates width, height, depth, MSAA, etc. using assertions.
-        /// </summary>
-        /// <param name="other">The source descriptor to copy from.</param>
-        public void CopyFrom(RenderTextureDescriptor desc)
+        private void Validate()
         {
-            Width = desc.width;
-            Height = desc.height;
-            ColorFormat = desc.colorFormat;
-            DepthBufferBits = desc.depthBufferBits;
-            Dimension = desc.dimension;
-            MSAASamples = desc.msaaSamples;
-            UseMipMap = desc.useMipMap;
-            AutoGenerateMips = desc.autoGenerateMips;
-            EnableRandomWrite = desc.enableRandomWrite;
-            UseDynamicScale = desc.useDynamicScale;
-            SRGB = desc.sRGB;
-            BindMS = desc.bindMS;
+            if (descriptor.volumeDepth <= 0) descriptor.volumeDepth = 1;
+            if (descriptor.msaaSamples <= 0) descriptor.msaaSamples = 1;
         }
     }
 }
