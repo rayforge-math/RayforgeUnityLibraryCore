@@ -35,7 +35,7 @@ namespace Rayforge.Core.Rendering.Projection
         /// Static constructor: loads the bake shader and initializes graphics resources.
         /// </summary>
         /// <exception cref="InvalidOperationException">
-        /// Thrown if the shader <c>Hidden/HeightmapBake</c> could not be found.
+        /// Thrown if the shader <c>Rayfroge/HeightmapProjection</c> could not be found.
         /// </exception>
         static HeightmapBaker()
         {
@@ -72,15 +72,8 @@ namespace Rayforge.Core.Rendering.Projection
             IEnumerable<Renderer> renderers,
             IEnumerable<Terrain> terrains = null)
         {
-            var param = new HeightmapBakeParams
-            {
-                WorldCenter = origin + localCenter,
-                Extent = extent,
-                MinY = minY,
-                MaxY = maxY
-            };
-
-            Bake(target, param, renderers, terrains);
+            Vector3 worldCenter = origin + localCenter;
+            Bake(target, worldCenter, extent, minY, maxY, renderers, terrains);
         }
 
         /// <summary>
@@ -160,15 +153,8 @@ namespace Rayforge.Core.Rendering.Projection
             IEnumerable<Renderer> renderers,
             IEnumerable<Terrain> terrains = null)
         {
-            var param = new HeightmapBakeParams
-            {
-                WorldCenter = origin + localCenter,
-                Extent = extent,
-                MinY = minY,
-                MaxY = maxY
-            };
-
-            SetupBakeCommandBuffer(cmd, target, param, renderers, terrains);
+            Vector3 worldCenter = origin + localCenter;
+            SetupBakeCommandBuffer(cmd, target, worldCenter, extent, minY, maxY, renderers, terrains);
         }
 
         /// <summary>
@@ -223,17 +209,23 @@ namespace Rayforge.Core.Rendering.Projection
             if (cmd == null) throw new ArgumentNullException(nameof(cmd));
             if (target == null) throw new ArgumentNullException(nameof(target));
 
+            if(renderers == null && terrains == null) throw new ArgumentNullException($"Renderers {nameof(renderers)} or terrains {nameof(terrains)} are null");
+
             cmd.SetRenderTarget(target);
 
             cmd.ClearRenderTarget(true, true, new Color(float.MinValue, 0, 0, 1));
 
-            Vector3 camPos = new Vector3(param.WorldCenter.x, param.MaxY, param.WorldCenter.z);
-            Vector3 lookTarget = new Vector3(param.WorldCenter.x, param.MinY, param.WorldCenter.z);
+            float absMaxY = param.WorldCenter.y + param.MaxY;
+            float absMinY = param.WorldCenter.y + param.MinY;
+
+            Vector3 camPos = new Vector3(param.WorldCenter.x, absMaxY, param.WorldCenter.z);
+            Vector3 lookTarget = new Vector3(param.WorldCenter.x, absMinY, param.WorldCenter.z);
 
             Matrix4x4 viewMatrix = Matrix4x4.LookAt(camPos, lookTarget, Vector3.forward);
 
             float depth = param.MaxY - param.MinY;
-            Matrix4x4 projMatrix = Matrix4x4.Ortho(-param.Extent, param.Extent, -param.Extent, param.Extent, 0, depth);
+            float extent = param.Extent;
+            Matrix4x4 projMatrix = Matrix4x4.Ortho(-extent, extent, -extent, extent, 0, depth);
 
             cmd.SetViewProjectionMatrices(viewMatrix, projMatrix);
 
