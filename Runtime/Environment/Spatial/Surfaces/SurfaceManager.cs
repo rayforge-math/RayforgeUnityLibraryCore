@@ -6,6 +6,7 @@ using Rayforge.Core.Environment.Spatial.Surfaces;
 using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.ManagedResources.Pooling;
 using Rayforge.Core.Rendering.Helpers;
+using Rayforge.Core.Rendering.Projection;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -53,6 +54,10 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         [Tooltip("Define LOD levels (Distances and Resolutions).")]
         public SurfaceLODLevel[] lodLevels;
+        [Tooltip("Define LOD levels (Distances and Resolutions).")]
+        public float minRelativeY;
+        [Tooltip("Define LOD levels (Distances and Resolutions).")]
+        public float maxRelativeY;
 
         [Header("Surface Detection Settings")]
         [Tooltip("If enabled, the manager automatically scans all children of this GameObject.")]
@@ -77,7 +82,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         private readonly List<int> _cleanupBuffer = new List<int>(32);
 
         private LODChunkRegistry<SurfaceChunk> _chunkRegistry;
-        private SpatialObjectRegistry _registry;
+        private SpatialObjectRegistry _objectRegistry;
         private Vector3 _lastUpdatePos;
         private bool _needsSpatialSync = false;
 
@@ -94,7 +99,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         private readonly HashSet<Vector3Int> _chunksPendingBake = new HashSet<Vector3Int>();
 
-        private bool IsReady => lodReference != null && _chunkRegistry != null && _registry != null;
+        private bool IsReady => lodReference != null && _chunkRegistry != null && _objectRegistry != null;
         #endregion
 
         #region Unity Lifecycle
@@ -156,10 +161,10 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 shiftRelay.OnWorldShiftDetected -= HandleOriginShift;
 
             _chunkRegistry?.Dispose();
-            _registry?.Clear();
+            _objectRegistry?.Clear();
 
             _chunkRegistry = null;
-            _registry = null;
+            _objectRegistry = null;
 
             _texturePool?.Dispose();
         }
@@ -187,10 +192,10 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         private void CreateObjectRegistry(bool force = false)
         {
-            if (_registry == null || force)
+            if (_objectRegistry == null || force)
             {
-                _registry = new SpatialObjectRegistry();
-                //_registry.showDebugLogs = showDebugLogs;
+                _objectRegistry = new SpatialObjectRegistry();
+                //_objectRegistry.showDebugLogs = showDebugLogs;
                 LogDebug("Spatial Object Registry initialized.");
             }
         }
@@ -211,7 +216,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 );
                 //_chunkRegistry.showDebugLogs = showDebugLogs;
 
-                _registry?.Initialize(_chunkRegistry);
+                _objectRegistry?.Initialize(_chunkRegistry);
                 LogDebug($"Chunk Registry created. GridSize: {(int)chunkSize}m");
             }
         }
@@ -236,7 +241,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             if (_chunkRegistry.GridSize != (GridSize)chunkSize)
             {
                 _chunkRegistry.SetGridSize((GridSize)chunkSize);
-                _registry?.Initialize(_chunkRegistry);
+                _objectRegistry?.Initialize(_chunkRegistry);
                 _needsSpatialSync = true;
 
                 LogDebug("Grid Settings synchronized.");
@@ -374,7 +379,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         public void RebuildRegistry()
         {
             LogDebug("Rebuilding Registry...");
-            _registry.Clear();
+            _objectRegistry.Clear();
             SyncFromList();
             if (scanHierarchy) ScanHierarchyRecursive(transform);
         }
@@ -398,7 +403,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             }
 
             _cleanupBuffer.Clear();
-            foreach (int id in _registry.GetAllIds())
+            foreach (int id in _objectRegistry.GetAllIds())
             {
                 if (!_surfaceIds.Contains(id)) _cleanupBuffer.Add(id);
             }
@@ -426,7 +431,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             if (obj == null) return false;
             if (!IsValidCandidate(obj.transform)) return false;
 
-            if (_registry.TryRegister(obj))
+            if (_objectRegistry.TryRegister(obj))
             {
                 if (!_surfaceIds.Contains(obj.GetInstanceID())) _surfaceIds.Add(obj.GetInstanceID());
                 if (!surfaces.Contains(obj)) surfaces.Add(obj);
@@ -439,7 +444,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         public bool RemoveSurface(int id)
         {
-            if (_registry.Unregister(id))
+            if (_objectRegistry.Unregister(id))
             {
                 _surfaceIds.Remove(id);
                 surfaces.RemoveAll(s => s.GetInstanceID() == id);
@@ -471,20 +476,29 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
         #region Runtime Processing & Baking
 
+        public void RebakeAll()
+        {
+            foreach (var key in _leasedBuffers.Keys)
+            {
+                _chunksPendingBake.Add(key);
+            }
+        }
+
         private void SynchronizeChunksWithRegistry()
         {
             int createdCount = 0;
             int updatedCount = 0;
             int removedCount = 0;
 
-            foreach (var key in _registry.GetDirtyBuckets())
+            foreach (var key in _objectRegistry.GetDirtyBuckets())
             {
-                bool hasData = _registry.HasDataInBucket(key);
+                bool hasData = _objectRegistry.HasDataInBucket(key);
                 bool exists = _chunkRegistry.TryGetEntry(key, out var chunk);
 
                 if (hasData)
                 {
-                    _chunksPendingBake.Add(key);
+                    if (exists && chunk.IsVisible)
+                        _chunksPendingBake.Add(key);
 
                     if (exists)
                     {
@@ -513,7 +527,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                     LogDebug($"Sync: Removed empty chunk shell at {key}");
                 }
             }
-            _registry.ClearDirtyBuckets();
+            _objectRegistry.ClearDirtyBuckets();
 
             LogDebug($"Spatial Sync Summary: {createdCount} created, {updatedCount} updated, {removedCount} removed.");
         }
@@ -585,26 +599,36 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         private void ProcessBaking()
         {
             LogDebug($"Beginning Baking Cycle...");
-
+            
             foreach (var key in _chunksPendingBake)
             {
-                if (_chunkRegistry.TryGetEntry(key, out SurfaceChunk chunk))
+                LogDebug($"Trying to bake Chunk {key}");
+
+                if (!_chunkRegistry.TryGetEntry(key, out SurfaceChunk chunk))
                 {
-                    //chunk.Heightmap;
+                    continue;
                 }
+
+                if (chunk.Heightmap == null) continue;
+
+                var bakeParams = new HeightmapBakeParams
+                {
+                    WorldCenter = chunk.WorldPosition,
+                    Extent = new Vector2(chunk.localExtent.x, chunk.localExtent.z),
+                    MinY = minRelativeY,
+                    MaxY = maxRelativeY
+                };
+
+                HeightmapBaker.Bake(
+                    chunk.Heightmap,
+                    bakeParams,
+                    _objectRegistry.GetRenderersInCell(key),
+                    _objectRegistry.GetTerrainsInCell(key)
+                );
+
+                LogDebug($"Bake completed for Chunk {key} at {bakeParams.WorldCenter}");
             }
-
             _chunksPendingBake.Clear();
-        }
-
-        private void PerformChunkBake(SurfaceChunk chunk)
-        {
-            var relevantObjects = _registry.GetObjectsInCell(chunk.GridKey);
-            int resolution = GetResolutionForLod(chunk.CurrentLOD);
-
-            LogDebug($"Baking Chunk {chunk.GridKey} | LOD {chunk.CurrentLOD} | Res {resolution}px | Objects: {relevantObjects.Count}");
-
-            // English: HeightmapBaker.Bake(chunk, relevantObjects, resolution);
         }
         
         private bool CheckMovementThreshold()
@@ -618,13 +642,6 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 return true;
             }
             return false;
-        }
-
-        private int GetResolutionForLod(int lodLevel)
-        {
-            if (lodLevels == null || lodLevels.Length == 0) return 64;
-            int index = Mathf.Clamp(lodLevel, 0, lodLevels.Length - 1);
-            return (int)lodLevels[index].mapResolution;
         }
 
         #endregion
@@ -651,10 +668,10 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             surfaces.Clear();
             _cleanupBuffer.Clear();
 
-            if (_registry != null)
+            if (_objectRegistry != null)
             {
-                _registry = new SpatialObjectRegistry { showDebugLogs = this.showDebugLogs };
-                _registry.Initialize(_chunkRegistry);
+                _objectRegistry = new SpatialObjectRegistry { showDebugLogs = this.showDebugLogs };
+                _objectRegistry.Initialize(_chunkRegistry);
             }
 
             if (_chunkRegistry != null)
@@ -698,6 +715,12 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             if (GUILayout.Button("Clear Surfaces", GUILayout.Height(30)))
             {
                 script.ClearAll();
+            }
+
+            GUILayout.Space(10);
+            if (GUILayout.Button("Bake Heightmaps", GUILayout.Height(30)))
+            {
+                script.RebakeAll();
             }
         }
     }

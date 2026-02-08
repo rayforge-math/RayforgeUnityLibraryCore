@@ -163,20 +163,37 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         #region Spatial Queries
 
         /// <summary>
-        /// Returns all object states that are registered within the given cell.
+        /// Provides an enumerable of all Renderers within a specific spatial cell.
         /// </summary>
-        public List<SpatialObjectState> GetObjectsInCell(Vector3Int key)
+        public IEnumerable<Renderer> GetRenderersInCell(Vector3Int key)
         {
-            List<SpatialObjectState> result = new List<SpatialObjectState>();
-            if (_spatialBuckets.TryGetValue(key, out var ids))
+            if (!_spatialBuckets.TryGetValue(key, out var ids))
+                yield break;
+
+            foreach (int id in ids)
             {
-                foreach (int id in ids)
+                if (_registry.TryGetValue(id, out var state) && state.renderer != null)
                 {
-                    if (_registry.TryGetValue(id, out var state))
-                        result.Add(state);
+                    yield return state.renderer;
                 }
             }
-            return result;
+        }
+
+        /// <summary>
+        /// Provides an enumerable of all Terrains within a specific spatial cell.
+        /// </summary>
+        public IEnumerable<Terrain> GetTerrainsInCell(Vector3Int key)
+        {
+            if (!_spatialBuckets.TryGetValue(key, out var ids))
+                yield break;
+
+            foreach (int id in ids)
+            {
+                if (_registry.TryGetValue(id, out var state) && state.terrain != null)
+                {
+                    yield return state.terrain;
+                }
+            }
         }
 
         /// <summary>
@@ -252,24 +269,25 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 return false;
             }
 
-            TryGetMesh(obj, out Mesh mesh);
-
             bool isTerrain = obj.TryGetComponent<Terrain>(out var terrain);
             if (isTerrain)
             {
-                bool hasCollider = obj.TryGetComponent<TerrainCollider>(out var tc) && tc.enabled;
-                if (terrain.terrainData == null || !hasCollider)
+                if (terrain.terrainData == null)
                 {
-                    LogDebug($"Registry: {obj.name} has Terrain component but missing data or enabled collider.");
+                    LogDebug($"Registry: {obj.name} ignored. Missing TerrainData.");
                     isTerrain = false;
                     terrain = null;
                 }
             }
 
-            if (mesh == null && !isTerrain)
+            Renderer renderer = null;
+            if (!isTerrain)
             {
-                LogDebug($"Registry: {obj.name} ignored. No valid Mesh or Terrain found.");
-                return false;
+                if (!TryGetRenderer(obj, out renderer))
+                {
+                    LogDebug($"Registry: {obj.name} ignored. No valid Renderer or Terrain found.");
+                    return false;
+                }
             }
 
             if (!TryGetSpatialBounds(obj, out Bounds worldBounds))
@@ -282,20 +300,32 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 worldBounds,
                 obj.transform.localToWorldMatrix,
                 _gridProvider.Anchor,
-                mesh,
+                renderer,
                 terrain
             );
 
             if (showDebugLogs)
             {
                 Vector3 localPos = worldBounds.center - _gridProvider.Anchor;
-                LogDebug($"Registry: Created state for '{obj.name}'\n" +
-                         $"  World Center: {worldBounds.center}\n" +
-                         $"  Relative to Anchor: {localPos}\n" +
-                         $"  Bounds Size: {worldBounds.size}");
+                LogDebug($"Registry: Created state for '{obj.name}' (Renderer: {renderer?.GetType().Name ?? "None"}, Terrain: {isTerrain})\n" +
+                         $"  Relative to Anchor: {localPos}");
             }
 
             return true;
+        }
+
+        private bool TryGetRenderer(GameObject obj, out Renderer renderer)
+        {
+            if (obj.TryGetComponent<Renderer>(out renderer))
+            {
+                if (renderer is MeshRenderer || renderer is SkinnedMeshRenderer)
+                {
+                    return true;
+                }
+            }
+
+            renderer = null;
+            return false;
         }
 
         private bool TryGetMesh(GameObject obj, out Mesh mesh)
@@ -313,13 +343,13 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 mesh = skinned.sharedMesh;
                 return true;
             }
-
+            /*
             if (obj.TryGetComponent<MeshCollider>(out var meshCol) && meshCol.sharedMesh != null)
             {
                 mesh = meshCol.sharedMesh;
                 return true;
             }
-
+            */
             return false;
         }
 

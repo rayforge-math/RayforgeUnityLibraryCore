@@ -20,9 +20,8 @@ namespace Rayforge.Core.Environment.Spatial
         public Matrix4x4 localToAnchor;
 
         [Header("Geometry Data")]
-        public Mesh mesh;
+        public Renderer renderer;
         public Terrain terrain;
-        public int subMeshIndex;
 
         /// <summary>
         /// Helps the Baker decide whether to use DrawMesh or a Terrain-specific pass.
@@ -41,13 +40,13 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="worldBounds">The current bounds in Unity world space.</param>
         /// <param name="localToWorld">The current localToWorld matrix of the GameObject.</param>
         /// <param name="anchor">The current reference anchor of the registry.</param>
-        /// <param name="mesh">The mesh reference for geometry tracking.</param>
+        /// <param name="renderer">The mesh reference for geometry tracking.</param>
         /// <returns>A stable SpatialObjectState relative to the anchor.</returns>
         public static SpatialObjectState Create(
             Bounds worldBounds,
             Matrix4x4 localToWorld,
             Vector3 anchor,
-            Mesh mesh,
+            Renderer renderer,
             Terrain terrain = null)
         {
             Vector3 relativeCenter = worldBounds.center - anchor;
@@ -58,15 +57,14 @@ namespace Rayforge.Core.Environment.Spatial
 
             int gHash = 0;
             if (terrain != null) gHash = terrain.terrainData.GetInstanceID();
-            else if (mesh != null) gHash = mesh.GetInstanceID();
+            else if (renderer != null) gHash = renderer.gameObject.GetInstanceID();
 
             return new SpatialObjectState
             {
                 anchorBounds = anchorBounds,
                 localToAnchor = localToAnchor,
-                mesh = mesh,
+                renderer = renderer,
                 terrain = terrain,
-                subMeshIndex = 0,
                 geometryHash = gHash
             };
         }
@@ -78,8 +76,7 @@ namespace Rayforge.Core.Environment.Spatial
         public bool Equals(SpatialObjectState other)
         {
             return geometryHash == other.geometryHash &&
-                   subMeshIndex == other.subMeshIndex &&
-                   mesh == other.mesh &&
+                   renderer == other.renderer &&
                    terrain == other.terrain &&
                    localToAnchor.Equals(other.localToAnchor) &&
                    anchorBounds.Equals(other.anchorBounds);
@@ -92,9 +89,8 @@ namespace Rayforge.Core.Environment.Spatial
             unchecked
             {
                 int hash = 17;
-                hash = hash * 31 + (mesh != null ? mesh.GetHashCode() : 0);
+                hash = hash * 31 + (renderer != null ? renderer.GetHashCode() : 0);
                 hash = hash * 31 + (terrain != null ? terrain.GetHashCode() : 0);
-                hash = hash * 31 + subMeshIndex;
                 hash = hash * 31 + geometryHash;
                 hash = hash * 31 + localToAnchor.GetHashCode();
                 hash = hash * 31 + anchorBounds.GetHashCode();

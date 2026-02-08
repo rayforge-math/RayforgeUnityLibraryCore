@@ -8,7 +8,7 @@ namespace Rayforge.Core.Rendering.Projection
     public struct HeightmapBakeParams
     {
         public Vector3 WorldCenter;
-        public float Extent;
+        public Vector2 Extent;
         public float MinY;
         public float MaxY;
     }

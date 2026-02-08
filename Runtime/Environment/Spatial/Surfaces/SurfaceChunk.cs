@@ -1,4 +1,6 @@
+using UnityEditor;
 using UnityEngine;
+using static UnityEngine.GraphicsBuffer;
 
 namespace Rayforge.Core.Environment.Spatial.Surfaces
 {
@@ -13,6 +15,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// The GPU texture holding height data for this chunk.
         /// This reference is managed by the SurfaceRegistry or a Baker system.
         /// </summary>
+        [field: SerializeField]
         public RenderTexture Heightmap { get; private set; }
 
         /// <summary>
@@ -47,4 +50,26 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         }
         #endregion
     }
+
+#if UNITY_EDITOR
+    [CustomEditor(typeof(SurfaceChunk))]
+    public class SurfaceChunkEditor : Editor
+    {
+        public override void OnInspectorGUI()
+        {
+            DrawDefaultInspector();
+
+            var chunk = (SurfaceChunk)target;
+
+            if (chunk.Heightmap != null)
+            {
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Heightmap Preview", EditorStyles.boldLabel);
+
+                Rect previewRect = GUILayoutUtility.GetRect(128, 128, GUILayout.ExpandWidth(false));
+                EditorGUI.DrawPreviewTexture(previewRect, chunk.Heightmap);
+            }
+        }
+    }
+#endif
 }
