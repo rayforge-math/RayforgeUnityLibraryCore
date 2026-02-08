@@ -25,13 +25,17 @@
 
             //float4x4 unity_MatrixVP;
 
+            CBUFFER_START(_Params)
+                float _BakerReferenceY;
+            CBUFFER_END
+
             v2f vert (appdata v)
             {
                 v2f o;
                 float4 worldPos = mul(unity_ObjectToWorld, v.vertex);
                 o.pos = mul(unity_MatrixVP, worldPos);
                 
-                o.worldY = worldPos.y;
+                o.worldY = worldPos.y - _BakerReferenceY;
                 
                 return o;
             }

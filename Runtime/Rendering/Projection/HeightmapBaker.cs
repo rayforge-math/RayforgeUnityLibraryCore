@@ -17,6 +17,7 @@ namespace Rayforge.Core.Rendering.Projection
         {
             public static readonly int UnityObjectToWorldId = Shader.PropertyToID("unity_ObjectToWorld");
             public static readonly int UnityMatrixVPId = Shader.PropertyToID("unity_MatrixVP");
+            public static readonly int BakerReferenceYId = Shader.PropertyToID("_BakerReferenceY");
         }
 
         /// <summary>
@@ -228,6 +229,7 @@ namespace Rayforge.Core.Rendering.Projection
             Matrix4x4 projMatrix = Matrix4x4.Ortho(-extent, extent, -extent, extent, 0, depth);
 
             cmd.SetViewProjectionMatrices(viewMatrix, projMatrix);
+            cmd.SetGlobalFloat(ShaderIds.BakerReferenceYId, param.WorldCenter.y);
 
             if (renderers != null)
             {
