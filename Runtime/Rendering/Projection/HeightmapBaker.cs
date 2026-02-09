@@ -69,24 +69,27 @@ namespace Rayforge.Core.Rendering.Projection
         #region Immediate Execution Methods
 
         /// <summary>
-        /// Bakes a set of renderers into a destination RenderTexture using absolute world coordinates.
+        /// Bakes a set of surfaces into a destination texture using absolute world coordinates.
         /// Execution is immediate on the GPU.
         /// </summary>
-        /// <param name="target">The RFloat/R32 destination texture.</param>
+        /// <typeparam name="TTex">The type of the texture, must inherit from <see cref="Texture"/>.</typeparam>
+        /// <param name="target">The destination texture (e.g., RenderTexture or CustomRenderTexture).</param>
         /// <param name="worldCenter">The absolute world-space center of the bake area.</param>
-        /// <param name="extent">Extent of the bake area.</param>
-        /// <param name="minY">Minimum world-Y height.</param>
-        /// <param name="maxY">Maximum world-Y height.</param>
-        /// <param name="meshFilters">Objects to project.</param>
-        /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
-        public static void Bake(
-            RenderTexture target,
+        /// <param name="extent">The horizontal size (half-extents) of the bake volume.</param>
+        /// <param name="minY">The minimum world-Y height (bottom of the bake volume).</param>
+        /// <param name="maxY">The maximum world-Y height (top of the bake volume).</param>
+        /// <param name="meshFilters">The collection of mesh filters to be projected.</param>
+        /// <param name="terrains">Optional collection of Unity Terrains to include in the heightmap.</param>
+        /// <exception cref="ArgumentNullException">Thrown if target, meshFilters, or terrains is null.</exception>
+        public static void Bake<TTex>(
+            TTex target,
             Vector3 worldCenter,
             Vector2 extent,
             float minY,
             float maxY,
             IEnumerable<MeshFilter> meshFilters,
             IEnumerable<Terrain> terrains = null)
+            where TTex : Texture
         {
             var param = new HeightmapBakeParams
             {
@@ -100,15 +103,17 @@ namespace Rayforge.Core.Rendering.Projection
         }
 
         /// <summary>
-        /// Bakes a set of renderers into a destination RenderTexture using the specified parameters.
+        /// Bakes a set of surfaces into a destination texture using the specified parameter structure.
         /// Execution is immediate on the GPU.
         /// </summary>
-        /// <param name="target">The RFloat/R32 destination texture.</param>
-        /// <param name="param">Spatial parameters for the bake area.</param>
-        /// <param name="meshFilters">Objects to project.</param>
-        /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
-        /// <exception cref="ArgumentNullException">Thrown if target is null.</exception>
-        public static void Bake(RenderTexture target, HeightmapBakeParams param, IEnumerable<MeshFilter> meshFilters, IEnumerable<Terrain> terrains = null)
+        /// <typeparam name="TTex">The type of the texture, must inherit from <see cref="Texture"/>.</typeparam>
+        /// <param name="target">The destination texture (e.g., RenderTexture or CustomRenderTexture).</param>
+        /// <param name="param">The spatial parameters for the bake volume.</param>
+        /// <param name="meshFilters">The collection of mesh filters to be projected.</param>
+        /// <param name="terrains">Optional collection of Unity Terrains to include.</param>
+        /// <exception cref="ArgumentNullException">Thrown if target, meshFilters, or terrains is null.</exception>
+        public static void Bake<TTex>(TTex target, HeightmapBakeParams param, IEnumerable<MeshFilter> meshFilters, IEnumerable<Terrain> terrains = null)
+            where TTex : Texture
         {
             if (target == null) throw new ArgumentNullException(nameof(target));
 
@@ -117,24 +122,22 @@ namespace Rayforge.Core.Rendering.Projection
             Graphics.ExecuteCommandBuffer(k_Cmd);
         }
 
-        #endregion
-
-        #region CommandBuffer Recording Methods
-
         /// <summary>
-        /// Records bake commands using absolute world coordinates into a provided <see cref="CommandBuffer"/>.
+        /// Bakes surfaces into a specific slice of a Texture2DArray using absolute world coordinates.
+        /// Execution is immediate on the GPU.
         /// </summary>
-        /// <param name="cmd">The command buffer to record into.</param>
-        /// <param name="target">The destination RenderTexture.</param>
-        /// <param name="worldCenter">Absolute world-space center of the projection.</param>
-        /// <param name="extent">The horizontal size of the bake volume.</param>
-        /// <param name="minY">The bottom Y-level in world space.</param>
-        /// <param name="maxY">The top Y-level in world space.</param>
-        /// <param name="meshFilters">Objects to project.</param>
-        /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
-        public static void SetupBakeCommandBuffer(
-            CommandBuffer cmd,
-            RenderTexture target,
+        /// <param name="target">The destination Texture2DArray.</param>
+        /// <param name="sliceIndex">The zero-based index of the array slice to bake into.</param>
+        /// <param name="worldCenter">The absolute world-space center of the bake area.</param>
+        /// <param name="extent">The horizontal size (half-extents) of the bake volume.</param>
+        /// <param name="minY">The minimum world-Y height.</param>
+        /// <param name="maxY">The maximum world-Y height.</param>
+        /// <param name="meshFilters">The collection of mesh filters to be projected.</param>
+        /// <param name="terrains">Optional collection of Unity Terrains to include.</param>
+        /// <exception cref="ArgumentNullException">Thrown if target, meshFilters, or terrains is null.</exception>
+        public static void Bake(
+            Texture2DArray target,
+            int sliceIndex,
             Vector3 worldCenter,
             Vector2 extent,
             float minY,
@@ -150,7 +153,148 @@ namespace Rayforge.Core.Rendering.Projection
                 MaxY = maxY
             };
 
+            Bake(target, sliceIndex, param, meshFilters, terrains);
+        }
+
+        /// <summary>
+        /// Bakes surfaces into a specific slice of a Texture2DArray using the specified parameter structure.
+        /// Execution is immediate on the GPU.
+        /// </summary>
+        /// <param name="target">The destination Texture2DArray.</param>
+        /// <param name="sliceIndex">The zero-based index of the array slice to bake into.</param>
+        /// <param name="param">The spatial parameters for the bake volume.</param>
+        /// <param name="meshFilters">The collection of mesh filters to be projected.</param>
+        /// <param name="terrains">Optional collection of Unity Terrains to include.</param>
+        /// <exception cref="ArgumentNullException">Thrown if target, meshFilters, or terrains is null.</exception>
+        public static void Bake(Texture2DArray target, int sliceIndex, HeightmapBakeParams param, IEnumerable<MeshFilter> meshFilters, IEnumerable<Terrain> terrains = null)
+        {
+            if (target == null) throw new ArgumentNullException(nameof(target));
+
+            k_Cmd.Clear();
+            SetupBakeCommandBuffer(k_Cmd, target, sliceIndex, param, meshFilters, terrains);
+            Graphics.ExecuteCommandBuffer(k_Cmd);
+        }
+
+        #endregion
+
+        #region CommandBuffer Recording Methods
+
+        /// <summary>
+        /// Records bake commands using absolute world coordinates into a provided <see cref="CommandBuffer"/>.
+        /// </summary>
+        /// <param name="cmd">The command buffer to record into.</param>
+        /// <param name="target">The destination Texture.</param>
+        /// <param name="worldCenter">Absolute world-space center of the projection.</param>
+        /// <param name="extent">The horizontal size of the bake volume.</param>
+        /// <param name="minY">The bottom Y-level in world space.</param>
+        /// <param name="maxY">The top Y-level in world space.</param>
+        /// <param name="meshFilters">Objects to project.</param>
+        /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
+        /// <exception cref="ArgumentNullException">Thrown if target, meshFilters, or terrains is null.</exception>
+        public static void SetupBakeCommandBuffer<TTex>(
+             CommandBuffer cmd,
+             TTex target,
+             Vector3 worldCenter,
+             Vector2 extent,
+             float minY,
+             float maxY,
+             IEnumerable<MeshFilter> meshFilters,
+             IEnumerable<Terrain> terrains = null)
+            where TTex : Texture
+        {
+            var param = new HeightmapBakeParams
+            {
+                WorldCenter = worldCenter,
+                Extent = extent,
+                MinY = minY,
+                MaxY = maxY
+            };
+
             SetupBakeCommandBuffer(cmd, target, param, meshFilters, terrains);
+        }
+
+        /// <summary>
+        /// Records bake commands using absolute world coordinates into a provided <see cref="CommandBuffer"/>.
+        /// </summary>
+        /// <param name="cmd">The command buffer to record into.</param>
+        /// <param name="target">The destination Texture2DArray.</param>
+        /// <param name="sliceIndex">Slice index of the destination.</param>
+        /// <param name="worldCenter">Absolute world-space center of the projection.</param>
+        /// <param name="extent">The horizontal size of the bake volume.</param>
+        /// <param name="minY">The bottom Y-level in world space.</param>
+        /// <param name="maxY">The top Y-level in world space.</param>
+        /// <param name="meshFilters">Objects to project.</param>
+        /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
+        /// <exception cref="ArgumentNullException">Thrown if target, meshFilters, or terrains is null.</exception>
+        public static void SetupBakeCommandBuffer(
+            CommandBuffer cmd,
+            Texture2DArray target,
+            int sliceIndex,
+            Vector3 worldCenter,
+            Vector2 extent,
+            float minY,
+            float maxY,
+            IEnumerable<MeshFilter> meshFilters,
+            IEnumerable<Terrain> terrains = null)
+        {
+            var param = new HeightmapBakeParams
+            {
+                WorldCenter = worldCenter,
+                Extent = extent,
+                MinY = minY,
+                MaxY = maxY
+            };
+
+            SetupBakeCommandBuffer(cmd, target, sliceIndex, param, meshFilters, terrains);
+        }
+
+        /// <summary>
+        /// Records bake commands for a standard texture target (RenderTexture, CustomRenderTexture, etc.).
+        /// </summary>
+        /// <param name="cmd">CommandBuffer to record the draw calls into.</param>
+        /// <param name="target">The destination texture (must be a valid render target).</param>
+        /// <param name="param">The spatial parameters defining the bake area and height range.</param>
+        /// <param name="meshFilters">Static meshes to be projected into the heightmap.</param>
+        /// <param name="terrains">Optional Unity Terrains to be included.</param>
+        /// <exception cref="ArgumentNullException">Thrown if target, meshFilters, or terrains is null.</exception>
+        public static void SetupBakeCommandBuffer<TTex>(
+            CommandBuffer cmd,
+            TTex target,
+            HeightmapBakeParams param,
+            IEnumerable<MeshFilter> meshFilters,
+            IEnumerable<Terrain> terrains = null)
+            where TTex : Texture
+        {
+            if (target == null) throw new ArgumentNullException(nameof(target));
+
+            cmd.SetRenderTarget(target);
+
+            SetupBakeCommandBuffer_internal(cmd, param, meshFilters, terrains);
+        }
+
+        /// <summary>
+        /// Records bake commands specifically for a slice within a Texture2DArray.
+        /// </summary>
+        /// <param name="cmd">CommandBuffer to record the draw calls into.</param>
+        /// <param name="target">The destination Texture2DArray.</param>
+        /// <param name="sliceIndex">The depth index (slice) to bake into.</param>
+        /// <param name="param">The spatial parameters defining the bake area and height range.</param>
+        /// <param name="meshFilters">Static meshes to be projected into the heightmap.</param>
+        /// <param name="terrains">Optional Unity Terrains to be included.</param>
+        /// <exception cref="ArgumentNullException">Thrown if target, meshFilters, or terrains is null.</exception>
+        public static void SetupBakeCommandBuffer(
+            CommandBuffer cmd,
+            Texture2DArray target,
+            int sliceIndex,
+            HeightmapBakeParams param,
+            IEnumerable<MeshFilter> meshFilters,
+            IEnumerable<Terrain> terrains = null)
+        {
+            if (target == null) throw new ArgumentNullException(nameof(target));
+
+            cmd.SetRenderTarget(target, 0, CubemapFace.Unknown, sliceIndex);
+
+            SetupBakeCommandBuffer_internal(cmd, param, meshFilters, terrains);
         }
 
         /// <summary>
@@ -158,24 +302,20 @@ namespace Rayforge.Core.Rendering.Projection
         /// Does not execute the buffer.
         /// </summary>
         /// <param name="cmd">CommandBuffer to record the draw calls into.</param>
-        /// <param name="target">The destination RenderTexture.</param>
         /// <param name="param">The bake volume parameters.</param>
-        /// <param name="renderers">Objects to project.</param>
+        /// <param name="meshFilters">Objects to project.</param>
         /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
-        /// <exception cref="ArgumentNullException">Thrown if cmd or target is null.</exception>
-        public static void SetupBakeCommandBuffer(
+        /// <exception cref="ArgumentNullException">Thrown if target, meshFilters, or terrains is null.</exception>
+        private static void SetupBakeCommandBuffer_internal(
             CommandBuffer cmd,
-            RenderTexture target,
             HeightmapBakeParams param,
             IEnumerable<MeshFilter> meshFilters,
             IEnumerable<Terrain> terrains = null)
         {
             if (cmd == null) throw new ArgumentNullException(nameof(cmd));
-            if (target == null) throw new ArgumentNullException(nameof(target));
 
             if(meshFilters == null && terrains == null) throw new ArgumentNullException($"MeshFilters {nameof(meshFilters)} and terrains {nameof(terrains)} are null");
 
-            cmd.SetRenderTarget(target);
             cmd.ClearRenderTarget(true, true, new Color(float.MinValue, 0, 0, 1));
 
             float absMaxY = param.WorldCenter.y + param.MaxY;
@@ -186,7 +326,8 @@ namespace Rayforge.Core.Rendering.Projection
 
             Vector4 yParams = new Vector4(absMinY, absMaxY, .0f, 1.0f / far);
 
-            cmd.SetGlobalVector(ShaderIds.BakerYParamsId, yParams);
+            k_PropertyBlock.Clear();
+            k_PropertyBlock.SetVector(ShaderIds.BakerYParamsId, yParams);
             
             if (meshFilters != null)
             {
@@ -209,7 +350,7 @@ namespace Rayforge.Core.Rendering.Projection
 
                     for (int i = 0; i < mesh.subMeshCount; ++i)
                     {
-                        cmd.DrawMesh(mesh, matrix, k_BakeMaterial, i, k_MeshBakingPassId);
+                        cmd.DrawMesh(mesh, matrix, k_BakeMaterial, i, k_MeshBakingPassId, k_PropertyBlock);
                     }
                 }
             }
