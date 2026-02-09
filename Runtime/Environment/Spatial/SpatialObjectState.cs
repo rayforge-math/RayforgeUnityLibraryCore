@@ -20,7 +20,7 @@ namespace Rayforge.Core.Environment.Spatial
         public Matrix4x4 localToAnchor;
 
         [Header("Geometry Data")]
-        public Renderer renderer;
+        public MeshFilter meshFilter;
         public Terrain terrain;
 
         /// <summary>
@@ -40,13 +40,13 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="worldBounds">The current bounds in Unity world space.</param>
         /// <param name="localToWorld">The current localToWorld matrix of the GameObject.</param>
         /// <param name="anchor">The current reference anchor of the registry.</param>
-        /// <param name="renderer">The mesh reference for geometry tracking.</param>
+        /// <param name="meshFilter">The mesh reference for geometry tracking.</param>
         /// <returns>A stable SpatialObjectState relative to the anchor.</returns>
         public static SpatialObjectState Create(
             Bounds worldBounds,
             Matrix4x4 localToWorld,
             Vector3 anchor,
-            Renderer renderer,
+            MeshFilter meshFilter,
             Terrain terrain = null)
         {
             Vector3 relativeCenter = worldBounds.center - anchor;
@@ -57,13 +57,13 @@ namespace Rayforge.Core.Environment.Spatial
 
             int gHash = 0;
             if (terrain != null) gHash = terrain.terrainData.GetInstanceID();
-            else if (renderer != null) gHash = renderer.gameObject.GetInstanceID();
+            else if (meshFilter != null) gHash = meshFilter.gameObject.GetInstanceID();
 
             return new SpatialObjectState
             {
                 anchorBounds = anchorBounds,
                 localToAnchor = localToAnchor,
-                renderer = renderer,
+                meshFilter = meshFilter,
                 terrain = terrain,
                 geometryHash = gHash
             };
@@ -76,7 +76,7 @@ namespace Rayforge.Core.Environment.Spatial
         public bool Equals(SpatialObjectState other)
         {
             return geometryHash == other.geometryHash &&
-                   renderer == other.renderer &&
+                   meshFilter == other.meshFilter &&
                    terrain == other.terrain &&
                    localToAnchor.Equals(other.localToAnchor) &&
                    anchorBounds.Equals(other.anchorBounds);
@@ -89,7 +89,7 @@ namespace Rayforge.Core.Environment.Spatial
             unchecked
             {
                 int hash = 17;
-                hash = hash * 31 + (renderer != null ? renderer.GetHashCode() : 0);
+                hash = hash * 31 + (meshFilter != null ? meshFilter.GetHashCode() : 0);
                 hash = hash * 31 + (terrain != null ? terrain.GetHashCode() : 0);
                 hash = hash * 31 + geometryHash;
                 hash = hash * 31 + localToAnchor.GetHashCode();

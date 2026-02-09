@@ -163,18 +163,18 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         #region Spatial Queries
 
         /// <summary>
-        /// Provides an enumerable of all Renderers within a specific spatial cell.
+        /// Provides an enumerable of all MeshFilters within a specific spatial cell.
         /// </summary>
-        public IEnumerable<Renderer> GetRenderersInCell(Vector3Int key)
+        public IEnumerable<MeshFilter> GetMeshesInCell(Vector3Int key)
         {
             if (!_spatialBuckets.TryGetValue(key, out var ids))
                 yield break;
 
             foreach (int id in ids)
             {
-                if (_registry.TryGetValue(id, out var state) && state.renderer != null)
+                if (_registry.TryGetValue(id, out var state) && state.meshFilter != null)
                 {
-                    yield return state.renderer;
+                    yield return state.meshFilter;
                 }
             }
         }
@@ -270,22 +270,21 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             }
 
             bool isTerrain = obj.TryGetComponent<Terrain>(out var terrain);
+            MeshFilter meshFilter = null;
+
             if (isTerrain)
             {
                 if (terrain.terrainData == null)
                 {
                     LogDebug($"Registry: {obj.name} ignored. Missing TerrainData.");
-                    isTerrain = false;
-                    terrain = null;
+                    return false;
                 }
             }
-
-            Renderer renderer = null;
-            if (!isTerrain)
+            else
             {
-                if (!TryGetRenderer(obj, out renderer))
+                if (!obj.TryGetComponent<MeshFilter>(out meshFilter) || meshFilter.sharedMesh == null)
                 {
-                    LogDebug($"Registry: {obj.name} ignored. No valid Renderer or Terrain found.");
+                    LogDebug($"Registry: {obj.name} ignored. No valid MeshFilter found.");
                     return false;
                 }
             }
@@ -300,57 +299,20 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 worldBounds,
                 obj.transform.localToWorldMatrix,
                 _gridProvider.Anchor,
-                renderer,
+                meshFilter,
                 terrain
             );
 
             if (showDebugLogs)
             {
+                string typeInfo = isTerrain ? "Terrain" : $"Mesh ({meshFilter.sharedMesh.name})";
                 Vector3 localPos = worldBounds.center - _gridProvider.Anchor;
-                LogDebug($"Registry: Created state for '{obj.name}' (Renderer: {renderer?.GetType().Name ?? "None"}, Terrain: {isTerrain})\n" +
-                         $"  Relative to Anchor: {localPos}");
+
+                LogDebug($"Registry: Registered '{obj.name}' as {typeInfo}.\n" +
+                         $"  Relative Position to Anchor: {localPos} | Bounds Size: {worldBounds.size}");
             }
 
             return true;
-        }
-
-        private bool TryGetRenderer(GameObject obj, out Renderer renderer)
-        {
-            if (obj.TryGetComponent<Renderer>(out renderer))
-            {
-                if (renderer is MeshRenderer || renderer is SkinnedMeshRenderer)
-                {
-                    return true;
-                }
-            }
-
-            renderer = null;
-            return false;
-        }
-
-        private bool TryGetMesh(GameObject obj, out Mesh mesh)
-        {
-            mesh = null;
-
-            if (obj.TryGetComponent<MeshFilter>(out var filter) && filter.sharedMesh != null)
-            {
-                mesh = filter.sharedMesh;
-                return true;
-            }
-
-            if (obj.TryGetComponent<SkinnedMeshRenderer>(out var skinned) && skinned.sharedMesh != null)
-            {
-                mesh = skinned.sharedMesh;
-                return true;
-            }
-            /*
-            if (obj.TryGetComponent<MeshCollider>(out var meshCol) && meshCol.sharedMesh != null)
-            {
-                mesh = meshCol.sharedMesh;
-                return true;
-            }
-            */
-            return false;
         }
 
         private bool TryGetSpatialBounds(GameObject obj, out Bounds bounds)

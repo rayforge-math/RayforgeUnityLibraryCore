@@ -77,7 +77,7 @@ namespace Rayforge.Core.Rendering.Projection
         /// <param name="extent">Extent of the bake area.</param>
         /// <param name="minY">Minimum world-Y height.</param>
         /// <param name="maxY">Maximum world-Y height.</param>
-        /// <param name="renderers">Objects to project.</param>
+        /// <param name="meshFilters">Objects to project.</param>
         /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
         public static void Bake(
             RenderTexture target,
@@ -85,7 +85,7 @@ namespace Rayforge.Core.Rendering.Projection
             Vector2 extent,
             float minY,
             float maxY,
-            IEnumerable<Renderer> renderers,
+            IEnumerable<MeshFilter> meshFilters,
             IEnumerable<Terrain> terrains = null)
         {
             var param = new HeightmapBakeParams
@@ -96,7 +96,7 @@ namespace Rayforge.Core.Rendering.Projection
                 MaxY = maxY
             };
 
-            Bake(target, param, renderers, terrains);
+            Bake(target, param, meshFilters, terrains);
         }
 
         /// <summary>
@@ -105,15 +105,15 @@ namespace Rayforge.Core.Rendering.Projection
         /// </summary>
         /// <param name="target">The RFloat/R32 destination texture.</param>
         /// <param name="param">Spatial parameters for the bake area.</param>
-        /// <param name="renderers">Objects to project.</param>
+        /// <param name="meshFilters">Objects to project.</param>
         /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
         /// <exception cref="ArgumentNullException">Thrown if target is null.</exception>
-        public static void Bake(RenderTexture target, HeightmapBakeParams param, IEnumerable<Renderer> renderers, IEnumerable<Terrain> terrains = null)
+        public static void Bake(RenderTexture target, HeightmapBakeParams param, IEnumerable<MeshFilter> meshFilters, IEnumerable<Terrain> terrains = null)
         {
             if (target == null) throw new ArgumentNullException(nameof(target));
 
             k_Cmd.Clear();
-            SetupBakeCommandBuffer(k_Cmd, target, param, renderers, terrains);
+            SetupBakeCommandBuffer(k_Cmd, target, param, meshFilters, terrains);
             Graphics.ExecuteCommandBuffer(k_Cmd);
         }
 
@@ -130,7 +130,7 @@ namespace Rayforge.Core.Rendering.Projection
         /// <param name="extent">The horizontal size of the bake volume.</param>
         /// <param name="minY">The bottom Y-level in world space.</param>
         /// <param name="maxY">The top Y-level in world space.</param>
-        /// <param name="renderers">Objects to project.</param>
+        /// <param name="meshFilters">Objects to project.</param>
         /// <param name="terrains">Unity Terrains to include in the heightmap.</param>
         public static void SetupBakeCommandBuffer(
             CommandBuffer cmd,
@@ -139,7 +139,7 @@ namespace Rayforge.Core.Rendering.Projection
             Vector2 extent,
             float minY,
             float maxY,
-            IEnumerable<Renderer> renderers,
+            IEnumerable<MeshFilter> meshFilters,
             IEnumerable<Terrain> terrains = null)
         {
             var param = new HeightmapBakeParams
@@ -150,7 +150,7 @@ namespace Rayforge.Core.Rendering.Projection
                 MaxY = maxY
             };
 
-            SetupBakeCommandBuffer(cmd, target, param, renderers, terrains);
+            SetupBakeCommandBuffer(cmd, target, param, meshFilters, terrains);
         }
 
         /// <summary>
@@ -167,13 +167,13 @@ namespace Rayforge.Core.Rendering.Projection
             CommandBuffer cmd,
             RenderTexture target,
             HeightmapBakeParams param,
-            IEnumerable<Renderer> renderers,
+            IEnumerable<MeshFilter> meshFilters,
             IEnumerable<Terrain> terrains = null)
         {
             if (cmd == null) throw new ArgumentNullException(nameof(cmd));
             if (target == null) throw new ArgumentNullException(nameof(target));
 
-            if(renderers == null && terrains == null) throw new ArgumentNullException($"Renderers {nameof(renderers)} and terrains {nameof(terrains)} are null");
+            if(meshFilters == null && terrains == null) throw new ArgumentNullException($"MeshFilters {nameof(meshFilters)} and terrains {nameof(terrains)} are null");
 
             cmd.SetRenderTarget(target);
             cmd.ClearRenderTarget(true, true, new Color(float.MinValue, 0, 0, 1));
@@ -188,7 +188,7 @@ namespace Rayforge.Core.Rendering.Projection
 
             cmd.SetGlobalVector(ShaderIds.BakerYParamsId, yParams);
             
-            if (renderers != null)
+            if (meshFilters != null)
             {
                 Vector3 camPos = new Vector3(param.WorldCenter.x, absMaxY, param.WorldCenter.z);
                 Quaternion rot = Quaternion.Euler(90f, 0f, 0f);
@@ -200,10 +200,17 @@ namespace Rayforge.Core.Rendering.Projection
 
                 cmd.SetViewProjectionMatrices(viewMatrix, projMatrix);
 
-                foreach (var renderer in renderers)
+                foreach (var filter in meshFilters)
                 {
-                    if (renderer == null) continue;
-                    cmd.DrawRenderer(renderer, k_BakeMaterial, 0, k_MeshBakingPassId);
+                    if (filter == null || filter.sharedMesh == null) continue;
+
+                    Mesh mesh = filter.sharedMesh;
+                    Matrix4x4 matrix = filter.transform.localToWorldMatrix;
+
+                    for (int i = 0; i < mesh.subMeshCount; ++i)
+                    {
+                        cmd.DrawMesh(mesh, matrix, k_BakeMaterial, i, k_MeshBakingPassId);
+                    }
                 }
             }
             

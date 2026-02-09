@@ -622,7 +622,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 HeightmapBaker.Bake(
                     chunk.Heightmap,
                     bakeParams,
-                    _objectRegistry.GetRenderersInCell(key),
+                    _objectRegistry.GetMeshesInCell(key),
                     _objectRegistry.GetTerrainsInCell(key)
                 );
 
