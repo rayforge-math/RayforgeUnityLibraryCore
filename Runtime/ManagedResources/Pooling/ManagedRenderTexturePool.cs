@@ -10,7 +10,12 @@ namespace Rayforge.Core.ManagedResources.Pooling
     public sealed class ManagedRenderTexturePool : LeasedBufferPool<RenderTextureDescriptorWrapper, ManagedRenderTexture>
     {
         private static readonly BufferCreateFunc<RenderTextureDescriptorWrapper, ManagedRenderTexture> k_DefaultCreate =
-            desc => ManagedRenderTexture.Create(desc, FilterMode.Bilinear, TextureWrapMode.Clamp);
+            desc =>
+            {
+                desc.FilterMode = FilterMode.Bilinear;
+                desc.WrapMode = TextureWrapMode.Clamp;
+                return ManagedRenderTexture.Create(desc);
+            };
 
         private static readonly BufferReleaseFunc<ManagedRenderTexture> k_DefaultRelease =
             buffer => buffer.Release();

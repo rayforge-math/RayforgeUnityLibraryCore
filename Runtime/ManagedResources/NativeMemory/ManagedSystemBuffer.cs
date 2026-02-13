@@ -13,14 +13,34 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         where TType : struct
     {
         /// <summary>
-        /// Private constructor to initialize the managed system buffer.
+        /// Returns true if the underlying NativeArray is allocated and has not been disposed.
+        /// Implementation of the abstract property in ManagedBuffer.
+        /// </summary>
+        public override bool IsCreated => m_Buffer.IsCreated;
+
+        /// <summary>
+        /// Public constructor to initialize the managed system buffer.
         /// Use <see cref="Create"/> instead.
         /// </summary>
-        /// <param name="buffer">The internal <see cref="NativeArray{T}"/> to manage.</param>
         /// <param name="descriptor">Descriptor describing buffer properties.</param>
-        private ManagedSystemBuffer(NativeArray<TType> buffer, SystemBufferDescriptor descriptor)
-            : base(buffer, descriptor)
+        public ManagedSystemBuffer(SystemBufferDescriptor descriptor)
+            : base(descriptor)
         { }
+
+        /// <summary>
+        /// Implementation of the allocation using the internal descriptor field.
+        /// </summary>
+        /// <returns>A new <see cref="NativeArray{TType}"/> instance.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// Thrown if <see cref="m_Descriptor"/>.Count is less than or equal to 0.
+        /// </exception>
+        protected override NativeArray<TType> Allocate()
+        {
+            if (m_Descriptor.Count <= 0)
+                throw new ArgumentOutOfRangeException(nameof(m_Descriptor.Count), "System buffer count must be greater than zero.");
+
+            return new NativeArray<TType>(m_Descriptor.Count, m_Descriptor.Allocator);
+        }
 
         /// <summary>
         /// Creates a managed system buffer with the specified descriptor.
@@ -35,8 +55,9 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             if (desc.Count <= 0)
                 throw new ArgumentOutOfRangeException(nameof(desc.Count), "System buffer count must be greater than zero.");
 
-            var buffer = new NativeArray<TType>(desc.Count, desc.Allocator);
-            return new ManagedSystemBuffer<TType>(buffer, desc);
+            var buffer = new ManagedSystemBuffer<TType>(desc);
+            buffer.Create();
+            return buffer;
         }
 
         /// <summary>

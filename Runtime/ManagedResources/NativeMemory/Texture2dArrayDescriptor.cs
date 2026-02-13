@@ -1,4 +1,5 @@
 using Rayforge.Core.Diagnostics;
+using Rayforge.Core.ManagedResources.Abstractions;
 using System;
 
 namespace Rayforge.Core.ManagedResources.NativeMemory
@@ -7,7 +8,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// Descriptor for a 2D texture array, including the base texture descriptor
     /// and the number of array slices. Acts as a hashing key for texture array pooling.
     /// </summary>
-    public struct Texture2dArrayDescriptor : IEquatable<Texture2dArrayDescriptor>
+    public struct Texture2dArrayDescriptor : IEquatable<Texture2dArrayDescriptor>, IArrayDescriptor
     {
         private Texture2dDescriptor descriptor;
         private int count;

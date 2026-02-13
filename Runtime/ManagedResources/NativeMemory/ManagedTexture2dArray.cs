@@ -6,28 +6,31 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
 {
     /// <summary>
     /// Managed wrapper around Unity's <see cref="Texture2DArray"/>.
-    /// Provides creation, validation, and controlled release.
+    /// Provides creation, validation, and controlled release using the managed buffer pattern.
     /// </summary>
     public sealed class ManagedTexture2DArray : ManagedBuffer<Texture2dArrayDescriptor, Texture2DArray>
     {
         /// <summary>
-        /// Private constructor used internally to wrap an existing <see cref="Texture2DArray"/> and descriptor.
+        /// Returns true if the Texture2DArray object is allocated and valid.
         /// </summary>
-        private ManagedTexture2DArray(Texture2DArray texture, Texture2dArrayDescriptor descriptor)
-            : base(texture, descriptor)
+        public override bool IsCreated => m_Buffer != null;
+
+        /// <summary>
+        /// Public constructor used internally to initialize the wrapper with a descriptor.
+        /// Allocation happens via the <see cref="Allocate"/> method during <see cref="ManagedBuffer{TDesc, TInternal}.Create"/>.
+        /// </summary>
+        public ManagedTexture2DArray(Texture2dArrayDescriptor descriptor)
+            : base(descriptor)
         { }
 
         /// <summary>
-        /// Creates a managed Texture2DArray from the provided descriptor.
-        /// Validates dimensions and layer count before allocation.
+        /// Internal implementation of the allocation logic.
+        /// Uses the internally stored <see cref="m_Descriptor"/> to instantiate the <see cref="Texture2DArray"/>.
         /// </summary>
-        /// <param name="desc">Descriptor defining each texture in the array and number of layers.</param>
-        /// <returns>A new <see cref="ManagedTexture2DArray"/> instance.</returns>
-        /// <exception cref="ArgumentOutOfRangeException">
-        /// Thrown if <see cref="Texture2dArrayDescriptor.Count"/>, Width or Height is less than 1.
-        /// </exception>
-        public static ManagedTexture2DArray Create(Texture2dArrayDescriptor desc)
+        /// <returns>A new <see cref="Texture2DArray"/> instance.</returns>
+        protected override Texture2DArray Allocate()
         {
+            var desc = m_Descriptor;
             var d = desc.Descriptor;
 
             if (desc.Count <= 0)
@@ -47,105 +50,83 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             {
                 filterMode = d.FilterMode,
                 wrapMode = d.WrapMode,
-                anisoLevel = 0
+                anisoLevel = d.AnisoLevel,
+                name = "ManagedTexture2DArray"
             };
-            texture.Apply(false);
 
-            return new ManagedTexture2DArray(texture, desc);
+            texture.Apply(false);
+            return texture;
         }
 
         /// <summary>
-        /// Releases the underlying Texture2DArray.
-        /// After calling this, the buffer is no longer valid.
+        /// Factory method to create a managed Texture2DArray wrapper.
+        /// </summary>
+        /// <param name="desc">Descriptor defining each texture in the array and number of layers.</param>
+        /// <returns>A new <see cref="ManagedTexture2DArray"/> instance.</returns>
+        public static ManagedTexture2DArray Create(Texture2dArrayDescriptor desc)
+        {
+            var wrapper = new ManagedTexture2DArray(desc);
+            wrapper.Create();
+            return wrapper;
+        }
+
+        /// <summary>
+        /// Releases the underlying Texture2DArray and cleans up the Unity object.
         /// </summary>
         public override void Release()
         {
             if (m_Buffer != null)
             {
-                UnityEngine.Object.Destroy(m_Buffer);
+                if (Application.isPlaying) UnityEngine.Object.Destroy(m_Buffer);
+                else UnityEngine.Object.DestroyImmediate(m_Buffer);
+
                 m_Buffer = null;
             }
         }
 
         /// <summary>
         /// Copies the provided textures into the array.
-        /// Validates dimensions, format, and mip count before copying.
+        /// Validates dimensions, format, and mip count before copying via GPU.
         /// </summary>
         public bool SetTextures(Texture2D[] textures)
         {
+            if (m_Buffer == null) return false;
             if (textures == null || textures.Length == 0)
             {
-                Debug.LogError("Texture array is null or empty");
+                Debug.LogError("Texture array provided for upload is null or empty.");
                 return false;
             }
 
-            var descriptor = m_Descriptor.Descriptor;
-            for (int i = 0; i < textures.Length; i++)
+            var template = m_Descriptor.Descriptor;
+            int texturesToCopy = Mathf.Min(textures.Length, m_Descriptor.Count);
+
+            for (int i = 0; i < texturesToCopy; i++)
             {
-                if (textures[i] == null)
+                if (textures[i] == null) continue;
+
+                if (textures[i].width != template.Width || textures[i].height != template.Height)
                 {
-                    Debug.LogError($"Texture at index {i} is null");
-                    return false;
+                    Debug.LogError($"Mismatched dimensions at index {i}. Expected {template.Width}x{template.Height}.");
+                    continue;
                 }
 
-                if (textures[i].width != descriptor.Width || textures[i].height != descriptor.Height)
+                for (int j = 0; j < template.MipCount; ++j)
                 {
-                    Debug.LogError($"Texture at index {i} has mismatched dimensions. " +
-                                $"Expected: {descriptor.Width}x{descriptor.Height}, Got: {textures[i].width}x{textures[i].height}");
-                    return false;
-                }
-
-                if (textures[i].format != descriptor.ColorFormat)
-                {
-                    Debug.LogWarning($"Texture at index {i} has format {textures[i].format}, " +
-                                    $"but expected {descriptor.ColorFormat}. This may cause conversion overhead.");
-                }
-
-                if (textures[i].mipmapCount != descriptor.MipCount)
-                {
-                    Debug.LogWarning($"Texture at index {i} has mipmap count {textures[i].mipmapCount}, " +
-                                    $"but expected {descriptor.MipCount}. This may result in faulty graphics.");
-                }
-            }
-
-            if (textures.Length > m_Descriptor.Count)
-            {
-                Debug.LogWarning($"More textures ({textures.Length}) provided than array size ({m_Descriptor.Count}). " +
-                                $"Only the first {m_Descriptor.Count} will be used.");
-            }
-
-            try
-            {
-                int texturesToCopy = Mathf.Min(textures.Length, m_Descriptor.Count);
-                for (int i = 0; i < texturesToCopy; i++)
-                {
-                    for (int j = 0; j < descriptor.MipCount; ++j)
+                    try
                     {
-                        try
-                        {
-                            Graphics.CopyTexture(textures[i], 0, j, m_Buffer, i, j);
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.LogError($"Copy texture {i} MipMap {j}: {ex}");
-                        }
+                        Graphics.CopyTexture(textures[i], 0, j, m_Buffer, i, j);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"Failed to copy slice {i} Mip {j}: {ex.Message}");
                     }
                 }
+            }
 
-                m_Buffer.Apply(false);
-                return true;
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"Failed to copy textures: {e.Message}");
-                return false;
-            }
+            m_Buffer.Apply(false);
+            return true;
         }
 
-        /// <summary>
-        /// Compares managed texture arrays by reference.
-        /// Suitable for pooling or tracking.
-        /// </summary>
         public override bool Equals(ManagedBuffer<Texture2dArrayDescriptor, Texture2DArray> other)
             => ReferenceEquals(this, other);
     }

@@ -5,7 +5,7 @@ using System.Diagnostics;
 using UnityEngine;
 using System.Runtime.CompilerServices;
 
-namespace Rayforge.Core.Environment.Spatial.Surface
+namespace Rayforge.Core.Environment.Spatial
 {
     /// <summary>
     /// Manages the registration and spatial partitioning of objects.
@@ -163,18 +163,18 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         #region Spatial Queries
 
         /// <summary>
-        /// Provides an enumerable of all MeshFilters within a specific spatial cell.
+        /// Provides an enumerable of all MeshRenderer within a specific spatial cell.
         /// </summary>
-        public IEnumerable<MeshFilter> GetMeshesInCell(Vector3Int key)
+        public IEnumerable<MeshRenderer> GetRenderersInCell(Vector3Int key)
         {
             if (!_spatialBuckets.TryGetValue(key, out var ids))
                 yield break;
 
             foreach (int id in ids)
             {
-                if (_registry.TryGetValue(id, out var state) && state.meshFilter != null)
+                if (_registry.TryGetValue(id, out var state) && state.renderer != null)
                 {
-                    yield return state.meshFilter;
+                    yield return state.renderer;
                 }
             }
         }
@@ -263,74 +263,24 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         private bool TryCreateRelativeState(GameObject obj, out SpatialObjectState state)
         {
             state = default;
-            if (!IsInitialized)
+            if (!IsInitialized) return false;
+
+            if (obj.TryGetComponent<Terrain>(out var terrain))
             {
-                LogDebug($"Registry: Failed to create state for {obj.name}. Registry not initialized.");
-                return false;
-            }
-
-            bool isTerrain = obj.TryGetComponent<Terrain>(out var terrain);
-            MeshFilter meshFilter = null;
-
-            if (isTerrain)
-            {
-                if (terrain.terrainData == null)
-                {
-                    LogDebug($"Registry: {obj.name} ignored. Missing TerrainData.");
-                    return false;
-                }
-            }
-            else
-            {
-                if (!obj.TryGetComponent<MeshFilter>(out meshFilter) || meshFilter.sharedMesh == null)
-                {
-                    LogDebug($"Registry: {obj.name} ignored. No valid MeshFilter found.");
-                    return false;
-                }
-            }
-
-            if (!TryGetSpatialBounds(obj, out Bounds worldBounds))
-            {
-                LogDebug($"Registry: {obj.name} ignored. Could not calculate world bounds.");
-                return false;
-            }
-
-            state = SpatialObjectState.Create(
-                worldBounds,
-                obj.transform.localToWorldMatrix,
-                _gridProvider.Anchor,
-                meshFilter,
-                terrain
-            );
-
-            if (showDebugLogs)
-            {
-                string typeInfo = isTerrain ? "Terrain" : $"Mesh ({meshFilter.sharedMesh.name})";
-                Vector3 localPos = worldBounds.center - _gridProvider.Anchor;
-
-                LogDebug($"Registry: Registered '{obj.name}' as {typeInfo}.\n" +
-                         $"  Relative Position to Anchor: {localPos} | Bounds Size: {worldBounds.size}");
-            }
-
-            return true;
-        }
-
-        private bool TryGetSpatialBounds(GameObject obj, out Bounds bounds)
-        {
-            if (obj.TryGetComponent<Renderer>(out var r))
-            {
-                bounds = r.bounds;
+                if (terrain.terrainData == null) return false;
+                state = SpatialObjectState.Create(_gridProvider.Anchor, terrain);
                 return true;
             }
 
-            if (obj.TryGetComponent<Terrain>(out var terrain) && terrain.terrainData != null)
+            if (obj.TryGetComponent<MeshRenderer>(out var renderer))
             {
-                Vector3 size = terrain.terrainData.size;
-                bounds = new Bounds(obj.transform.position + size * 0.5f, size);
+                if (!obj.TryGetComponent<MeshFilter>(out var filter) || filter.sharedMesh == null)
+                    return false;
+
+                state = SpatialObjectState.Create(_gridProvider.Anchor, renderer);
                 return true;
             }
 
-            bounds = default;
             return false;
         }
 

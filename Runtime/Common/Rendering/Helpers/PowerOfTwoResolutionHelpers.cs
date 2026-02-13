@@ -76,5 +76,31 @@ namespace Rayforge.Core.Common.Rendering.Helpers
         {
             return Mathf.RoundToInt(Mathf.Log((int)current, 2));
         }
+
+        /// <summary>
+        /// Calculates how many times the current resolution fits into the specified base resolution per axis.
+        /// This defines the grid density of the atlas slice.
+        /// </summary>
+        /// <example>Resolution512.ToSlotCount(Resolution2048) returns 4 (meaning a 4x4 grid).</example>
+        /// <param name="current">The resolution of a single tile.</param>
+        /// <param name="baseRes">The total resolution of the atlas slice/container.</param>
+        /// <returns>The number of possible slots per axis.</returns>
+        public static int ToSlotCountPerDim(this PowerOfTwoResolution current, PowerOfTwoResolution baseRes)
+        {
+            return (int)baseRes / (int)current;
+        }
+
+        /// <summary>
+        /// Calculates the total capacity (total number of tiles) the base resolution can hold for the current tile size.
+        /// </summary>
+        /// <example>Resolution512.ToTotalSlots(Resolution2048) returns 16.</example>
+        /// <param name="current">The resolution of a single tile.</param>
+        /// <param name="baseRes">The total resolution of the atlas slice/container.</param>
+        /// <returns>The total capacity (area) of the slice in tiles.</returns>
+        public static int ToSlotCount(this PowerOfTwoResolution current, PowerOfTwoResolution baseRes)
+        {
+            int countPerDim = current.ToSlotCountPerDim(baseRes);
+            return countPerDim * countPerDim;
+        }
     }
 }

@@ -1,11 +1,11 @@
 namespace Rayforge.Core.ManagedResources.Abstractions
 {
     /// <summary>
-    /// Interface for descriptors that support batching.
+    /// Interface for descriptors that support batching/element counts.
     /// Implementing descriptors expose a <see cref="Count"/> property,
     /// which can be used by a buffer pool to compute batch-aligned allocations.
     /// </summary>
-    public interface IBatchingDescriptor
+    public interface IArrayDescriptor
     {
         /// <summary>
         /// The number of elements requested or represented by this descriptor.

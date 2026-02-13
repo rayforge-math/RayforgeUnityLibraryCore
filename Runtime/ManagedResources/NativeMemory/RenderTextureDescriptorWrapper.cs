@@ -1,6 +1,7 @@
 using Rayforge.Core.Diagnostics;
 using System;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 
 namespace Rayforge.Core.ManagedResources.NativeMemory
@@ -8,11 +9,26 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// <summary>
     /// Wrapper around Unity's <see cref="RenderTextureDescriptor"/> to provide
     /// value-based comparison and hashing for use in dictionaries and pools.
+    /// Includes sampling settings like <see cref="FilterMode"/> and <see cref="TextureWrapMode"/>.
     /// </summary>
     public struct RenderTextureDescriptorWrapper : IEquatable<RenderTextureDescriptorWrapper>
     {
-        /// <summary>The underlying descriptor.</summary>
+        /// <summary>The underlying Unity descriptor.</summary>
         private RenderTextureDescriptor descriptor;
+
+        /// <summary>Filter mode for sampling (Point, Bilinear, Trilinear).</summary>
+        public FilterMode FilterMode;
+
+        /// <summary>Wrap mode for texture coordinates (Clamp, Repeat, etc.).</summary>
+        public TextureWrapMode WrapMode;
+
+        /// <summary>Anisotropic filtering level.</summary>
+        public int AnisoLevel;
+
+        /// <summary>
+        /// Gets or sets the underlying <see cref="RenderTextureDescriptor"/>.
+        /// Setting this will trigger validation of dimensions and samples.
+        /// </summary>
         public RenderTextureDescriptor Descriptor
         {
             get => descriptor;
@@ -29,7 +45,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             get => descriptor.width;
             set
             {
-                Assertions.AtLeastOne(value, "Width must be greater than zero.");
+                if (value <= 0) throw new ArgumentOutOfRangeException(nameof(value), "Width must be > 0.");
                 descriptor.width = value;
             }
         }
@@ -40,17 +56,13 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             get => descriptor.height;
             set
             {
-                Assertions.AtLeastOne(value, "Height must be greater than zero.");
+                if (value <= 0) throw new ArgumentOutOfRangeException(nameof(value), "Height must be > 0.");
                 descriptor.height = value;
             }
         }
 
-        /// <summary>Color format of the texture.</summary>
-        public RenderTextureFormat ColorFormat
-        {
-            get => descriptor.colorFormat;
-            set => descriptor.colorFormat = value;
-        }
+        public RenderTextureFormat ColorFormat { get => descriptor.colorFormat; set => descriptor.colorFormat = value; }
+        public GraphicsFormat GraphicsFormat { get => descriptor.graphicsFormat; set => descriptor.graphicsFormat = value; }
 
         /// <summary>Depth buffer bits (0, 16, 24, 32).</summary>
         public int DepthBufferBits
@@ -58,43 +70,15 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             get => descriptor.depthBufferBits;
             set
             {
-                Assertions.IsTrue(
-                    value == 0 || value == 16 || value == 24 || value == 32,
-                    "DepthBufferBits must be 0, 16, 24, or 32.");
+                if (value != 0 && value != 16 && value != 24 && value != 32)
+                    throw new ArgumentException("DepthBufferBits must be 0, 16, 24, or 32.");
                 descriptor.depthBufferBits = value;
             }
         }
 
-        /// <summary>Texture dimension.</summary>
-        public TextureDimension Dimension
-        {
-            get => descriptor.dimension;
-            set => descriptor.dimension = value;
-        }
-
-        /// <summary>Volume depth (must be at least 1 for 2D textures).</summary>
-        public int VolumeDepth
-        {
-            get => descriptor.volumeDepth;
-            set
-            {
-                Assertions.AtLeastOne(value, "VolumeDepth must be at least one.");
-                descriptor.volumeDepth = value;
-            }
-        }
-
-        /// <summary>MSAA sample count (1, 2, 4, 8).</summary>
-        public int MSAASamples
-        {
-            get => descriptor.msaaSamples;
-            set
-            {
-                Assertions.IsTrue(
-                    value == 1 || value == 2 || value == 4 || value == 8,
-                    "MSAASamples must be 1, 2, 4, or 8.");
-                descriptor.msaaSamples = value;
-            }
-        }
+        public TextureDimension Dimension { get => descriptor.dimension; set => descriptor.dimension = value; }
+        public int VolumeDepth { get => descriptor.volumeDepth; set => descriptor.volumeDepth = Mathf.Max(1, value); }
+        public int MSAASamples { get => descriptor.msaaSamples; set => descriptor.msaaSamples = Mathf.Clamp(value, 1, 8); }
 
         public bool UseMipMap { get => descriptor.useMipMap; set => descriptor.useMipMap = value; }
         public bool AutoGenerateMips { get => descriptor.autoGenerateMips; set => descriptor.autoGenerateMips = value; }
@@ -104,13 +88,19 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         public bool BindMS { get => descriptor.bindMS; set => descriptor.bindMS = value; }
 
         /// <summary>
-        /// Compares this wrapper with another wrapper for equality.
+        /// Compares this wrapper with another for equality, including sampling settings.
         /// </summary>
         public bool Equals(RenderTextureDescriptorWrapper other)
-            => Equals(other.descriptor);
+        {
+            return Equals(other.descriptor) &&
+                   FilterMode == other.FilterMode &&
+                   WrapMode == other.WrapMode &&
+                   AnisoLevel == other.AnisoLevel;
+        }
 
         /// <summary>
-        /// Compares this wrapper with a raw <see cref="RenderTextureDescriptor"/>.
+        /// Compares this wrapper's descriptor with a raw <see cref="RenderTextureDescriptor"/>.
+        /// Sampling settings are ignored in this specific overload.
         /// </summary>
         public bool Equals(RenderTextureDescriptor other)
         {
@@ -118,6 +108,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
                 other.width == descriptor.width &&
                 other.height == descriptor.height &&
                 other.colorFormat == descriptor.colorFormat &&
+                other.graphicsFormat == descriptor.graphicsFormat &&
                 other.depthBufferBits == descriptor.depthBufferBits &&
                 other.dimension == descriptor.dimension &&
                 other.volumeDepth == descriptor.volumeDepth &&
@@ -130,47 +121,45 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
                 other.bindMS == descriptor.bindMS;
         }
 
-        /// <summary>
-        /// Object equality override.
-        /// </summary>
-        public override bool Equals(object obj)
-            => obj is RenderTextureDescriptorWrapper other && Equals(other);
+        public override bool Equals(object obj) => obj is RenderTextureDescriptorWrapper other && Equals(other);
 
         /// <summary>
-        /// Creates a stable hash code from all relevant descriptor properties.
+        /// Creates a stable hash code based on all descriptor properties and sampling modes.
         /// </summary>
         public override int GetHashCode()
-            => (
-                descriptor.width,
-                descriptor.height,
-                descriptor.colorFormat,
-                descriptor.depthBufferBits,
-                descriptor.dimension,
-                descriptor.volumeDepth,
-                descriptor.msaaSamples,
-                descriptor.useMipMap,
-                descriptor.autoGenerateMips,
-                descriptor.enableRandomWrite,
-                descriptor.useDynamicScale,
-                descriptor.sRGB,
-                descriptor.bindMS
-            ).GetHashCode();
+        {
+            return HashCode.Combine(
+                GetRawDescriptorHash(),
+                (int)FilterMode,
+                (int)WrapMode,
+                AnisoLevel
+            );
+        }
 
         /// <summary>
-        /// Equality operator.
+        /// Generates a hash for the fields within the Unity <see cref="RenderTextureDescriptor"/>.
         /// </summary>
-        public static bool operator ==(RenderTextureDescriptorWrapper left, RenderTextureDescriptorWrapper right)
-            => left.Equals(right);
+        private int GetRawDescriptorHash()
+        {
+            var hash = new HashCode();
+            hash.Add(descriptor.width);
+            hash.Add(descriptor.height);
+            hash.Add(descriptor.colorFormat);
+            hash.Add(descriptor.depthBufferBits);
+            hash.Add(descriptor.dimension);
+            hash.Add(descriptor.volumeDepth);
+            hash.Add(descriptor.msaaSamples);
+            hash.Add(descriptor.useMipMap);
+            hash.Add(descriptor.enableRandomWrite);
+            hash.Add(descriptor.sRGB);
+            return hash.ToHashCode();
+        }
+
+        public static bool operator ==(RenderTextureDescriptorWrapper left, RenderTextureDescriptorWrapper right) => left.Equals(right);
+        public static bool operator !=(RenderTextureDescriptorWrapper left, RenderTextureDescriptorWrapper right) => !left.Equals(right);
 
         /// <summary>
-        /// Inequality operator.
-        /// </summary>
-        public static bool operator !=(RenderTextureDescriptorWrapper left, RenderTextureDescriptorWrapper right)
-            => !left.Equals(right);
-
-        /// <summary>
-        /// Validates the descriptor fields to ensure they meet Unity's requirements.
-        /// Prevents ArgumentExceptions by enforcing minimum values for dimensions and samples.
+        /// Ensures that the underlying Unity descriptor has valid default values.
         /// </summary>
         private void Validate()
         {

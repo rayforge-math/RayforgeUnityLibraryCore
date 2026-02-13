@@ -10,6 +10,7 @@ namespace Rayforge.Core.Common.Rendering
         Resolution256 = 256,
         Resolution512 = 512,
         Resolution1024 = 1024,
-        Resolution2048 = 2048
+        Resolution2048 = 2048,
+        Resolution4096 = 4096
     }
 }

@@ -15,14 +15,35 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     public sealed class ManagedComputeBuffer : ManagedBuffer<ComputeBufferDescriptor, ComputeBuffer>
     {
         /// <summary>
-        /// Private constructor: initializes the managed buffer with an existing ComputeBuffer and descriptor.
+        /// Returns true if the ComputeBuffer is allocated and valid on the GPU.
+        /// </summary>
+        public override bool IsCreated => m_Buffer != null && m_Buffer.IsValid();
+
+        /// <summary>
+        /// Public constructor: initializes the managed buffer with an existing ComputeBuffer and descriptor.
         /// Use the <see cref="Create"/> methods to allocate buffers safely.
         /// </summary>
-        /// <param name="buffer">The internal <see cref="ComputeBuffer"/> to manage.</param>
         /// <param name="desc">Descriptor describing buffer properties.</param>
-        private ManagedComputeBuffer(ComputeBuffer buffer, ComputeBufferDescriptor desc)
-            : base(buffer, desc)
+        public ManagedComputeBuffer(ComputeBufferDescriptor desc)
+            : base(desc)
         { }
+
+        /// <summary>
+        /// Implementation of the abstract allocation method from <see cref="ManagedBuffer{TDesc, TInternal}"/>.
+        /// Performs the actual Unity <see cref="ComputeBuffer"/> instantiation.
+        /// </summary>
+        /// <param name="desc">The descriptor to use for allocation.</param>
+        /// <returns>The newly allocated <see cref="ComputeBuffer"/> instance.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if count or stride is less than or equal to 0.</exception>
+        protected override ComputeBuffer Allocate()
+        {
+            if (Descriptor.Count <= 0)
+                throw new ArgumentOutOfRangeException(nameof(Descriptor.Count), "ComputeBuffer count must be > 0.");
+            if (Descriptor.Stride <= 0)
+                throw new ArgumentOutOfRangeException(nameof(Descriptor.Stride), "ComputeBuffer stride must be > 0.");
+
+            return new ComputeBuffer(Descriptor.Count, Descriptor.Stride, Descriptor.Type);
+        }
 
         /// <summary>
         /// Creates a compute buffer from a descriptor.
@@ -36,13 +57,9 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         /// </exception>
         public static ManagedComputeBuffer Create(ComputeBufferDescriptor desc)
         {
-            if (desc.Count <= 0)
-                throw new ArgumentOutOfRangeException(nameof(desc.Count), "ComputeBuffer count must be > 0.");
-            if (desc.Stride <= 0)
-                throw new ArgumentOutOfRangeException(nameof(desc.Stride), "ComputeBuffer stride must be > 0.");
-
-            var buffer = new ComputeBuffer(desc.Count, desc.Stride, desc.Type);
-            return new ManagedComputeBuffer(buffer, desc);
+            var buffer = new ManagedComputeBuffer(desc);
+            buffer.Create();
+            return buffer;
         }
 
         /// <summary>

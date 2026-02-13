@@ -20,7 +20,7 @@ namespace Rayforge.Core.Environment.Spatial
         public Matrix4x4 localToAnchor;
 
         [Header("Geometry Data")]
-        public MeshFilter meshFilter;
+        public MeshRenderer renderer;
         public Terrain terrain;
 
         /// <summary>
@@ -33,38 +33,44 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public int geometryHash;
 
-        /// <summary>
-        /// Creates a relative spatial state from world-space data.
-        /// Neutralizes world coordinates by shifting them into anchor-space.
-        /// </summary>
-        /// <param name="worldBounds">The current bounds in Unity world space.</param>
-        /// <param name="localToWorld">The current localToWorld matrix of the GameObject.</param>
-        /// <param name="anchor">The current reference anchor of the registry.</param>
-        /// <param name="meshFilter">The mesh reference for geometry tracking.</param>
-        /// <returns>A stable SpatialObjectState relative to the anchor.</returns>
-        public static SpatialObjectState Create(
-            Bounds worldBounds,
-            Matrix4x4 localToWorld,
-            Vector3 anchor,
-            MeshFilter meshFilter,
-            Terrain terrain = null)
+        public static SpatialObjectState Create(Vector3 anchor, Terrain terrain)
         {
-            Vector3 relativeCenter = worldBounds.center - anchor;
-            Bounds anchorBounds = new Bounds(relativeCenter, worldBounds.size);
+            Matrix4x4 localToWorld = terrain.transform.localToWorldMatrix;
+            Vector3 size = terrain.terrainData.size;
+            Bounds worldBounds = new Bounds(terrain.transform.position + size * 0.5f, size);
 
+            Bounds anchorBounds = new Bounds(worldBounds.center - anchor, worldBounds.size);
             Matrix4x4 worldToAnchor = Matrix4x4.Translate(-anchor);
             Matrix4x4 localToAnchor = worldToAnchor * localToWorld;
-
-            int gHash = 0;
-            if (terrain != null) gHash = terrain.terrainData.GetInstanceID();
-            else if (meshFilter != null) gHash = meshFilter.gameObject.GetInstanceID();
 
             return new SpatialObjectState
             {
                 anchorBounds = anchorBounds,
                 localToAnchor = localToAnchor,
-                meshFilter = meshFilter,
+                renderer = null,
                 terrain = terrain,
+                geometryHash = terrain.terrainData.GetInstanceID()
+            };
+        }
+
+        public static SpatialObjectState Create(Vector3 anchor, MeshRenderer renderer)
+        {
+            Matrix4x4 localToWorld = renderer.transform.localToWorldMatrix;
+            Bounds worldBounds = renderer.bounds;
+
+            Bounds anchorBounds = new Bounds(worldBounds.center - anchor, worldBounds.size);
+            Matrix4x4 worldToAnchor = Matrix4x4.Translate(-anchor);
+            Matrix4x4 localToAnchor = worldToAnchor * localToWorld;
+
+            var filter = renderer.GetComponent<MeshFilter>();
+            int gHash = (filter != null && filter.sharedMesh != null) ? filter.sharedMesh.GetInstanceID() : 0;
+
+            return new SpatialObjectState
+            {
+                anchorBounds = anchorBounds,
+                localToAnchor = localToAnchor,
+                renderer = renderer,
+                terrain = null,
                 geometryHash = gHash
             };
         }
@@ -76,7 +82,7 @@ namespace Rayforge.Core.Environment.Spatial
         public bool Equals(SpatialObjectState other)
         {
             return geometryHash == other.geometryHash &&
-                   meshFilter == other.meshFilter &&
+                   renderer == other.renderer &&
                    terrain == other.terrain &&
                    localToAnchor.Equals(other.localToAnchor) &&
                    anchorBounds.Equals(other.anchorBounds);
@@ -89,7 +95,7 @@ namespace Rayforge.Core.Environment.Spatial
             unchecked
             {
                 int hash = 17;
-                hash = hash * 31 + (meshFilter != null ? meshFilter.GetHashCode() : 0);
+                hash = hash * 31 + (renderer != null ? renderer.GetHashCode() : 0);
                 hash = hash * 31 + (terrain != null ? terrain.GetHashCode() : 0);
                 hash = hash * 31 + geometryHash;
                 hash = hash * 31 + localToAnchor.GetHashCode();

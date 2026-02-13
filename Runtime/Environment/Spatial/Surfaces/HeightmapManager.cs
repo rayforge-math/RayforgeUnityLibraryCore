@@ -2,7 +2,7 @@ using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
-using Rayforge.Core.Environment.Spatial.Surfaces;
+using Rayforge.Core.Environment.Spatial.Rendering;
 using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.ManagedResources.Pooling;
 using Rayforge.Core.Rendering.Helpers;
@@ -12,27 +12,15 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using UnityEngine;
-using UnityEngine.UIElements;
 
-namespace Rayforge.Core.Environment.Spatial.Surface
+namespace Rayforge.Core.Environment.Spatial.Surfaces
 {
     /// <summary>
     /// Scans the scene hierarchy for valid world objects and synchronizes them with the SurfaceRegistry.
     /// Handles filtering by name and physical area to ensure only relevant surfaces are processed.
     /// </summary>
-    public class SurfaceManager : MonoBehaviour
+    public class HeightmapManager : MonoBehaviour
     {
-        #region Nested Types
-        [System.Serializable]
-        public struct SurfaceLODLevel
-        {
-            [Tooltip("Distance threshold for this level.")]
-            public float distanceThreshold;
-            [Tooltip("Edge resolution for the heightmap.")]
-            public PowerOfTwoResolution mapResolution;
-        }
-        #endregion
-
         #region Serialized Fields: Configuration
         [Header("Debug & Diagnostics")]
         public bool showDebugLogs = false;
@@ -53,7 +41,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         public float updateSensitivity = 0.1f;
 
         [Tooltip("Define LOD levels (Distances and Resolutions).")]
-        public SurfaceLODLevel[] lodLevels;
+        public TextureLOD[] lodLevels;
         [Tooltip("Define LOD levels (Distances and Resolutions).")]
         public float minRelativeY;
         [Tooltip("Define LOD levels (Distances and Resolutions).")]
@@ -81,15 +69,15 @@ namespace Rayforge.Core.Environment.Spatial.Surface
         private readonly HashSet<int> _surfaceIds = new HashSet<int>();
         private readonly List<int> _cleanupBuffer = new List<int>(32);
 
-        private LODChunkRegistry<SurfaceChunk> _chunkRegistry;
+        private LODChunkRegistry<HeightmapChunk> _chunkRegistry;
         private SpatialObjectRegistry _objectRegistry;
         private Vector3 _lastUpdatePos;
         private bool _needsSpatialSync = false;
 
-        SurfaceLODLevel[] _validLodLevels = Array.Empty<SurfaceLODLevel>();
+        TextureLOD[] _validLodLevels = Array.Empty<TextureLOD>();
 
         private static readonly BufferCreateFunc<RenderTextureDescriptorWrapper, ManagedRenderTexture> s_Create =
-            _ => ManagedRenderTexture.Create(_, FilterMode.Point, TextureWrapMode.Clamp);
+            _ => ManagedRenderTexture.Create(_);
         private readonly ManagedRenderTexturePool _texturePool = new ManagedRenderTexturePool(s_Create);
 
         private readonly Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>> _leasedBuffers = new Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>>();
@@ -206,7 +194,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             {
                 _chunkRegistry?.Dispose();
 
-                _chunkRegistry = new LODChunkRegistry<SurfaceChunk>(
+                _chunkRegistry = new LODChunkRegistry<HeightmapChunk>(
                     (GridSize)chunkSize,
                     transform.position,
                     GetValidLodDistances(),
@@ -332,12 +320,12 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             if (lodLevels == null || lodLevels.Length == 0)
             {
                 LogDebug("GetValidLodLevels: No LOD levels defined.");
-                _validLodLevels = new SurfaceLODLevel[0];
+                _validLodLevels = Array.Empty<TextureLOD>();
                 return;
             }
 
-            List<SurfaceLODLevel> validLevels = new List<SurfaceLODLevel>(capacity: lodLevels.Length);
-            SurfaceLODLevel lastAccepted = default;
+            List<TextureLOD> validLevels = new List<TextureLOD>(capacity: lodLevels.Length);
+            TextureLOD lastAccepted = default;
 
             for (int i = 0; i < lodLevels.Length; i++)
             {
@@ -507,7 +495,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                     }
                     else
                     {
-                        Action<SurfaceChunk> configChunk = _ =>
+                        Action<HeightmapChunk> configChunk = _ =>
                         {
                             _.OnLODChanged += HandleChunkLODChanged;
                             _.OnCleanup += HandleChunkCleanup;
@@ -554,7 +542,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             }
         }
 
-        private void HandleChunkCleanup(SurfaceChunk sender)
+        private void HandleChunkCleanup(HeightmapChunk sender)
         {
             _toRelease.Add(sender.GridKey);
         }
@@ -576,7 +564,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
 
             foreach (var key in _toAssign)
             { 
-                if (_chunkRegistry.TryGetEntry(key, out SurfaceChunk chunk))
+                if (_chunkRegistry.TryGetEntry(key, out HeightmapChunk chunk))
                 {
                     int currentLod = chunk.CurrentLOD;
 
@@ -604,7 +592,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
             {
                 LogDebug($"Trying to bake Chunk {key}");
 
-                if (!_chunkRegistry.TryGetEntry(key, out SurfaceChunk chunk))
+                if (!_chunkRegistry.TryGetEntry(key, out HeightmapChunk chunk))
                 {
                     continue;
                 }
@@ -622,7 +610,7 @@ namespace Rayforge.Core.Environment.Spatial.Surface
                 HeightmapBaker.Bake(
                     chunk.Heightmap,
                     bakeParams,
-                    _objectRegistry.GetMeshesInCell(key),
+                    _objectRegistry.GetRenderersInCell(key),
                     _objectRegistry.GetTerrainsInCell(key)
                 );
 
@@ -696,14 +684,14 @@ namespace Rayforge.Core.Environment.Spatial.Surface
     /// <summary>
     /// Custom Editor to provide convenient buttons for surface management in the Inspector.
     /// </summary>
-    [UnityEditor.CustomEditor(typeof(SurfaceManager))]
+    [UnityEditor.CustomEditor(typeof(HeightmapManager))]
     public class SurfaceManagerEditor : UnityEditor.Editor
     {
         public override void OnInspectorGUI()
         {
             DrawDefaultInspector();
 
-            SurfaceManager script = (SurfaceManager)target;
+            HeightmapManager script = (HeightmapManager)target;
 
             GUILayout.Space(10);
             if (GUILayout.Button("Refresh Surfaces", GUILayout.Height(30)))

@@ -9,7 +9,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// Describes the properties of a compute buffer.
     /// Used to define element count, stride, batch padding, and buffer type.
     /// </summary>
-    public struct ComputeBufferDescriptor : IEquatable<ComputeBufferDescriptor>, IBatchingDescriptor
+    public struct ComputeBufferDescriptor : IEquatable<ComputeBufferDescriptor>, IArrayDescriptor
     {
         /// <summary>Number of elements in the buffer.</summary>
         private int count;

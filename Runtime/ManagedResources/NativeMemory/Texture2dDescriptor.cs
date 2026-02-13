@@ -18,6 +18,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         private bool linear;
         private FilterMode filterMode;
         private TextureWrapMode wrapMode;
+        private int anisoLevel;
 
         /// <summary>Texture width in pixels. Must be > 0.</summary>
         public int Width
@@ -62,11 +63,18 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         /// <summary>Linear color space flag.</summary>
         public bool Linear { get => linear; set => linear = value; }
 
-        /// <summary>Filtering mode for texture sampling.</summary>
+        /// <summary>Filtering mode for texture sampling (Point, Bilinear, Trilinear).</summary>
         public FilterMode FilterMode { get => filterMode; set => filterMode = value; }
 
-        /// <summary>Wrap mode for texture addressing.</summary>
+        /// <summary>Wrap mode for texture addressing (Clamp, Repeat, etc.).</summary>
         public TextureWrapMode WrapMode { get => wrapMode; set => wrapMode = value; }
+
+        /// <summary>Anisotropic filtering level (0 to 16).</summary>
+        public int AnisoLevel
+        {
+            get => anisoLevel;
+            set => anisoLevel = Mathf.Clamp(value, 0, 16);
+        }
 
         /// <summary>
         /// Validates the texture properties to ensure they are compatible with Unity's Texture2D requirements.
@@ -74,10 +82,11 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         public void Validate()
         {
             if (mipCount <= 0) mipCount = 1;
+            anisoLevel = Mathf.Clamp(anisoLevel, 0, 16);
         }
 
         /// <summary>
-        /// Compares all descriptor fields for equality.
+        /// Compares all descriptor fields for equality, including sampling and aniso settings.
         /// </summary>
         public bool Equals(Texture2dDescriptor other)
             => width == other.width
@@ -86,13 +95,23 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             && mipCount == other.mipCount
             && linear == other.linear
             && filterMode == other.filterMode
-            && wrapMode == other.wrapMode;
+            && wrapMode == other.wrapMode
+            && anisoLevel == other.anisoLevel;
 
         public override bool Equals(object obj)
             => obj is Texture2dDescriptor other && Equals(other);
 
+        /// <summary>
+        /// Creates a stable hash code for dictionary lookups (e.g., in a texture pool).
+        /// </summary>
         public override int GetHashCode()
-            => (width, height, colorFormat, mipCount, linear, filterMode, wrapMode).GetHashCode();
+        {
+            return HashCode.Combine(
+                (width, height, colorFormat).GetHashCode(),
+                (mipCount, linear, filterMode).GetHashCode(),
+                (wrapMode, anisoLevel).GetHashCode()
+            );
+        }
 
         public static bool operator ==(Texture2dDescriptor left, Texture2dDescriptor right)
             => left.Equals(right);

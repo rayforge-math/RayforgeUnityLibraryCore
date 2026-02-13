@@ -1,6 +1,5 @@
 using UnityEditor;
 using UnityEngine;
-using static UnityEngine.GraphicsBuffer;
 
 namespace Rayforge.Core.Environment.Spatial.Surfaces
 {
@@ -9,7 +8,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// Stores surface-specific data like heightmaps and reacts to LOD changes to trigger re-bakes.
     /// </summary>
     [ChunkConfig(SpatialAxes.Surface)]
-    public class SurfaceChunk : LODChunk<SurfaceChunk>
+    public class HeightmapChunk : LODChunk<HeightmapChunk>
     {
         /// <summary>
         /// The GPU texture holding height data for this chunk.
@@ -52,14 +51,14 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     }
 
 #if UNITY_EDITOR
-    [CustomEditor(typeof(SurfaceChunk))]
+    [CustomEditor(typeof(HeightmapChunk))]
     public class SurfaceChunkEditor : Editor
     {
         public override void OnInspectorGUI()
         {
             DrawDefaultInspector();
 
-            var chunk = (SurfaceChunk)target;
+            var chunk = (HeightmapChunk)target;
 
             if (chunk.Heightmap != null)
             {

@@ -8,7 +8,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// <summary>
     /// Descriptor for a native system buffer (NativeArray), including size and allocator.
     /// </summary>
-    public struct SystemBufferDescriptor : IEquatable<SystemBufferDescriptor>, IBatchingDescriptor
+    public struct SystemBufferDescriptor : IEquatable<SystemBufferDescriptor>, IArrayDescriptor
     {
         private int count;
         private Allocator allocator;

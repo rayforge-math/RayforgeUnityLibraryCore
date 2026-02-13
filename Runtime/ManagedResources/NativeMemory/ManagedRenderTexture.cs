@@ -11,40 +11,58 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     public sealed class ManagedRenderTexture : ManagedBuffer<RenderTextureDescriptorWrapper, RenderTexture>
     {
         /// <summary>
-        /// Private constructor to initialize the managed render texture.
+        /// Returns true if the RenderTexture object exists and the native GPU resource is allocated.
+        /// </summary>
+        public override bool IsCreated => m_Buffer != null && m_Buffer.IsCreated();
+
+        /// <summary>
+        /// Public constructor to initialize the managed render texture.
         /// Use the <see cref="Create"/> factory method instead of calling directly.
         /// </summary>
-        /// <param name="texture">The internal <see cref="RenderTexture"/> to manage.</param>
         /// <param name="descriptor">Descriptor describing texture properties.</param>
-        private ManagedRenderTexture(RenderTexture texture, RenderTextureDescriptorWrapper descriptor)
-            : base(texture, descriptor)
+        public ManagedRenderTexture(RenderTextureDescriptorWrapper descriptor)
+            : base(descriptor)
         { }
 
         /// <summary>
-        /// Creates and configures a managed render texture.
+        /// Implementation of the abstract allocation method. 
+        /// Uses the internal <see cref="m_Descriptor"/> to instantiate the <see cref="RenderTexture"/>.
         /// </summary>
-        /// <param name="desc">Descriptor defining resolution, format, and other texture properties.</param>
-        /// <param name="filterMode">Filter mode (Point, Bilinear, Trilinear) for sampling.</param>
-        /// <param name="wrapMode">Wrap mode (Clamp, Repeat, Mirror) for texture coordinates.</param>
-        /// <returns>A new <see cref="ManagedRenderTexture"/> instance.</returns>
-        /// <exception cref="ArgumentOutOfRangeException">
-        /// Thrown if <see cref="RenderTextureDescriptorWrapper.Width"/> or <see cref="RenderTextureDescriptorWrapper.Height"/> is <= 0.
-        /// </exception>
-        public static ManagedRenderTexture Create(RenderTextureDescriptorWrapper desc, FilterMode filterMode, TextureWrapMode wrapMode)
+        /// <returns>The newly created and initialized <see cref="RenderTexture"/>.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if width or height is invalid.</exception>
+        protected override RenderTexture Allocate()
         {
-            if (desc.Width <= 0)
-                throw new ArgumentOutOfRangeException(nameof(desc.Width), "RenderTexture width must be greater than zero.");
-            if (desc.Height <= 0)
-                throw new ArgumentOutOfRangeException(nameof(desc.Height), "RenderTexture height must be greater than zero.");
+            var d = m_Descriptor;
 
-            var texture = new RenderTexture(desc.Descriptor)
+            if (d.Width <= 0)
+                throw new ArgumentOutOfRangeException(nameof(d.Width), "RenderTexture width must be greater than zero.");
+            if (d.Height <= 0)
+                throw new ArgumentOutOfRangeException(nameof(d.Height), "RenderTexture height must be greater than zero.");
+
+            var texture = new RenderTexture(d.Descriptor)
             {
-                filterMode = filterMode,
-                wrapMode = wrapMode
+                filterMode = d.FilterMode,
+                wrapMode = d.WrapMode,
+                anisoLevel = d.AnisoLevel,
+                name = "ManagedRenderTexture"
             };
 
             texture.Create();
-            return new ManagedRenderTexture(texture, desc);
+            return texture;
+        }
+
+        /// <summary>
+        /// Creates and optionally initializes a managed render texture wrapper.
+        /// Sampling settings are now part of the <see cref="RenderTextureDescriptorWrapper"/>.
+        /// </summary>
+        /// <param name="desc">Descriptor defining resolution, format, and sampling properties.</param>
+        /// <param name="init">If true, the GPU resource is allocated immediately.</param>
+        /// <returns>A new <see cref="ManagedRenderTexture"/> instance.</returns>
+        public static ManagedRenderTexture Create(RenderTextureDescriptorWrapper desc)
+        {
+            var wrapper = new ManagedRenderTexture(desc);
+            wrapper.Create();
+            return wrapper;
         }
 
         /// <summary>
@@ -53,9 +71,16 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         /// </summary>
         public override void Release()
         {
-            if (m_Buffer != null && m_Buffer.IsCreated())
+            if (m_Buffer != null)
             {
-                m_Buffer.Release();
+                if (m_Buffer.IsCreated())
+                {
+                    m_Buffer.Release();
+                }
+
+                if (Application.isPlaying) UnityEngine.Object.Destroy(m_Buffer);
+                else UnityEngine.Object.DestroyImmediate(m_Buffer);
+
                 m_Buffer = null;
             }
         }
