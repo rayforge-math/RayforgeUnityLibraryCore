@@ -2,7 +2,6 @@ using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Common.Rendering.Helpers;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering

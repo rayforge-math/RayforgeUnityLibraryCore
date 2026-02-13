@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.SocialPlatforms;
 using UnityEngine.TerrainUtils;
 
 namespace Rayforge.Core.Rendering.Projection
@@ -316,13 +317,16 @@ namespace Rayforge.Core.Rendering.Projection
             float near = 0.01f;
             float far = absMaxY - absMinY;
 
-            Vector4 yParams = new Vector4(absMinY, absMaxY, .0f, 1.0f / far);
+            float invRange = far > 0.0001f ? 1.0f / far : 0f;
+
+            Vector4 yParams = new Vector4(absMinY, absMaxY, .0f, invRange);
 
             if (renderers != null)
             {
                 Vector3 camPos = new Vector3(param.WorldCenter.x, absMaxY, param.WorldCenter.z);
-                Quaternion rot = Quaternion.Euler(90f, 0f, 0f);
-                Matrix4x4 viewMatrix = Matrix4x4.TRS(camPos, rot, Vector3.one).inverse;
+
+                Matrix4x4 viewRot = Matrix4x4.Rotate(Quaternion.Euler(90, 0, 0));
+                Matrix4x4 viewMatrix = viewRot * Matrix4x4.Translate(-camPos);
 
                 float xExtent = param.Extent.x;
                 float yExtent = param.Extent.y;

@@ -38,7 +38,7 @@
 
             struct v2f {
                 float4 pos : SV_POSITION;
-                float worldY : TEXCOORD0;
+                float normalizedY : TEXCOORD0;
             };
 
             v2f vert (appdata v)
@@ -46,13 +46,13 @@
                 v2f o;
                 float4 worldPos = mul(unity_ObjectToWorld, v.vertex);
                 o.pos = mul(unity_MatrixVP, worldPos);
-                o.worldY = worldPos.y - _BakerYParams.x;
+                o.normalizedY = (worldPos.y - _BakerYParams.x) * _BakerYParams.w;
                 return o;
             }
 
             float4 frag (v2f i) : SV_Target
             {
-                return float4(i.worldY, 0, 0, 1);
+                return float4(i.normalizedY, 0, 0, 1);
             }
             ENDHLSL
         }
