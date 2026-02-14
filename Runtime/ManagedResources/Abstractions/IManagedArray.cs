@@ -1,15 +1,13 @@
 namespace Rayforge.Core.ManagedResources.Abstractions
 {
     /// <summary>
-    /// Interface for a managed resource array (GPU or CPU) that requires explicit data transfer.
-    /// Provides methods for allocation management and element-wise access.
+    /// Represents a fixed-size hardware resource (GPU/CPU).
+    /// Focuses on data transfer and lifecycle.
     /// </summary>
-    /// <typeparam name="TIn">The type used for setting/uploading data.</typeparam>
-    /// <typeparam name="TOut">The type used for getting/downloading data.</typeparam>
     public interface IManagedArray<in TIn, TOut>
     {
         /// <summary>
-        /// Gets the total number of elements currently allocated in the array.
+        /// Gets the total number of elements currently allocated.
         /// </summary>
         int Count { get; }
 
@@ -19,17 +17,13 @@ namespace Rayforge.Core.ManagedResources.Abstractions
         void Release();
 
         /// <summary>
-        /// Sets the data at a specific index using the provided input element.
+        /// Sets data at a specific index using the TIn type.
         /// </summary>
-        /// <param name="index">The zero-based index.</param>
-        /// <param name="element">The input data (e.g., a Texture or a Struct).</param>
-        void SetElement(int index, TIn element);
+        public void SetElement(int index, TIn element);
 
         /// <summary>
-        /// Copies data from the array at a specific index into the output reference.
+        /// Copies data from a specific index into a TOut reference.
         /// </summary>
-        /// <param name="index">The zero-based index.</param>
-        /// <param name="element">The destination reference for the output data.</param>
-        void CopyElementTo(int index, ref TOut element);
+        public void CopyElementTo(int index, ref TOut element);
     }
 }

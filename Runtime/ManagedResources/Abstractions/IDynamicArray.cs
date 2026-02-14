@@ -4,7 +4,7 @@ namespace Rayforge.Core.ManagedResources.Abstractions
     /// Interface for managing dynamic arrays (GPU or CPU), 
     /// providing access to element operations and resizing.
     /// </summary>
-    public interface IDynamicArray
+    public interface IDynamicArray<in TIn, TOut>
     {
         /// <summary>
         /// Gets the total number of elements currently allocated.
@@ -20,5 +20,10 @@ namespace Rayforge.Core.ManagedResources.Abstractions
         /// re-allocations if the count remains unchanged.
         /// </remarks>
         void Create(int count);
+
+        /// <summary>
+        /// Explicitly releases the resource (e.g., returns lease to pool).
+        /// </summary>
+        void Release();
     }
 }

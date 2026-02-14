@@ -7,7 +7,7 @@ using UnityEngine;
 namespace Rayforge.Core.ManagedResources.NativeMemory
 {
     /// <summary>
-    /// A strongly-typed wrapper for <see cref="ComputeBuffer"/> that implements <see cref="IManagedArray{T}"/>.
+    /// A strongly-typed wrapper for <see cref="ComputeBuffer"/> that implements <see cref="IManagedArray{T, T}"/>.
     /// Inherits base buffer logic while providing typed element access.
     /// </summary>
     /// <typeparam name="T">The unmanaged value type stored in the buffer.</typeparam>

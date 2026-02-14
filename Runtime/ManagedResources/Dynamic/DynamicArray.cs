@@ -12,7 +12,7 @@ namespace Rayforge.Core.ManagedResources.Dynamic
     /// <typeparam name="TOut">The type used for getting/downloading elements.</typeparam>
     /// <typeparam name="TDesc">The descriptor type for the resource.</typeparam>
     /// <typeparam name="TResource">The managed resource type (e.g., TBuffer or List of Slices).</typeparam>
-    public abstract class DynamicArray<TIn, TOut, TDesc, TResource> : IDynamicArray, IManagedArray<TIn, TOut>, IDisposable
+    public abstract class DynamicArray<TIn, TOut, TDesc, TResource> : IDynamicArray<TIn, TOut>, IDisposable
         where TDesc : unmanaged, IArrayDescriptor
     {
         private readonly IArrayAllocator<TDesc, TResource> m_Allocator;

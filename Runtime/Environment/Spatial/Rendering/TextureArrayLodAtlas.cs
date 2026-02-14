@@ -1,16 +1,21 @@
 using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Common.Rendering.Helpers;
+using Rayforge.Core.ManagedResources.Abstractions;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering
 {
+    /// <summary>
+    /// Manages a multi-LOD texture atlas by calculating slice requirements 
+    /// and controlling a hardware-agnostic <see cref="IDynamicTextureArray"/>.
+    /// </summary>
     public class TextureArrayLodAtlas : IDisposable
     {
-        private Texture2DArray _dataArray;
+        private IDynamicTextureArray m_AtlasResource;
 
-        private LodSliceMetadata[] _lodMetaData;
+        private LodSliceMetadata[] m_LodMetaData;
 
         private struct LodSliceMetadata
         {
@@ -19,30 +24,24 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             public int slotsPerDim;
         }
 
-        // English: Maps LOD Level Index -> List of Slice Indices in the Texture2DArray
-        private Dictionary<int, List<int>> _lodToSlicePool;
-
-        public void Dispose()
-        {
-            Texture2DArray.Destroy(_dataArray);
-        }
-
         /// <summary>
-        /// Initializes the atlas as a generic spatial data provider based on LOD distances and tile size.
+        /// Initializes the atlas layout and resizes the underlying resource.
         /// </summary>
-        /// <param name="lods">The LOD configuration array. lods[0] defines the base resolution of the atlas.</param>
-        /// <param name="tileSize">The world size of a single tile (chunk).</param>
-        /// <param name="format">The data format (e.g., R16 for precision, RGBA8 for masks).</param>
-        public void Initialize(TextureLOD[] lods, float tileSize, TextureFormat format)
+        /// <param name="resource">The dynamic resource to be used as storage.</param>
+        /// <param name="lods">LOD configuration array.</param>
+        /// <param name="tileSize">World size of a single tile.</param>
+        public void Initialize(IDynamicTextureArray resource, TextureLOD[] lods, float tileSize)
         {
+            m_AtlasResource = resource ?? throw new ArgumentNullException(nameof(resource));
+
             if (lods == null || lods.Length == 0)
             {
-                _lodMetaData = Array.Empty<LodSliceMetadata>();
+                m_LodMetaData = Array.Empty<LodSliceMetadata>();
                 return;
             }
 
             var baseRes = lods[0].mapResolution;
-            _lodMetaData = new LodSliceMetadata[lods.Length];
+            m_LodMetaData = new LodSliceMetadata[lods.Length];
 
             int currentSliceOffset = 0;
             float prevDist = -1;
@@ -54,7 +53,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
                 int reqSlices = SliceCount(baseRes, lods[i].mapResolution, tilesInRing);
 
-                _lodMetaData[i] = new LodSliceMetadata
+                m_LodMetaData[i] = new LodSliceMetadata
                 {
                     startSlice = currentSliceOffset,
                     sliceCount = reqSlices,
@@ -64,52 +63,52 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 currentSliceOffset += reqSlices;
             }
 
-            _dataArray = new Texture2DArray(
-                (int)baseRes,
-                (int)baseRes,
-                currentSliceOffset,
-                format,
-                false
-            );
-
-            _dataArray.filterMode = FilterMode.Bilinear;
-            _dataArray.wrapMode = TextureWrapMode.Clamp;
+            m_AtlasResource.Create(currentSliceOffset);
         }
 
         /// <summary>
-        /// Calculates the tile count for a ring based on world distances.
-        /// If the configuration is invalid (prev >= current), it treats this LOD as a full square.
+        /// Updates a tile using the abstract SetSlice method.
         /// </summary>
+        public void UpdateTile(int globalSliceIndex, Texture source)
+        {
+            m_AtlasResource?.SetSlice(globalSliceIndex, source);
+        }
+
+        /// <summary>
+        /// Provides the resource for shader binding via the interface.
+        /// </summary>
+        public Texture GetGPUResource() => m_AtlasResource?.GetBaseResource();
+
+        public void Dispose()
+        {
+            m_AtlasResource?.Release();
+            m_AtlasResource = null;
+        }
+
+        #region Geometry Helpers
+
         private static int GetTileCountForRing(float largeRadius, float smallRadius, float tileSize)
         {
             int lTiles = GetTileCountForRadius(largeRadius, tileSize);
-
-            if (smallRadius <= 0 || smallRadius >= largeRadius)
-            {
-                return lTiles;
-            }
-
+            if (smallRadius <= 0 || smallRadius >= largeRadius) return lTiles;
             int sTiles = GetTileCountForRadius(smallRadius, tileSize);
-
             return Mathf.Max(0, lTiles - sTiles);
         }
 
         private static int GetTileCountForRadius(float radius, float tileSize)
         {
             if (tileSize <= 0.001f) return 0;
-
             int tiles = Mathf.CeilToInt(radius / tileSize);
             int side = (tiles * 2) + 1;
-            int area = side * side;
-
-            return Mathf.Max(0, area);
+            return Mathf.Max(0, side * side);
         }
 
         private static int SliceCount(PowerOfTwoResolution baseRes, PowerOfTwoResolution res, int tiles)
         {
             var slotCountPerSlice = res.ToSlotCount(baseRes);
-            int sliceCount = Mathf.CeilToInt((float)tiles / slotCountPerSlice);
-            return sliceCount;
+            return Mathf.CeilToInt((float)tiles / slotCountPerSlice);
         }
+
+        #endregion
     }
 }

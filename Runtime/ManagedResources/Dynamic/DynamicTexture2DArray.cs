@@ -27,18 +27,21 @@ namespace Rayforge.Core.ManagedResources.Dynamic
             BatchedLeasedBufferPool<Texture2dArrayDescriptor, ManagedTexture2DArray> pool,
             Texture2dArrayDescriptor baseDescriptor)
             : base(new PooledArrayAllocator<Texture2dArrayDescriptor, ManagedTexture2DArray>(pool), baseDescriptor)
-        {
-        }
+        { }
 
-        #region Slice Operations
+        #region IDynamicTextureArray Implementation
+
+        /// <summary>
+        /// Provides the actual Texture2DArray for shader binding.
+        /// </summary>
+        /// <returns>The underlying Texture2DArray or null if not allocated.</returns>
+        public override Texture GetBaseResource() => InternalArray?.Buffer;
 
         /// <summary>
         /// Updates a specific layer (slice) using a source texture.
         /// This typically triggers a GPU upload via the underlying managed buffer.
         /// </summary>
-        /// <param name="index">The target index in the array.</param>
-        /// <param name="source">The source texture data.</param>
-        public void SetSlice(int index, Texture source)
+        public override void SetSlice(int index, Texture source)
         {
             if (InternalArray == null || source == null) return;
             InternalArray.SetSlice(index, source);
@@ -47,9 +50,7 @@ namespace Rayforge.Core.ManagedResources.Dynamic
         /// <summary>
         /// Extracts the content of a specific slice into a destination RenderTexture.
         /// </summary>
-        /// <param name="index">The slice index to copy from.</param>
-        /// <param name="destination">The target RenderTexture.</param>
-        public void CopySliceToRenderTexture(int index, RenderTexture destination)
+        public override void CopySliceToRenderTexture(int index, RenderTexture destination)
         {
             if (InternalArray == null || destination == null) return;
             InternalArray.GetSlice(index, destination);
