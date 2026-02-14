@@ -11,7 +11,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// Inherits base buffer logic while providing typed element access.
     /// </summary>
     /// <typeparam name="T">The unmanaged value type stored in the buffer.</typeparam>
-    public sealed class ManagedComputeArray<T> : ManagedComputeBuffer, IManagedArray<T>
+    public sealed class ManagedComputeArray<T> : ManagedComputeBuffer, IManagedArray<T, T>
         where T : unmanaged
     {
         /// <summary>

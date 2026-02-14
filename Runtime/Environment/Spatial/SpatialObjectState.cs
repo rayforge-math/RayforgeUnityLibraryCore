@@ -33,6 +33,12 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public int geometryHash;
 
+        /// <summary>
+        /// Creates a spatial state representation for a <see cref="Terrain"/> object relative to a world-space anchor.
+        /// </summary>
+        /// <param name="anchor">The world-space position used as the origin (0,0,0) for this state.</param>
+        /// <param name="terrain">The Unity Terrain component to represent.</param>
+        /// <returns>A new <see cref="SpatialObjectState"/> mapped to the anchor space.</returns>
         public static SpatialObjectState Create(Vector3 anchor, Terrain terrain)
         {
             Matrix4x4 localToWorld = terrain.transform.localToWorldMatrix;
@@ -53,6 +59,12 @@ namespace Rayforge.Core.Environment.Spatial
             };
         }
 
+        /// <summary>
+        /// Creates a spatial state representation for a <see cref="MeshRenderer"/> object relative to a world-space anchor.
+        /// </summary>
+        /// <param name="anchor">The world-space position used as the origin (0,0,0) for this state.</param>
+        /// <param name="renderer">The MeshRenderer component to represent.</param>
+        /// <returns>A new <see cref="SpatialObjectState"/> mapped to the anchor space.</returns>
         public static SpatialObjectState Create(Vector3 anchor, MeshRenderer renderer)
         {
             Matrix4x4 localToWorld = renderer.transform.localToWorldMatrix;

@@ -4,8 +4,9 @@ namespace Rayforge.Core.ManagedResources.Abstractions
     /// Interface for a managed resource array (GPU or CPU) that requires explicit data transfer.
     /// Provides methods for allocation management and element-wise access.
     /// </summary>
-    /// <typeparam name="TElement">The type of the elements stored in the array.</typeparam>
-    public interface IManagedArray<TElement>
+    /// <typeparam name="TIn">The type used for setting/uploading data.</typeparam>
+    /// <typeparam name="TOut">The type used for getting/downloading data.</typeparam>
+    public interface IManagedArray<in TIn, TOut>
     {
         /// <summary>
         /// Gets the total number of elements currently allocated in the array.
@@ -18,19 +19,17 @@ namespace Rayforge.Core.ManagedResources.Abstractions
         void Release();
 
         /// <summary>
-        /// Sets the data at a specific index using the provided element.
-        /// This typically involves a GPU upload or memory copy.
+        /// Sets the data at a specific index using the provided input element.
         /// </summary>
-        /// <param name="index">The zero-based index of the element to set.</param>
-        /// <param name="element">The data to upload/set.</param>
-        void SetElement(int index, TElement element);
+        /// <param name="index">The zero-based index.</param>
+        /// <param name="element">The input data (e.g., a Texture or a Struct).</param>
+        void SetElement(int index, TIn element);
 
         /// <summary>
-        /// Copies data from the array at a specific index into the provided element reference.
-        /// This typically involves a GPU download or an efficient memory copy.
+        /// Copies data from the array at a specific index into the output reference.
         /// </summary>
-        /// <param name="index">The zero-based index of the element to copy.</param>
-        /// <param name="element">The destination where the data will be copied to.</param>
-        void CopyElementTo(int index, ref TElement element);
+        /// <param name="index">The zero-based index.</param>
+        /// <param name="element">The destination reference for the output data.</param>
+        void CopyElementTo(int index, ref TOut element);
     }
 }

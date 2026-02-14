@@ -9,7 +9,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// Provides automatic creation, release, and pooling support.
     /// </summary>
     /// <typeparam name="TType">The struct type stored in the array.</typeparam>
-    public sealed class ManagedSystemBuffer<TType> : ManagedBuffer<SystemBufferDescriptor, NativeArray<TType>>, IManagedArray<TType>
+    public sealed class ManagedSystemBuffer<TType> : ManagedBuffer<SystemBufferDescriptor, NativeArray<TType>>, IManagedArray<TType, TType>
         where TType : struct
     {
         /// <summary>

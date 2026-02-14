@@ -1,116 +1,81 @@
 using Rayforge.Core.ManagedResources.Abstractions;
-using Rayforge.Core.ManagedResources.Pooling;
 using System;
-using UnityEngine;
 
 namespace Rayforge.Core.ManagedResources.Dynamic
 {
     /// <summary>
-    /// A generic wrapper that provides dynamic resizing capabilities by
-    /// bridging <see cref="IDynamicArray{TElement}"/> with a <see cref="BatchedLeasedBufferPool{TDesc, TBuffer}"/>.
+    /// A generic wrapper providing dynamic resizing capabilities. 
+    /// Bridges <see cref="IDynamicArray"/> with an <see cref="IArrayAllocator{TDesc, TResource}"/>.
+    /// Distinguishes between input data (TIn) and output data (TOut).
     /// </summary>
-    /// <typeparam name="TElement">The type of elements (e.g., float, MyStruct).</typeparam>
-    /// <typeparam name="TDesc">The descriptor type for the buffer.</typeparam>
-    /// <typeparam name="TBuffer">The managed buffer type (must implement IManagedArray).</typeparam>
-    public class DynamicArray<TElement, TDesc, TBuffer> : IDynamicArray<TElement>, IManagedArray<TElement>, IDisposable
-        where TBuffer : IPooledBuffer<TDesc>, IManagedArray<TElement>
-        where TDesc : unmanaged, IEquatable<TDesc>, IArrayDescriptor
+    /// <typeparam name="TIn">The type used for setting/uploading elements.</typeparam>
+    /// <typeparam name="TOut">The type used for getting/downloading elements.</typeparam>
+    /// <typeparam name="TDesc">The descriptor type for the resource.</typeparam>
+    /// <typeparam name="TResource">The managed resource type (e.g., TBuffer or List of Slices).</typeparam>
+    public abstract class DynamicArray<TIn, TOut, TDesc, TResource> : IDynamicArray, IManagedArray<TIn, TOut>, IDisposable
+        where TDesc : unmanaged, IArrayDescriptor
     {
-        private readonly BatchedLeasedBufferPool<TDesc, TBuffer> m_Pool;
-        private BatchedLeasedBuffer<TBuffer> m_Lease;
+        private readonly IArrayAllocator<TDesc, TResource> m_Allocator;
         private TDesc m_BaseDescriptor;
 
         /// <summary>
-        /// Exposes the internal resource.
+        /// Direct access to the internal resource managed by the allocator.
         /// </summary>
-        public TBuffer InternalArray
-        {
-            get
-            {
-                if (m_Lease != null)
-                {
-                    return m_Lease.BufferHandle;
-                }
-                return default;
-            }
-        }
+        public TResource InternalArray => m_Allocator.InternalArray;
 
         /// <summary>
-        /// Gets the current number of elements in the buffer.
+        /// Logical element count. Must be implemented by the storage strategy.
         /// </summary>
-        public int Count => m_Lease != null ? m_Lease.BufferHandle.Count : 0;
+        public abstract int Count { get; }
 
-        /// <summary>
-        /// Initializes a new dynamic array linked to a specific batched pool.
-        /// </summary>
-        /// <param name="pool">The pool used for resizing and batching.</param>
-        /// <param name="baseDescriptor">The template descriptor (Count will be modified during Resize).</param>
-        public DynamicArray(BatchedLeasedBufferPool<TDesc, TBuffer> pool, TDesc baseDescriptor)
+        protected DynamicArray(IArrayAllocator<TDesc, TResource> allocator, TDesc baseDescriptor)
         {
-            m_Pool = pool ?? throw new ArgumentNullException(nameof(pool));
+            m_Allocator = allocator ?? throw new ArgumentNullException(nameof(allocator));
             m_BaseDescriptor = baseDescriptor;
         }
 
         /// <summary>
-        /// Implementation of IDynamicArray. Resizes the resource via the pool.
+        /// Handles allocation and capacity management. 
+        /// Data preservation is handled externally if needed.
         /// </summary>
-        /// <param name="count">Desired number of elements.</param>
-        /// <param name="preserve">If true, copies data from the old buffer to the new one.</param>
-        public void Create(int count, bool preserve = false)
+        public void Create(int count)
         {
             if (count <= 0)
             {
-                Dispose();
+                Release();
                 return;
             }
 
-            if (m_Lease == null)
+            if (InternalArray == null)
             {
-                m_BaseDescriptor.Count = count;
-                m_Lease = m_Pool.Rent(m_BaseDescriptor);
-                return;
+                m_Allocator.Rent(m_BaseDescriptor, count);
             }
-
-            if (!m_Lease.EnsureBatchSize(count))
+            else if (!m_Allocator.EnsureSize(count))
             {
-                if (preserve)
-                {
-                    TDesc nextDesc = m_BaseDescriptor;
-                    nextDesc.Count = count;
-                    var nextLease = m_Pool.Rent(nextDesc);
-
-                    int copyCount = Math.Min(Count, count);
-                    for (int i = 0; i < copyCount; i++)
-                    {
-                        TElement val = default;
-                        m_Lease.BufferHandle.CopyElementTo(i, ref val);
-                        nextLease.BufferHandle.SetElement(i, val);
-                    }
-
-                    m_Lease.Return();
-                    m_Lease = nextLease;
-                }
-                else
-                {
-                    m_Lease.Resize(count);
-                }
+                m_Allocator.Resize(count);
             }
         }
 
-        #region IManagedArray Forwarding
+        #region Abstract Accessors
 
-        public void SetElement(int index, TElement element) => m_Lease?.BufferHandle.SetElement(index, element);
+        /// <summary>
+        /// Sets data at a specific index using the TIn type.
+        /// </summary>
+        public abstract void SetElement(int index, TIn element);
 
-        public void CopyElementTo(int index, ref TElement element) => m_Lease?.BufferHandle.CopyElementTo(index, ref element);
-
-        public void Release()
-        {
-            m_Lease?.Return();
-            m_Lease = null;
-        }
+        /// <summary>
+        /// Copies data from a specific index into a TOut reference.
+        /// </summary>
+        public abstract void CopyElementTo(int index, ref TOut element);
 
         #endregion
 
-        public void Dispose() => Release();
+        public void Release() => m_Allocator.Release();
+
+        public void Dispose()
+        {
+            Release();
+            m_Allocator.Dispose();
+        }
     }
 }

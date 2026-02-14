@@ -8,7 +8,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// Managed wrapper around Unity's <see cref="Texture2DArray"/>.
     /// Provides creation, validation, and controlled release using the managed buffer pattern.
     /// </summary>
-    public sealed class ManagedTexture2DArray : ManagedBuffer<Texture2dArrayDescriptor, Texture2DArray>, IManagedArray<Texture>
+    public sealed class ManagedTexture2DArray : ManagedBuffer<Texture2dArrayDescriptor, Texture2DArray>, IManagedArray<Texture, RenderTexture>
     {
         /// <summary>
         /// Gets the number of slices in the texture array.
@@ -192,17 +192,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         /// <remarks>
         /// Note: The 'ref' element must be an existing, allocated RenderTexture.
         /// </remarks>
-        public void CopyElementTo(int index, ref Texture element)
-        {
-            if (element is RenderTexture rt)
-            {
-                GetSlice(index, rt);
-            }
-            else
-            {
-                throw new ArgumentException("CopyElementTo for Texture2DArray requires a RenderTexture as destination.");
-            }
-        }
+        public void CopyElementTo(int index, ref RenderTexture element) => GetSlice(index, element);
 
         public override bool Equals(ManagedBuffer<Texture2dArrayDescriptor, Texture2DArray> other)
             => ReferenceEquals(this, other);
