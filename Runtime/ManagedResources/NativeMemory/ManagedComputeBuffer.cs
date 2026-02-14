@@ -12,7 +12,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// Managed wrapper around Unity's <see cref="ComputeBuffer"/> that handles allocation, data upload, and cleanup.
     /// Inherits from <see cref="ManagedBuffer{TDesc,TBuffer}"/> for generic GPU resource management.
     /// </summary>
-    public sealed class ManagedComputeBuffer : ManagedBuffer<ComputeBufferDescriptor, ComputeBuffer>
+    public class ManagedComputeBuffer : ManagedBuffer<ComputeBufferDescriptor, ComputeBuffer>
     {
         /// <summary>
         /// Returns true if the ComputeBuffer is allocated and valid on the GPU.

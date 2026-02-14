@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Chunks
 {
     /// <summary>
     /// A specialized registry for fixed-grid WorldChunk3D instances.

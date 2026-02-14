@@ -4,7 +4,7 @@ using System;
 using System.Diagnostics;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Chunks
 {
     /// <summary>
     /// A high-performance registry that centralizes LOD logic for chunks.

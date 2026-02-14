@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Chunks
 {
     [StructLayout(LayoutKind.Sequential)]
     public struct ChunkGPUData

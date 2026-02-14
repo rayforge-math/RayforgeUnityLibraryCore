@@ -7,6 +7,7 @@ using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.ManagedResources.Pooling;
 using Rayforge.Core.Rendering.Helpers;
 using Rayforge.Core.Rendering.Projection;
+using Rayforge.Core.Environment.Spatial.Chunks;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;

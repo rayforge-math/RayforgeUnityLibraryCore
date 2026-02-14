@@ -7,7 +7,7 @@ namespace Rayforge.Core.ManagedResources.Pooling
     /// This type extends <see cref="LeasedBuffer{TDesc,TBuffer}"/> by providing a mechanism
     /// to verify whether the current buffer still fits within the batching constraints of the pool.
     /// </summary>
-    /// <typeparam name="TBuffer">The managed buffer type implementing <see cref="IPooledBuffer{TDesc}"/>.</typeparam>
+    /// <typeparam name="TBuffer">The managed buffer type.</typeparam>
     public class BatchedLeasedBuffer<TBuffer> : LeasedBuffer<TBuffer>
     {
         private readonly BatchCheckFunc m_OnBatchCheck;

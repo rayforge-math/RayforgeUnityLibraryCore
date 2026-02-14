@@ -1,4 +1,4 @@
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Chunks
 {
     [System.AttributeUsage(System.AttributeTargets.Class, Inherited = true)]
     public class ChunkConfigAttribute : System.Attribute

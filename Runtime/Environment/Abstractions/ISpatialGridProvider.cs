@@ -1,4 +1,4 @@
-using Rayforge.Core.Environment.Spatial;
+using Rayforge.Core.Environment.Spatial.Chunks;
 using System.Collections.Generic;
 using UnityEngine;
 

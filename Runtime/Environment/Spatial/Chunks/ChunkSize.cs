@@ -1,4 +1,4 @@
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Chunks
 {
     /// <summary>
     /// The Master-Enum that consolidates all available grid sizes.

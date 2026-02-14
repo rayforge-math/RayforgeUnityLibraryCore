@@ -3,7 +3,7 @@ using System.Reflection;
 using UnityEngine;
 using Rayforge.Core.Environment.Abstractions;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Chunks
 {
     /// <summary>
     /// A high-performance, generic base class for spatial world chunks.

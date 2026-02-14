@@ -9,9 +9,15 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// Provides automatic creation, release, and pooling support.
     /// </summary>
     /// <typeparam name="TType">The struct type stored in the array.</typeparam>
-    public sealed class ManagedSystemBuffer<TType> : ManagedBuffer<SystemBufferDescriptor, NativeArray<TType>>
+    public sealed class ManagedSystemBuffer<TType> : ManagedBuffer<SystemBufferDescriptor, NativeArray<TType>>, IManagedArray<TType>
         where TType : struct
     {
+        /// <summary>
+        /// Gets the number of elements allocated in the underlying NativeArray.
+        /// </summary>
+        /// <value>The element count, or 0 if the array is not created.</value>
+        public int Count => m_Buffer.IsCreated ? m_Buffer.Length : 0;
+
         /// <summary>
         /// Returns true if the underlying NativeArray is allocated and has not been disposed.
         /// Implementation of the abstract property in ManagedBuffer.
@@ -58,6 +64,30 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             var buffer = new ManagedSystemBuffer<TType>(desc);
             buffer.Create();
             return buffer;
+        }
+
+        /// <summary>
+        /// Sets the element at the specified index.
+        /// </summary>
+        /// <param name="index">The zero-based index in the array.</param>
+        /// <param name="element">The data to set.</param>
+        /// <exception cref="IndexOutOfRangeException">Thrown if the index is out of bounds.</exception>
+        public void SetElement(int index, TType element)
+        {
+            if (!IsCreated) return;
+            m_Buffer[index] = element;
+        }
+
+        /// <summary>
+        /// Copies the element at the specified index into the provided reference.
+        /// </summary>
+        /// <param name="index">The zero-based index in the array.</param>
+        /// <param name="element">The destination reference to receive the data.</param>
+        /// <exception cref="IndexOutOfRangeException">Thrown if the index is out of bounds.</exception>
+        public void CopyElementTo(int index, ref TType element)
+        {
+            if (!IsCreated) return;
+            element = m_Buffer[index];
         }
 
         /// <summary>

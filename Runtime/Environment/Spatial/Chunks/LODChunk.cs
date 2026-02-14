@@ -3,7 +3,7 @@ using System;
 using System.ComponentModel;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Chunks
 {
     public abstract class LODChunk<T> : Chunk<T>, ILODState, ILODReceiver
         where T : LODChunk<T>

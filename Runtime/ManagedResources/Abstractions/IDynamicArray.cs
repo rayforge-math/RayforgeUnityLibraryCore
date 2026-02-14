@@ -1,5 +1,3 @@
-using UnityEngine;
-
 namespace Rayforge.Core.ManagedResources.Abstractions
 {
     /// <summary>
@@ -14,26 +12,17 @@ namespace Rayforge.Core.ManagedResources.Abstractions
         int Count { get; }
 
         /// <summary>
-        /// Creates or resizes the array.
+        /// Allocates or resizes the array to the specified count.
         /// </summary>
-        /// <param name="count">New size of the array.</param>
-        /// <param name="preserve">If true, attempts to keep existing data.</param>
+        /// <param name="count">The new desired size of the array. Must be non-negative.</param>
+        /// <param name="preserve">
+        /// If true, the implementation should attempt to copy existing data from the old 
+        /// buffer to the new one.
+        /// </param>
+        /// <remarks>
+        /// Implementations should include a necessity check to avoid redundant 
+        /// re-allocations if the count remains unchanged.
+        /// </remarks>
         void Create(int count, bool preserve = false);
-
-        /// <summary>
-        /// Releases all allocated resources.
-        /// </summary>
-        void Release();
-
-        /// <summary>
-        /// Copies data from the array at <paramref name="index"/> into <paramref name="element"/>.
-        /// Using 'ref' allows this to work efficiently for both structs and classes.
-        /// </summary>
-        void CopyElementTo(int index, ref TElement element);
-
-        /// <summary>
-        /// Sets the data at <paramref name="index"/> using the provided <paramref name="element"/>.
-        /// </summary>
-        void SetElement(int index, TElement element);
     }
 }

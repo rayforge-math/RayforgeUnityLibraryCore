@@ -8,8 +8,13 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// Managed wrapper around Unity's <see cref="Texture2DArray"/>.
     /// Provides creation, validation, and controlled release using the managed buffer pattern.
     /// </summary>
-    public sealed class ManagedTexture2DArray : ManagedBuffer<Texture2dArrayDescriptor, Texture2DArray>
+    public sealed class ManagedTexture2DArray : ManagedBuffer<Texture2dArrayDescriptor, Texture2DArray>, IManagedArray<Texture>
     {
+        /// <summary>
+        /// Gets the number of slices in the texture array.
+        /// </summary>
+        public int Count => m_Buffer != null ? m_Buffer.depth : 0;
+
         /// <summary>
         /// Returns true if the Texture2DArray object is allocated and valid.
         /// </summary>
@@ -85,46 +90,118 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         }
 
         /// <summary>
-        /// Copies the provided textures into the array.
-        /// Validates dimensions, format, and mip count before copying via GPU.
+        /// Copies a source texture into a specific slice of the array. 
+        /// Supports <see cref="Texture2D"/> and <see cref="RenderTexture"/>.
         /// </summary>
-        public bool SetTextures(Texture2D[] textures)
+        /// <param name="index">The target slice index within the array.</param>
+        /// <param name="source">The source texture to copy data from.</param>
+        /// <exception cref="NullReferenceException">Thrown if the internal buffer is not yet created.</exception>
+        /// <exception cref="ArgumentNullException">Thrown if the source texture is null.</exception>
+        /// <exception cref="IndexOutOfRangeException">Thrown if the index is outside the bounds of the array.</exception>
+        /// <exception cref="ArgumentException">Thrown if the source dimensions do not match the array settings.</exception>
+        public void SetSlice(int index, Texture source)
         {
-            if (m_Buffer == null) return false;
-            if (textures == null || textures.Length == 0)
+            if (m_Buffer == null)
+                throw new NullReferenceException("GPU buffer is not allocated.");
+            if (source == null)
+                throw new ArgumentNullException(nameof(source));
+            if (index < 0 || index >= m_Descriptor.Count)
+                throw new IndexOutOfRangeException($"Slice index {index} is out of bounds.");
+
+            var d = m_Descriptor.Descriptor;
+
+            if (source.width != d.Width || source.height != d.Height)
             {
-                Debug.LogError("Texture array provided for upload is null or empty.");
-                return false;
+                throw new ArgumentException(
+                    $"Dimension mismatch! Expected {d.Width}x{d.Height}, but got {source.width}x{source.height}.");
             }
 
-            var template = m_Descriptor.Descriptor;
-            int texturesToCopy = Mathf.Min(textures.Length, m_Descriptor.Count);
+            int sourceMips = 1;
+            if (source is Texture2D t2d) sourceMips = t2d.mipmapCount;
+            else if (source is RenderTexture rt) sourceMips = rt.useMipMap ? rt.mipmapCount : 1;
 
-            for (int i = 0; i < texturesToCopy; i++)
+            int mipsToCopy = Mathf.Min(d.MipCount, sourceMips);
+
+            for (int m = 0; m < mipsToCopy; m++)
             {
-                if (textures[i] == null) continue;
+                Graphics.CopyTexture(source, 0, m, m_Buffer, index, m);
+            }
+        }
 
-                if (textures[i].width != template.Width || textures[i].height != template.Height)
-                {
-                    Debug.LogError($"Mismatched dimensions at index {i}. Expected {template.Width}x{template.Height}.");
-                    continue;
-                }
+        /// <summary>
+        /// Extracts a specific slice from the array into a provided <see cref="RenderTexture"/>.
+        /// </summary>
+        /// <param name="index">The slice index to read from.</param>
+        /// <param name="destination">The target RenderTexture that will receive the slice data.</param>
+        /// <exception cref="NullReferenceException">Thrown if the internal buffer is not yet created.</exception>
+        /// <exception cref="ArgumentNullException">Thrown if the destination is null.</exception>
+        /// <exception cref="IndexOutOfRangeException">Thrown if the index is outside the bounds of the array.</exception>
+        public void GetSlice(int index, RenderTexture destination)
+        {
+            if (m_Buffer == null)
+                throw new NullReferenceException("GPU buffer is not allocated.");
+            if (destination == null)
+                throw new ArgumentNullException(nameof(destination));
+            if (index < 0 || index >= m_Descriptor.Count)
+                throw new IndexOutOfRangeException($"Index {index} is out of bounds.");
 
-                for (int j = 0; j < template.MipCount; ++j)
-                {
-                    try
-                    {
-                        Graphics.CopyTexture(textures[i], 0, j, m_Buffer, i, j);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"Failed to copy slice {i} Mip {j}: {ex.Message}");
-                    }
-                }
+            Graphics.Blit(m_Buffer, destination, index, 0);
+        }
+
+        /// <summary>
+        /// Performs a bulk upload of an entire array of textures into the GPU resource.
+        /// </summary>
+        /// <param name="textures">An array of <see cref="Texture2D"/> to be uploaded into the slices.</param>
+        /// <returns>True if the upload operation was completed successfully.</returns>
+        /// <remarks>
+        /// This method will call <see cref="Texture2DArray.Apply"/> after all slices have been copied.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">Thrown if the textures array is null.</exception>
+        public bool SetTextures(Texture2D[] textures)
+        {
+            if (textures == null)
+                throw new ArgumentNullException(nameof(textures));
+            if (m_Buffer == null)
+                return false;
+
+            int count = Mathf.Min(textures.Length, m_Descriptor.Count);
+            for (int i = 0; i < count; i++)
+            {
+                if (textures[i] != null)
+                    SetSlice(i, textures[i]);
             }
 
             m_Buffer.Apply(false);
             return true;
+        }
+
+        /// <summary>
+        /// Implementation of <see cref="IManagedArray{T}.SetElement"/>.
+        /// Redirects to <see cref="SetSlice(int, Texture)"/>.
+        /// </summary>
+        /// <param name="index">Target slice index.</param>
+        /// <param name="element">Source texture (Texture2D or RenderTexture).</param>
+        public void SetElement(int index, Texture element) => SetSlice(index, element);
+
+        /// <summary>
+        /// Implementation of <see cref="IManagedArray{T}.CopyElementTo"/>.
+        /// Extracts a slice into a <see cref="RenderTexture"/>.
+        /// </summary>
+        /// <param name="index">Source slice index.</param>
+        /// <param name="element">Target RenderTexture reference.</param>
+        /// <remarks>
+        /// Note: The 'ref' element must be an existing, allocated RenderTexture.
+        /// </remarks>
+        public void CopyElementTo(int index, ref Texture element)
+        {
+            if (element is RenderTexture rt)
+            {
+                GetSlice(index, rt);
+            }
+            else
+            {
+                throw new ArgumentException("CopyElementTo for Texture2DArray requires a RenderTexture as destination.");
+            }
         }
 
         public override bool Equals(ManagedBuffer<Texture2dArrayDescriptor, Texture2DArray> other)
