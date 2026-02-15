@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Rayforge.Core.Rendering.Collections
+namespace Rayforge.Core.Rendering.Collections.Graphics
 {
     /// <summary>
     /// Represents a chain of handles corresponding to mip levels of a texture.

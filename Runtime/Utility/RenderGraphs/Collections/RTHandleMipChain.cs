@@ -1,4 +1,4 @@
-using Rayforge.Core.Rendering.Collections;
+using Rayforge.Core.Rendering.Collections.Graphics;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Rayforge.Core.Common;

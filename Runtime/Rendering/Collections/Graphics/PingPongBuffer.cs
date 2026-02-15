@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 using Rayforge.Core.Rendering.Abstractions;
 
-namespace Rayforge.Core.Rendering.Collections
+namespace Rayforge.Core.Rendering.Collections.Graphics
 {
     /// <summary>
     /// Generic ping-pong buffer that manages two handles of type <typeparamref name="THandle"/>.

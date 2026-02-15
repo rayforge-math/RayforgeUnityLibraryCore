@@ -3,7 +3,7 @@ using UnityEngine;
 
 using Rayforge.Core.Rendering.Collections.Helpers;
 
-namespace Rayforge.Core.Rendering.Collections
+namespace Rayforge.Core.Rendering.Collections.Graphics
 {
     /// <summary>
     /// Represents the layout of a mip chain, independent of any rendering backend.

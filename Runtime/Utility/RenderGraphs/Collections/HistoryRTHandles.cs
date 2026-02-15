@@ -1,6 +1,5 @@
 using Rayforge.Core.Common;
-using Rayforge.Core.Diagnostics;
-using Rayforge.Core.Rendering.Collections;
+using Rayforge.Core.Rendering.Collections.Graphics;
 using System;
 using UnityEngine;
 using UnityEngine.Rendering;

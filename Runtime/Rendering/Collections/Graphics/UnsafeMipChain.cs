@@ -4,7 +4,7 @@ using UnityEngine;
 
 using Rayforge.Core.Rendering.Collections.Helpers;
 
-namespace Rayforge.Core.Rendering.Collections
+namespace Rayforge.Core.Rendering.Collections.Graphics
 {
     /// <summary>
     /// Represents an "unsafe" mip chain with additional flexibility for advanced scenarios.
