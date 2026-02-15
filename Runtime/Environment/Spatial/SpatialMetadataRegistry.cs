@@ -34,7 +34,6 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="batchSize">Size of a single dirty-tracking batch for optimized GPU uploads.</param>
         protected SpatialMetadataRegistry(int capacity, int batchSize) : base(capacity, batchSize)
         {
-            // English: Pre-registering the mandatory pipeline stores to ensure consistent memory layout
             SpatialStore = AddStore<TSpatial>();
             VisualStore = AddStore<TVisual>();
         }
@@ -90,5 +89,23 @@ namespace Rayforge.Core.Environment.Spatial
             SpatialStore.MarkAllDirty();
             VisualStore.MarkAllDirty();
         }
+
+        /// <summary>
+        /// Fully releases the key and ensures the GPU data is invalidated.
+        /// This is the "Template Method" that provides a unified API.
+        /// </summary>
+        public void ReleaseAndKill(TKey key)
+        {
+            if (TryGetIndex(key, out int index))
+            {
+                SpatialStore.Set(index, GetInvalidSpatialData());
+                Release(key);
+            }
+        }
+
+        /// <summary>
+        /// Must be implemented by child classes to define what "inactive" means for TSpatial.
+        /// </summary>
+        protected abstract TSpatial GetInvalidSpatialData();
     }
 }
