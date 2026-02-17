@@ -45,10 +45,34 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="key">The unique identifier of the entity.</param>
         /// <param name="spatial">The new spatial/culling data.</param>
         /// <param name="visual">The new visual/rendering data.</param>
-        public void SetSpatial(TKey key, TSpatial spatial, TVisual visual)
+        public void SetMetadata(TKey key, TSpatial spatial, TVisual visual)
         {
             int idx = GetOrAllocateIndex(key);
             SpatialStore.Set(idx, spatial);
+            VisualStore.Set(idx, visual);
+        }
+
+        /// <summary>
+        /// Updates only the spatial/culling data for a key.
+        /// Useful for moving objects that don't change their appearance.
+        /// </summary>
+        /// <param name="key">The unique identifier of the entity.</param>
+        /// <param name="spatial">The new spatial/culling data.</param>
+        public void SetSpatial(TKey key, TSpatial spatial)
+        {
+            int idx = GetOrAllocateIndex(key);
+            SpatialStore.Set(idx, spatial);
+        }
+
+        /// <summary>
+        /// Updates only the visual/atlas data for a key.
+        /// Useful for LOD swaps or texture updates where the position stays fixed.
+        /// </summary>
+        /// <param name="key">The unique identifier of the entity.</param>
+        /// <param name="visual">The new visual/rendering data.</param>
+        public void SetVisual(TKey key, TVisual visual)
+        {
+            int idx = GetOrAllocateIndex(key);
             VisualStore.Set(idx, visual);
         }
 
@@ -59,7 +83,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="spatial">The current spatial data (out).</param>
         /// <param name="visual">The current visual data (out).</param>
         /// <returns>True if the key was found and data was retrieved.</returns>
-        public bool TryGetSpatial(TKey key, out TSpatial spatial, out TVisual visual)
+        public bool TryGetMetadata(TKey key, out TSpatial spatial, out TVisual visual)
         {
             if (TryGetIndex(key, out int index))
             {
@@ -71,6 +95,52 @@ namespace Rayforge.Core.Environment.Spatial
             spatial = default;
             visual = default;
             return false;
+        }
+
+        /// <summary>
+        /// Tries to retrieve only the spatial data.
+        /// </summary>
+        /// <param name="key">The unique identifier of the entity.</param>
+        /// <param name="spatial">The current spatial data (out).</param>
+        /// <returns>True if the key was found and data was retrieved.</returns>
+        public bool TryGetSpatial(TKey key, out TSpatial spatial)
+        {
+            if (TryGetIndex(key, out int index))
+            {
+                spatial = SpatialStore.Get(index);
+                return true;
+            }
+            spatial = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Tries to retrieve only the visual data.
+        /// </summary>
+        /// <param name="key">The unique identifier of the entity.</param>
+        /// <param name="visual">The current visual data (out).</param>
+        /// <returns>True if the key was found and data was retrieved.</returns>
+        public bool TryGetVisual(TKey key, out TVisual visual)
+        {
+            if (TryGetIndex(key, out int index))
+            {
+                visual = VisualStore.Get(index);
+                return true;
+            }
+            visual = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Iterates through all dirty segments of the internal stores and invokes the provided callbacks.
+        /// This allows external systems to synchronize GPU buffers without the registry knowing about hardware resources.
+        /// </summary>
+        /// <param name="onSpatialChanged">Callback invoked for modified spatial data ranges (sourceArray, offset, count).</param>
+        /// <param name="onVisualChanged">Callback invoked for modified visual data ranges (sourceArray, offset, count).</param>
+        public void ExtractChanges(Action<Array, int, int> onSpatialChanged, Action<Array, int, int> onVisualChanged)
+        {
+            SpatialStore.ProcessDirtyBatches(onSpatialChanged);
+            VisualStore.ProcessDirtyBatches(onVisualChanged);
         }
 
         /// <summary>

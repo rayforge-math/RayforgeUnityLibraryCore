@@ -1,4 +1,5 @@
 using Rayforge.Core.Diagnostics;
+using Rayforge.Core.ManagedResources.Abstractions;
 using System;
 using UnityEngine;
 
@@ -9,7 +10,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// mipmap configuration, and sampling/filtering settings.
     /// Used as the configuration key for texture pooling.
     /// </summary>
-    public struct Texture2dDescriptor : IEquatable<Texture2dDescriptor>
+    public struct Texture2dDescriptor : IEquatable<Texture2dDescriptor>, ITextureDescriptor
     {
         private int width;
         private int height;
@@ -42,8 +43,10 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             }
         }
 
-        /// <summary>Pixel format of the texture.</summary>
-        public TextureFormat ColorFormat
+        /// <summary>
+        /// Provides a standard TextureFormat view.
+        /// </summary>
+        public TextureFormat Format
         {
             get => colorFormat;
             set => colorFormat = value;

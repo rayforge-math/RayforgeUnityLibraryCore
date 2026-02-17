@@ -5,18 +5,24 @@ namespace Rayforge.Core.ManagedResources.Dynamic
 {
     /// <summary>
     /// A generic wrapper providing dynamic resizing capabilities. 
-    /// Bridges <see cref="IDynamicArray"/> with an <see cref="IArrayAllocator{TDesc, TResource}"/>.
+    /// Bridges <see cref="IDynamicArray{TIn, TOut}"/> with an <see cref="IArrayAllocator{TDesc, TResource}"/>.
     /// Distinguishes between input data (TIn) and output data (TOut).
     /// </summary>
     /// <typeparam name="TIn">The type used for setting/uploading elements.</typeparam>
     /// <typeparam name="TOut">The type used for getting/downloading elements.</typeparam>
-    /// <typeparam name="TDesc">The descriptor type for the resource.</typeparam>
-    /// <typeparam name="TResource">The managed resource type (e.g., TBuffer or List of Slices).</typeparam>
-    public abstract class DynamicArray<TIn, TOut, TDesc, TResource> : IDynamicArray<TIn, TOut>, IDisposable
+    /// <typeparam name="TDesc">The descriptor type for the resource (e.g., format, resolution).</typeparam>
+    /// <typeparam name="TResource">The managed resource type (e.g., ComputeBuffer or Texture2DArray).</typeparam>
+    public abstract class DynamicArray<TIn, TOut, TDesc, TResource> : IDynamicArray<TIn, TOut>
         where TDesc : unmanaged, IArrayDescriptor
     {
+        #region Private Fields
+
         private readonly IArrayAllocator<TDesc, TResource> m_Allocator;
         private TDesc m_BaseDescriptor;
+
+        #endregion
+
+        #region Properties
 
         /// <summary>
         /// Direct access to the internal resource managed by the allocator.
@@ -24,9 +30,23 @@ namespace Rayforge.Core.ManagedResources.Dynamic
         public TResource InternalArray => m_Allocator.InternalArray;
 
         /// <summary>
-        /// Logical element count. Must be implemented by the storage strategy.
+        /// Returns true if the underlying resource has been allocated by the allocator.
+        /// </summary>
+        public bool IsCreated => InternalArray != null;
+
+        /// <summary>
+        /// Descriptor used for array allocation.
+        /// </summary>
+        public TDesc Descriptor => m_BaseDescriptor;
+
+        /// <summary>
+        /// Logical element count. Must be implemented by the specific storage strategy.
         /// </summary>
         public abstract int Count { get; }
+
+        #endregion
+
+        #region Constructor
 
         protected DynamicArray(IArrayAllocator<TDesc, TResource> allocator, TDesc baseDescriptor)
         {
@@ -34,11 +54,16 @@ namespace Rayforge.Core.ManagedResources.Dynamic
             m_BaseDescriptor = baseDescriptor;
         }
 
+        #endregion
+
+        #region Lifecycle (IDynamicArray)
+
         /// <summary>
-        /// Handles allocation and capacity management. 
-        /// Data preservation is handled externally if needed.
+        /// Handles allocation and capacity management via the linked allocator. 
+        /// If count is 0, the resource is released.
         /// </summary>
-        public void Create(int count)
+        /// <param name="count">The target number of elements.</param>
+        public void Reallocate(int count)
         {
             if (count <= 0)
             {
@@ -56,26 +81,34 @@ namespace Rayforge.Core.ManagedResources.Dynamic
             }
         }
 
-        #region Abstract Accessors
-
         /// <summary>
-        /// Sets data at a specific index using the TIn type.
+        /// Explicitly returns the resource handle to the allocator (e.g., returning to a pool).
         /// </summary>
-        public abstract void SetElement(int index, TIn element);
-
-        /// <summary>
-        /// Copies data from a specific index into a TOut reference.
-        /// </summary>
-        public abstract void CopyElementTo(int index, ref TOut element);
-
-        #endregion
-
         public void Release() => m_Allocator.Release();
 
-        public void Dispose()
+        /// <summary>
+        /// Disposes the allocator and releases any held resources.
+        /// </summary>
+        public virtual void Dispose()
         {
             Release();
             m_Allocator.Dispose();
         }
+
+        #endregion
+
+        #region Abstract Accessors (IArray)
+
+        /// <summary>
+        /// Maps the <see cref="IArray{TIn, TOut}.Set"/> call to the internal storage logic.
+        /// </summary>
+        public abstract void Set(int index, TIn data);
+
+        /// <summary>
+        /// Maps the <see cref="IArray{TIn, TOut}.Get"/> call to the internal storage logic.
+        /// </summary>
+        public abstract void Get(int index, ref TOut result);
+
+        #endregion
     }
 }

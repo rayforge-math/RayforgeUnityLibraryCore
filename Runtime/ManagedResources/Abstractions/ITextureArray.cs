@@ -6,8 +6,18 @@ namespace Rayforge.Core.ManagedResources.Abstractions
     /// A specialized interface for dynamic texture collections.
     /// It simplifies the API by fixing TIn to <see cref="Texture"/> and TOut to <see cref="RenderTexture"/>.
     /// </summary>
-    public interface IDynamicTextureArray : IDynamicArray<Texture, RenderTexture>
+    public interface ITextureArray : IArray<Texture, RenderTexture>
     {
+        /// <summary>
+        /// Gets the horizontal resolution of the texture resource in pixels.
+        /// </summary>
+        int Width { get; }
+
+        /// <summary>
+        /// Gets the vertical resolution of the texture resource in pixels.
+        /// </summary>
+        int Height { get; }
+
         /// <summary>
         /// Specific helper for texture updates, matching the Texture2DArray logic.
         /// </summary>
@@ -17,10 +27,5 @@ namespace Rayforge.Core.ManagedResources.Abstractions
         /// Specific helper for extracting a slice into a render target.
         /// </summary>
         void CopySliceToRenderTexture(int index, RenderTexture destination);
-
-        /// <summary>
-        /// Provides the underlying hardware resource (e.g., Texture2DArray) for shader binding.
-        /// </summary>
-        Texture GetBaseResource();
     }
 }

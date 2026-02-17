@@ -11,33 +11,36 @@ namespace Rayforge.Core.ManagedResources.Dynamic
     /// </summary>
     /// <typeparam name="TDesc">The descriptor type for the specific texture resource.</typeparam>
     /// <typeparam name="TResource">The resource managed by the allocator.</typeparam>
-    public abstract class DynamicTextureArray<TDesc, TResource> : DynamicArray<Texture, RenderTexture, TDesc, TResource>, IDynamicTextureArray
-        where TDesc : unmanaged, IEquatable<TDesc>, IArrayDescriptor
+    public abstract class DynamicTextureArray<TDesc, TResource> : DynamicArray<Texture, RenderTexture, TDesc, TResource>, ITextureArray
+        where TDesc : unmanaged, IEquatable<TDesc>, IArrayDescriptor, ITextureDescriptor
     {
         protected DynamicTextureArray(IArrayAllocator<TDesc, TResource> allocator, TDesc baseDescriptor)
             : base(allocator, baseDescriptor)
         { }
 
-        #region IDynamicTextureArray Implementation
+        #region ITextureArray Implementation
 
         /// <summary>
         /// Specialized method for updating a slice. 
         /// Maps the generic SetElement to a more descriptive name for textures.
         /// </summary>
-        public virtual void SetSlice(int index, Texture source) => SetElement(index, source);
+        public abstract void SetSlice(int index, Texture source);
 
         /// <summary>
         /// Specialized method for extracting a slice into a RenderTexture.
         /// Maps the generic CopyElementTo to a more descriptive name.
         /// </summary>
-        public virtual void CopySliceToRenderTexture(int index, RenderTexture destination)
-            => CopyElementTo(index, ref destination);
+        public abstract void CopySliceToRenderTexture(int index, RenderTexture destination);
 
         /// <summary>
-        /// Must be implemented by the concrete class to return the 
-        /// actual GPU texture (e.g., Texture2DArray) for shader binding.
+        /// Gets the horizontal resolution of the texture resource in pixels.
         /// </summary>
-        public abstract Texture GetBaseResource();
+        public int Width => Descriptor.Width;
+
+        /// <summary>
+        /// Gets the vertical resolution of the texture resource in pixels.
+        /// </summary>
+        public int Height => Descriptor.Height;
 
         #endregion
     }

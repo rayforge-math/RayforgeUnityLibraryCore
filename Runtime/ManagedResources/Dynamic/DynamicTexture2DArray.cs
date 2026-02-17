@@ -32,12 +32,6 @@ namespace Rayforge.Core.ManagedResources.Dynamic
         #region IDynamicTextureArray Implementation
 
         /// <summary>
-        /// Provides the actual Texture2DArray for shader binding.
-        /// </summary>
-        /// <returns>The underlying Texture2DArray or null if not allocated.</returns>
-        public override Texture GetBaseResource() => InternalArray?.Buffer;
-
-        /// <summary>
         /// Updates a specific layer (slice) using a source texture.
         /// This typically triggers a GPU upload via the underlying managed buffer.
         /// </summary>
@@ -63,7 +57,7 @@ namespace Rayforge.Core.ManagedResources.Dynamic
         /// <summary>
         /// Standard implementation of the element setter.
         /// </summary>
-        public override void SetElement(int index, Texture element) => SetSlice(index, element);
+        public override void Set(int index, Texture element) => SetSlice(index, element);
 
         /// <summary>
         /// Implementation of the generic element getter. 
@@ -71,7 +65,7 @@ namespace Rayforge.Core.ManagedResources.Dynamic
         /// </summary>
         /// <param name="index">The source slice index.</param>
         /// <param name="element">The destination RenderTexture.</param>
-        public override void CopyElementTo(int index, ref RenderTexture element)
+        public override void Get(int index, ref RenderTexture element)
             => CopySliceToRenderTexture(index, element);
 
         #endregion

@@ -1,29 +1,15 @@
 namespace Rayforge.Core.ManagedResources.Abstractions
 {
     /// <summary>
-    /// Interface for managing dynamic arrays (GPU or CPU), 
-    /// providing access to element operations and resizing.
+    /// Extends <see cref="IArray{TIn, TOut}"/> with capabilities to define 
+    /// and modify the structure of the underlying storage.
     /// </summary>
-    public interface IDynamicArray<in TIn, TOut>
+    public interface IDynamicArray<in TIn, TOut> : IArray<TIn, TOut>
     {
         /// <summary>
-        /// Gets the total number of elements currently allocated.
+        /// Allocates or re-initializes the array to accommodate the specified number of elements.
         /// </summary>
-        int Count { get; }
-
-        /// <summary>
-        /// Allocates or resizes the array to the specified count.
-        /// </summary>
-        /// <param name="count">The new desired size of the array. Must be non-negative.</param>
-        /// <remarks>
-        /// Implementations should include a necessity check to avoid redundant 
-        /// re-allocations if the count remains unchanged.
-        /// </remarks>
-        void Create(int count);
-
-        /// <summary>
-        /// Explicitly releases the resource (e.g., returns lease to pool).
-        /// </summary>
-        void Release();
+        /// <param name="count">The number of elements to allocate.</param>
+        void Reallocate(int count);
     }
 }

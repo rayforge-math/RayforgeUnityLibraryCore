@@ -36,7 +36,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         protected override Texture2DArray Allocate()
         {
             var desc = m_Descriptor;
-            var d = desc.Descriptor;
+            var d = desc.SliceDescriptor;
 
             if (desc.Count <= 0)
                 throw new ArgumentOutOfRangeException(nameof(desc.Count), "Texture2DArray count must be > 0.");
@@ -49,7 +49,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
                 d.Width,
                 d.Height,
                 desc.Count,
-                d.ColorFormat,
+                d.Format,
                 d.MipCount > 1,
                 d.Linear)
             {
@@ -108,7 +108,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             if (index < 0 || index >= m_Descriptor.Count)
                 throw new IndexOutOfRangeException($"Slice index {index} is out of bounds.");
 
-            var d = m_Descriptor.Descriptor;
+            var d = m_Descriptor.SliceDescriptor;
 
             if (source.width != d.Width || source.height != d.Height)
             {

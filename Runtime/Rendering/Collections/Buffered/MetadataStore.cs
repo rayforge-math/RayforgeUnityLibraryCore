@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Rayforge.Core.Rendering.Collections.Buffered
 {
@@ -66,6 +67,42 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// <param name="index">The index to look up.</param>
         /// <returns>The stored metadata value.</returns>
         public TValue Get(int index) => m_CpuData[index];
+
+        /// <summary>
+        /// Group dirty batches into contiguous ranges and invoke the provided callback.
+        /// Clears the dirty flags after processing.
+        /// </summary>
+        /// <param name="uploadCallback">Callback for (Array source, int start, int count).</param>
+        public void ProcessDirtyBatches(Action<Array, int, int> uploadCallback)
+        {
+            if (m_DirtyBatches.Count == 0) return;
+
+            var sortedBatches = m_DirtyBatches.ToList();
+            sortedBatches.Sort();
+
+            int i = 0;
+            while (i < sortedBatches.Count)
+            {
+                int startBatch = sortedBatches[i];
+                int endBatch = startBatch;
+
+                while (i + 1 < sortedBatches.Count && sortedBatches[i + 1] == endBatch + 1)
+                {
+                    i++;
+                    endBatch = sortedBatches[i];
+                }
+
+                int elementStart = startBatch * m_BatchSize;
+                int elementEnd = Math.Min((endBatch + 1) * m_BatchSize, m_CpuData.Length);
+                int elementCount = elementEnd - elementStart;
+
+                uploadCallback?.Invoke(m_CpuData, elementStart, elementCount);
+
+                i++;
+            }
+
+            ClearDirty();
+        }
 
         /// <summary>
         /// Marks a specific index as dirty without changing its value.

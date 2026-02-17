@@ -1,4 +1,5 @@
 using Rayforge.Core.Diagnostics;
+using Rayforge.Core.ManagedResources.Abstractions;
 using System;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
@@ -11,7 +12,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// value-based comparison and hashing for use in dictionaries and pools.
     /// Includes sampling settings like <see cref="FilterMode"/> and <see cref="TextureWrapMode"/>.
     /// </summary>
-    public struct RenderTextureDescriptorWrapper : IEquatable<RenderTextureDescriptorWrapper>
+    public struct RenderTextureDescriptorWrapper : IEquatable<RenderTextureDescriptorWrapper>, ITextureDescriptor
     {
         /// <summary>The underlying Unity descriptor.</summary>
         private RenderTextureDescriptor descriptor;
@@ -59,6 +60,15 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
                 if (value <= 0) throw new ArgumentOutOfRangeException(nameof(value), "Height must be > 0.");
                 descriptor.height = value;
             }
+        }
+
+        /// <summary>
+        /// Provides a standard TextureFormat view, though GraphicsFormat is preferred internally.
+        /// </summary>
+        public TextureFormat Format
+        {
+            get => (TextureFormat)descriptor.colorFormat;
+            set => descriptor.colorFormat = (RenderTextureFormat)value;
         }
 
         public RenderTextureFormat ColorFormat { get => descriptor.colorFormat; set => descriptor.colorFormat = value; }

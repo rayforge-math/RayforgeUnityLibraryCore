@@ -22,6 +22,17 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         public int Capacity => m_Capacity;
 
         /// <summary>
+        /// Gets the number of currently active mappings.
+        /// </summary>
+        public int Count => m_KeyToSlot?.Count ?? 0;
+
+        /// <summary>
+        /// Gets the highest index currently in use. 
+        /// This is the "high-water mark" for GPU buffer uploads.
+        /// </summary>
+        public int HighestActiveIndex => m_NextAvailableIndex;
+
+        /// <summary>
         /// Gets a value indicating whether the mapper has been properly initialized.
         /// </summary>
         public bool IsInitialized => m_KeyToSlot != null;

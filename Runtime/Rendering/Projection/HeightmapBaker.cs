@@ -160,13 +160,13 @@ namespace Rayforge.Core.Rendering.Projection
         /// <param name="target">The destination Texture2DArray.</param>
         /// <param name="sliceIndex">The zero-based index of the array slice to bake into.</param>
         /// <param name="param">The spatial parameters for the bake volume.</param>
-        /// <param name="rendererss">The collection of mesh filters to be projected.</param>
+        /// <param name="renderers">The collection of mesh filters to be projected.</param>
         /// <param name="terrains">Optional collection of Unity Terrains to include.</param>
         /// <exception cref="ArgumentNullException">Thrown if target, renderers, or terrains is null.</exception>
-        public static void Bake(Texture2DArray target, int sliceIndex, HeightmapBakeParams param, IEnumerable<MeshRenderer> rendererss, IEnumerable<Terrain> terrains = null)
+        public static void Bake(Texture2DArray target, int sliceIndex, HeightmapBakeParams param, IEnumerable<MeshRenderer> renderers, IEnumerable<Terrain> terrains = null)
         {
             k_Cmd.Clear();
-            SetupBakeCommandBuffer(k_Cmd, target, sliceIndex, param, rendererss, terrains);
+            SetupBakeCommandBuffer(k_Cmd, target, sliceIndex, param, renderers, terrains);
             Graphics.ExecuteCommandBuffer(k_Cmd);
         }
 

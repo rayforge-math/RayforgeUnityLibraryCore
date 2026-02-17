@@ -22,6 +22,16 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         public int Capacity => m_Capacity;
 
         /// <summary>
+        /// Gets the number of currently active keys in the registry.
+        /// </summary>
+        public int Count => m_Mapper.Count;
+
+        /// <summary>
+        /// Gets the highest allocated index. Useful for limiting the range of GPU compute dispatches.
+        /// </summary>
+        public int HighestIndex => m_Mapper.HighestActiveIndex;
+
+        /// <summary>
         /// Initializes a new registry with a fixed capacity and batch size for all its stores.
         /// </summary>
         public MetadataRegistry(int capacity, int batchSize)

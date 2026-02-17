@@ -49,7 +49,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             var texture = new Texture2D(
                 d.Width,
                 d.Height,
-                d.ColorFormat,
+                d.Format,
                 d.MipCount,
                 d.Linear)
             {
