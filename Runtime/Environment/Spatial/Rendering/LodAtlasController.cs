@@ -14,6 +14,18 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         #region Internal Types
 
         /// <summary>
+        /// Stores the parameters for a pending tile update request.
+        /// </summary>
+        private struct TileUpdateRequest
+        {
+            public TKey Key;
+            public int LodIndex;
+            public Vector3 WorldPos;
+            public float Radius;
+            public Action<AtlasMappingData> OnBakeAction;
+        }
+
+        /// <summary>
         /// Encapsulates both the structural layout and the slot occupancy of a specific LOD level.
         /// </summary>
         private class LodLevelManager
@@ -75,6 +87,9 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         public int RequiredSliceCount { get; private set; }
         public bool IsInitialized => m_LodLevels != null;
 
+        private readonly HashSet<TKey> m_PendingRemovals = new();
+        private readonly Dictionary<TKey, TileUpdateRequest> m_PendingUpdates = new();
+
         #endregion
 
         #region Initialization
@@ -114,46 +129,88 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #endregion
 
-        #region Public API
+        #region Public API (Deferred)
 
         /// <summary>
-        /// Registers a tile, allocates an atlas slot, and provides rendering metadata to the baker callback.
+        /// Queues a tile to be updated or added. The actual processing is deferred until <see cref="ApplyChanges"/> is called.
         /// </summary>
-        /// <param name="key">The identifier for the tile.</param>
-        /// <param name="lodIndex">The targeted LOD level ring.</param>
-        /// <param name="worldPos">Spatial position for culling.</param>
-        /// <param name="radius">Spatial radius for culling.</param>
-        /// <param name="updateAction">Callback containing the Slice and Viewport for rendering.</param>
+        /// <param name="key">The unique identifier for the tile.</param>
+        /// <param name="lodIndex">The target LOD level index.</param>
+        /// <param name="worldPos">The world space position for spatial culling.</param>
+        /// <param name="radius">The bounding radius for spatial culling.</param>
+        /// <param name="updateAction">Callback invoked with the assigned atlas mapping data (useful for triggering texture bakes).</param>
+        /// <remarks>
+        /// If the tile was previously queued for removal in the same frame, the removal is cancelled.
+        /// If multiple updates are queued for the same key, only the last one is preserved.
+        /// </remarks>
         public void SetTile(TKey key, int lodIndex, Vector3 worldPos, float radius, Action<AtlasMappingData> updateAction)
         {
-            bool isNew = !m_ActiveMappings.TryGetValue(key, out var mapping);
-            bool lodChanged = !isNew && mapping.lodIndex != lodIndex;
-
-            if (lodChanged)
+            m_PendingRemovals.Remove(key);
+            m_PendingUpdates[key] = new TileUpdateRequest
             {
-                m_LodLevels[mapping.lodIndex].Release(mapping.slotIndex);
-                isNew = true;
-            }
-
-            if (isNew)
-            {
-                int slot = m_LodLevels[lodIndex].Acquire();
-                mapping = (lodIndex, slot);
-                m_ActiveMappings[key] = mapping;
-            }
-
-            var atlasData = m_LodLevels[mapping.lodIndex].GetMapping(mapping.slotIndex);
-            var spatialData = new SphereSpatialData { Position = worldPos, Radius = radius };
-
-            m_Registry.SetMetadata(key, spatialData, atlasData);
-            updateAction?.Invoke(atlasData);
+                Key = key,
+                LodIndex = lodIndex,
+                WorldPos = worldPos,
+                Radius = radius,
+                OnBakeAction = updateAction
+            };
         }
 
         /// <summary>
-        /// Frees the atlas slot and removes the tile from the GPU culling registry.
+        /// Queues a tile for removal from the atlas and the culling registry.
         /// </summary>
-        /// <param name="key">The identifier of the tile to remove.</param>
+        /// <param name="key">The unique identifier of the tile to remove.</param>
+        /// <remarks>
+        /// If an update for this tile was already queued in the same frame, it will be discarded.
+        /// The actual slot release happens during <see cref="ApplyChanges"/>.
+        /// </remarks>
         public void RemoveTile(TKey key)
+        {
+            m_PendingUpdates.Remove(key);
+            m_PendingRemovals.Add(key);
+        }
+
+        /// <summary>
+        /// Executes all queued removals and then all queued updates in a single batch.
+        /// </summary>
+        /// <remarks>
+        /// Removals are processed first to ensure that released indices are immediately 
+        /// available for new tile allocations, keeping the GPU buffer footprint minimal.
+        /// </remarks>
+        public void ApplyChanges()
+        {
+            foreach (var key in m_PendingRemovals)
+            {
+                ExecuteRemove(key);
+            }
+            m_PendingRemovals.Clear();
+
+            foreach (var request in m_PendingUpdates.Values)
+            {
+                ExecuteSet(request);
+            }
+            m_PendingUpdates.Clear();
+        }
+
+        /// <summary>
+        /// Extracts modified metadata segments and passes them to external buffer synchronization callbacks.
+        /// </summary>
+        /// <param name="onSpatialChanged">Callback for spatial buffer updates: (sourceArray, startElement, elementCount).</param>
+        /// <param name="onVisualChanged">Callback for visual buffer updates: (sourceArray, startElement, elementCount).</param>
+        public void SyncMetadata(Action<Array, int, int> onSpatialChanged, Action<Array, int, int> onVisualChanged)
+        {
+            m_Registry?.ExtractChanges(onSpatialChanged, onVisualChanged);
+        }
+
+        #endregion
+
+        #region Internal Execution
+
+        /// <summary>
+        /// Performs the actual removal of a tile from the internal state and the registry.
+        /// </summary>
+        /// <param name="key">The unique key of the tile.</param>
+        private void ExecuteRemove(TKey key)
         {
             if (m_ActiveMappings.Remove(key, out var mapping))
             {
@@ -163,16 +220,32 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         }
 
         /// <summary>
-        /// Passes all modified metadata ranges to the provided callbacks.
-        /// Keeps this class decoupled from specific GPU buffer types.
+        /// Performs the actual allocation and metadata update for a tile request.
         /// </summary>
-        /// <param name="onSpatialChanged">Callback for (Array source, int start, int count).</param>
-        /// <param name="onVisualChanged">Callback for (Array source, int start, int count).</param>
-        public void SyncMetadata(Action<Array, int, int> onSpatialChanged, Action<Array, int, int> onVisualChanged)
+        /// <param name="req">The update request parameters.</param>
+        private void ExecuteSet(TileUpdateRequest req)
         {
-            if (m_Registry == null) return;
+            bool isNew = !m_ActiveMappings.TryGetValue(req.Key, out var mapping);
+            bool lodChanged = !isNew && mapping.lodIndex != req.LodIndex;
 
-            m_Registry.ExtractChanges(onSpatialChanged, onVisualChanged);
+            if (lodChanged)
+            {
+                m_LodLevels[mapping.lodIndex].Release(mapping.slotIndex);
+                isNew = true;
+            }
+
+            if (isNew)
+            {
+                int slot = m_LodLevels[req.LodIndex].Acquire();
+                mapping = (req.LodIndex, slot);
+                m_ActiveMappings[req.Key] = mapping;
+            }
+
+            var atlasData = m_LodLevels[mapping.lodIndex].GetMapping(mapping.slotIndex);
+            var spatialData = new SphereSpatialData { Position = req.WorldPos, Radius = req.Radius };
+
+            m_Registry.SetMetadata(req.Key, spatialData, atlasData);
+            req.OnBakeAction?.Invoke(atlasData);
         }
 
         #endregion
@@ -180,8 +253,12 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         #region Geometry Helpers
 
         /// <summary>
-        /// Calculates the number of tiles contained within a specific distance ring.
+        /// Calculates the number of tiles contained within a specific distance ring (annulus).
         /// </summary>
+        /// <param name="largeRadius">The outer radius of the ring.</param>
+        /// <param name="smallRadius">The inner radius of the ring.</param>
+        /// <param name="tileSize">The size of a single tile side.</param>
+        /// <returns>The estimated number of tiles within the ring boundaries.</returns>
         private static int GetTileCountForRing(float largeRadius, float smallRadius, float tileSize)
         {
             int lTiles = GetTileCountForRadius(largeRadius, tileSize);
@@ -193,6 +270,9 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <summary>
         /// Calculates the number of tiles in a square grid covered by a given radius.
         /// </summary>
+        /// <param name="radius">The radius to cover.</param>
+        /// <param name="tileSize">The size of a single tile side.</param>
+        /// <returns>The total number of tiles (odd-numbered square side length).</returns>
         private static int GetTileCountForRadius(float radius, float tileSize)
         {
             if (tileSize <= 0.001f) return 0;
