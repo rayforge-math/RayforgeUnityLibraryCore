@@ -20,14 +20,22 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         #region Fields & Config
 
         private float[] _lodSqrDistances;
-        public Transform Viewer { get; private set; }
+        private float[] _lodDistances;
         private readonly bool _deactivateOnCulled;
+
+        public Transform Viewer { get; private set; }
 
         /// <summary> 
         /// High-performance access to the squared thresholds. 
         /// Avoids array copying and heap allocations.
         /// </summary>
         public ReadOnlySpan<float> LodSqrDistances => _lodSqrDistances;
+
+        /// <summary> 
+        /// High-performance access to the thresholds. 
+        /// Avoids array copying and heap allocations.
+        /// </summary>
+        public ReadOnlySpan<float> LodDistances => _lodDistances;
 
         /// <summary> Implementation of ILODGridProvider. Returns current viewer position. </summary>
         public Vector3 ViewerPos => (Viewer != null) ? Viewer.position : Vector3.zero;
@@ -88,7 +96,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         {
             if (lodIndex < 0 || lodIndex >= LodCount) yield break;
 
-            float outerRadius = Mathf.Sqrt(LodSqrDistances[lodIndex]);
+            float outerRadius = LodDistances[lodIndex];
 
             foreach (var key in GetKeysInRadius(center, outerRadius, useEdgeDistance: true))
             {
@@ -108,7 +116,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         {
             if (lodIndex < 0 || lodIndex >= LodCount) return 0;
 
-            float outerRadius = Mathf.Sqrt(LodSqrDistances[lodIndex]);
+            float outerRadius = LodDistances[lodIndex];
             Bounds searchBounds = new Bounds(center, Vector3.one * outerRadius * 2f);
             int count = 0;
 
@@ -129,7 +137,8 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public IEnumerable<Vector3Int> GetKeysInFullRange(Vector3 center)
         {
             if (LodCount == 0) return Enumerable.Empty<Vector3Int>();
-            float maxRadius = Mathf.Sqrt(LodSqrDistances[LodCount - 1]);
+
+            float maxRadius = LodDistances[LodCount - 1];
             return GetKeysInRadius(center, maxRadius, useEdgeDistance: true);
         }
 
@@ -140,11 +149,12 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         {
             if (LodCount == 0) return 0;
 
-            var sqrDistances = LodSqrDistances;
-            float maxRadius = Mathf.Sqrt(sqrDistances[LodCount - 1]);
+            var distances = LodDistances;
+            float maxRadius = distances[LodCount - 1];
             Bounds searchBounds = new Bounds(center, Vector3.one * maxRadius * 2f);
             int count = 0;
 
+            var sqrDistances = LodSqrDistances;
             foreach (var key in GetKeysInBounds(searchBounds))
             {
                 if (GetSqrDistanceToClosestEdge(key, center) <= sqrDistances[LodCount - 1])
@@ -163,8 +173,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         {
             if (lodIndex < 0 || lodIndex >= LodCount) return 0;
 
-            ReadOnlySpan<float> lods = LodSqrDistances;
-            float outerRadius = Mathf.Sqrt(lods[lodIndex]);
+            float outerRadius = LodDistances[lodIndex];
             float size = (float)GridSize;
 
             int outerMaxAxis = Mathf.CeilToInt((outerRadius * 2f) / size) + 1;
@@ -173,7 +182,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             int innerMinCount = 0;
             if (lodIndex > 0)
             {
-                float innerRadius = Mathf.Sqrt(lods[lodIndex - 1]);
+                float innerRadius = LodDistances[lodIndex - 1];
                 int innerMinAxis = Mathf.Max(0, Mathf.FloorToInt((innerRadius * 2f) / size) - 1);
                 innerMinCount = CalculateCountForActiveAxes(innerMinAxis);
             }
@@ -249,13 +258,12 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         {
             if (newDistances == null) return false;
 
-            if (_lodSqrDistances != null && _lodSqrDistances.Length == newDistances.Length)
+            if (_lodDistances != null && _lodDistances.Length == newDistances.Length)
             {
                 bool changed = false;
                 for (int i = 0; i < newDistances.Length; i++)
                 {
-                    float sqrDist = newDistances[i] * newDistances[i];
-                    if (!Mathf.Approximately(_lodSqrDistances[i], sqrDist))
+                    if (!Mathf.Approximately(_lodDistances[i], newDistances[i]))
                     {
                         changed = true;
                         break;
@@ -264,13 +272,18 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 if (!changed) return false;
             }
 
-            _lodSqrDistances = new float[newDistances.Length];
-            for (int i = 0; i < newDistances.Length; i++)
+            int count = newDistances.Length;
+            _lodDistances = new float[count];
+            _lodSqrDistances = new float[count];
+
+            for (int i = 0; i < count; i++)
             {
-                _lodSqrDistances[i] = newDistances[i] * newDistances[i];
+                float d = newDistances[i];
+                _lodDistances[i] = d;
+                _lodSqrDistances[i] = d * d;
             }
 
-            LogDebug($"LOD Distances synchronized. Levels: {newDistances.Length}");
+            LogDebug($"LOD Distances synchronized. Levels: {count}. Max Range: {newDistances[count - 1]}m");
             return true;
         }
 

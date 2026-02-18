@@ -15,6 +15,9 @@ namespace Rayforge.Core.Environment.Abstractions
         /// <summary> The squared distance thresholds for each LOD level. </summary>
         ReadOnlySpan<float> LodSqrDistances { get; }
 
+        /// <summary> The distance thresholds for each LOD level. </summary>
+        ReadOnlySpan<float> LodDistances { get; }
+
         /// <summary> 
         /// Maps a squared distance to the corresponding LOD index. 
         /// Returns -1 if the distance exceeds all LOD ranges.

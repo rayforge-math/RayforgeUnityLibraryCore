@@ -4,6 +4,7 @@ using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Rendering;
+using Rayforge.Core.Environment.Spatial.Rendering.Helpers;
 using Rayforge.Core.ManagedResources.Abstractions;
 using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.ManagedResources.Pooling;
@@ -79,7 +80,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         private readonly HashSet<int> _surfaceIds = new HashSet<int>();
         private readonly List<int> _cleanupBuffer = new List<int>(32);
 
-        private LODChunkRegistry<HeightmapChunk> _chunkRegistry;
+        private LODChunkRegistry<AtlasLODChunk> _chunkRegistry;
         private SpatialObjectRegistry _objectRegistry;
         private Vector3 _lastUpdatePos;
         private bool _needsSpatialSync = false;
@@ -93,13 +94,11 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         //private readonly Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>> _leasedBuffers = new Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>>();
 
         private LodAtlasController<Vector3Int> _atlasController = new LodAtlasController<Vector3Int>();
-        private ManagedTexture2DArray _textureArray;
+        private ManagedRenderTexture _atlasArray;
 
         private readonly HashSet<Vector3Int> _toRelease = new HashSet<Vector3Int>();
         private readonly HashSet<Vector3Int> _toAssign = new HashSet<Vector3Int>();
         private bool _needsBufferSync = false;
-
-        private readonly HashSet<Vector3Int> _chunksPendingBake = new HashSet<Vector3Int>();
 
         private bool IsReady => lodReference != null && _chunkRegistry != null && _objectRegistry != null;
         #endregion
@@ -147,13 +146,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             if (_needsBufferSync)
             {
                 LogDebug("Update: Heightmap updates triggered by registry changes.");
-                UdpateChunkHandles();
+                UpdateChunks();
                 _needsBufferSync = false;
-            }
-
-            if (_chunksPendingBake.Count > 0)
-            {
-                ProcessBaking();
             }
         }
 
@@ -209,7 +203,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             {
                 _chunkRegistry?.Dispose();
 
-                _chunkRegistry = new LODChunkRegistry<HeightmapChunk>(
+                _chunkRegistry = new LODChunkRegistry<AtlasLODChunk>(
                     (GridSize)chunkSize,
                     transform.position,
                     GetValidLodDistances(),
@@ -240,15 +234,15 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 int totalSlices = _atlasController.RequiredSliceCount;
                 int baseRes = (int)_validLodLevels[0].mapResolution;
 
-                _textureArray?.Dispose();
+                _atlasArray?.Dispose();
 
-                Texture2dArrayDescriptor desc = new Texture2dArrayDescriptor
-                {
-                    SliceDescriptor = new Texture2dDescriptor(DefaultDescriptors.HeightmapPrecision(baseRes, baseRes)),
-                    Count = totalSlices
-                };
-                _textureArray = new ManagedTexture2DArray(desc);
-                _textureArray.Create();
+                var desc = DefaultDescriptors.HeightmapPrecision(baseRes, baseRes);
+                desc.dimension = UnityEngine.Rendering.TextureDimension.Tex2DArray;
+                desc.volumeDepth = totalSlices;
+                var wrapper = new RenderTextureDescriptorWrapper { Descriptor = desc };
+
+                _atlasArray = new ManagedRenderTexture(wrapper);
+                _atlasArray.Create();
 
                 LogDebug($"Atlas System ready. Slices allocated: {totalSlices}");
             }
@@ -533,7 +527,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 if (hasData)
                 {
                     if (exists && chunk.IsVisible)
-                        _chunksPendingBake.Add(key);
+                        _toAssign.Add(key);
 
                     if (exists)
                     {
@@ -542,7 +536,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                     }
                     else
                     {
-                        Action<HeightmapChunk> configChunk = _ =>
+                        Action<AtlasLODChunk> configChunk = _ =>
                         {
                             _.OnLODChanged += HandleChunkLODChanged;
                             _.OnCleanup += HandleChunkCleanup;
@@ -589,83 +583,68 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             }
         }
 
-        private void HandleChunkCleanup(HeightmapChunk sender)
+        private void HandleChunkCleanup(AtlasLODChunk sender)
         {
             _toRelease.Add(sender.GridKey);
         }
 
-        private void UdpateChunkHandles()
+        private void UpdateChunks()
         {
             foreach (var key in _toRelease)
             {
-                /*
-                if (_leasedBuffers.TryGetValue(key, out var lease))
-                {
-                    lease.Return();
-                    _leasedBuffers.Remove(key);
-
-                    LogDebug($"Returned buffer for chunk {key}");
-                }
-                */
+                _atlasController.RemoveTile(key);
             }
             _toRelease.Clear();
 
-
             foreach (var key in _toAssign)
-            { 
-                if (_chunkRegistry.TryGetEntry(key, out HeightmapChunk chunk))
+            {
+                if (_chunkRegistry.TryGetEntry(key, out AtlasLODChunk chunk))
                 {
-                    int currentLod = chunk.CurrentLOD;
-
-                    var settings = _validLodLevels[currentLod];
-                    var res = (int)settings.mapResolution;
-
-                    var descriptor = new RenderTextureDescriptorWrapper { Descriptor = DefaultDescriptors.HeightmapPrecision(res, res) };
-                    //var newLease = _texturePool.Rent(descriptor);
-
-                    //_leasedBuffers[key] = newLease;
-                    //chunk.SetHeightmap(newLease.BufferHandle.Buffer);
-
-                    _chunksPendingBake.Add(key);
-                    LogDebug($"Rented buffer for chunk {key}");
+                    _atlasController.SetTile(
+                        key,
+                        chunk.CurrentLOD,
+                        chunk.WorldPosition,
+                        chunk.localExtent.x,
+                        (mapping) => {
+                            chunk.SetAtlasMapping(mapping);
+                            BakeChunk(chunk);
+                        }
+                    );
                 }
             }
             _toAssign.Clear();
+
+            _atlasController.ApplyChanges(null, null);
         }
-        
-        private void ProcessBaking()
+
+        /// <summary>
+        /// Executes the baking process for a specific chunk using its current atlas mapping.
+        /// </summary>
+        private void BakeChunk(AtlasLODChunk chunk)
         {
-            LogDebug($"Beginning Baking Cycle...");
-            
-            foreach (var key in _chunksPendingBake)
+            LogDebug($"Trying to bake Chunk {chunk.GridKey}");
+            if (chunk == null || !chunk.Mapping.IsValid) return;
+
+            AtlasSlotView bakeView = chunk.Mapping.ToSlotView(_atlasArray.Descriptor.Width);
+
+            var bakeParams = new HeightmapBakeParams
             {
-                LogDebug($"Trying to bake Chunk {key}");
+                WorldCenter = chunk.WorldPosition,
+                Extent = new Vector2(chunk.localExtent.x, chunk.localExtent.z),
+                MinY = minRelativeY,
+                MaxY = maxRelativeY
+            };
 
-                if (!_chunkRegistry.TryGetEntry(key, out HeightmapChunk chunk))
-                {
-                    continue;
-                }
+            HeightmapBaker.Bake(
+                _atlasArray.Buffer,
+                bakeView.SliceIndex,
+                bakeView.ViewportRect,
+                bakeParams,
+                _objectRegistry.GetRenderersInCell(chunk.GridKey),
+                _objectRegistry.GetTerrainsInCell(chunk.GridKey)
+            );
 
-                if (chunk.Heightmap == null) continue;
-
-                var bakeParams = new HeightmapBakeParams
-                {
-                    WorldCenter = chunk.WorldPosition,
-                    Extent = new Vector2(chunk.localExtent.x, chunk.localExtent.z),
-                    MinY = minRelativeY,
-                    MaxY = maxRelativeY
-                };
-
-                HeightmapBaker.Bake(
-                    chunk.Heightmap,
-                    bakeParams,
-                    _objectRegistry.GetRenderersInCell(key),
-                    _objectRegistry.GetTerrainsInCell(key)
-                );
-
-                LogDebug($"Bake completed for Chunk {key} at {bakeParams.WorldCenter}");
-            }
-            _chunksPendingBake.Clear();
+            LogDebug($"Bake completed for Chunk {chunk.GridKey} into Atlas Slot: {bakeView.SliceIndex} at {bakeView.ViewportRect}");
         }
         
         private bool CheckMovementThreshold()

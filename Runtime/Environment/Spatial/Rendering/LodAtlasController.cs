@@ -199,10 +199,17 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// Removals are processed first to ensure that released indices are immediately 
         /// available for new tile allocations, keeping the GPU buffer footprint minimal.
         /// </remarks>
-        public void ApplyChanges()
+        /// <param name="onSpatialChanged">Callback for spatial buffer updates: (sourceArray, startElement, elementCount).</param>
+        /// <param name="onVisualChanged">Callback for visual buffer updates: (sourceArray, startElement, elementCount).</param>
+        public void ApplyChanges(Action<Array, int, int> onSpatialChanged, Action<Array, int, int> onVisualChanged)
         {
             int removeCount = m_PendingRemovals.Count;
             int updateCount = m_PendingUpdates.Count;
+
+            if (removeCount == 0 && updateCount == 0)
+            {
+                return;
+            }
 
             if (removeCount > 0 || updateCount > 0)
             {
@@ -220,6 +227,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 ExecuteSet(request);
             }
             m_PendingUpdates.Clear();
+
+            SyncMetadata(onSpatialChanged, onVisualChanged);
         }
 
         /// <summary>
