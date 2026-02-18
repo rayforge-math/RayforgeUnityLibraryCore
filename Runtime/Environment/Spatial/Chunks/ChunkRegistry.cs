@@ -208,20 +208,22 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #endregion
 
-        #region Spatial Mapping
+        #region Spatial Mapping & ISpatialGridProvider
 
-        /// <summary> 
-        /// Maps position to key, masking out inactive axes for dictionary storage. 
+        /// <summary>
+        /// Maps a world position to a grid key, masking out inactive axes.
+        /// Implements ISpatialGridProvider.WorldToGrid.
         /// </summary>
-        public Vector3Int WorldToGrid(Vector3 pos)
+        /// <param name="worldPos">The world-space position to convert.</param>
+        /// <returns>The masked grid key.</returns>
+        public Vector3Int WorldToGrid(Vector3 worldPos)
         {
-            Vector3Int rawKey = SpatialUtils.PositionToKey3D(pos, (int)GridSize, Anchor);
+            Vector3Int rawKey = SpatialUtils.PositionToKey3D(worldPos, (int)GridSize, Anchor);
             return MaskKey(rawKey);
         }
 
         /// <summary>
-        /// Maps a local position (already relative to Anchor) to a grid key.
-        /// Use this when working with internal registry data to avoid double-anchor subtraction.
+        /// Maps a local position (relative to Anchor) to a grid key.
         /// </summary>
         public Vector3Int LocalToGrid(Vector3 localPos)
         {
@@ -229,9 +231,9 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return MaskKey(rawKey);
         }
 
-        /// <summary> 
-        /// Calculates world-space center. 
-        /// Inactive axes default to the Anchor's position, allowing vertical shifts for XZ grids.
+        /// <summary>
+        /// Calculates the world-space center of a cell.
+        /// Inactive axes default to the Anchor's position.
         /// </summary>
         public Vector3 GridToWorld(Vector3Int key)
         {
@@ -240,110 +242,177 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         }
 
         /// <summary>
-        /// Calculates the anchor-relative AABB for a given grid key.
-        /// Useful for intersection tests without needing an actual Chunk instance.
+        /// Calculates the world-space AABB for a given grid key.
         /// </summary>
         public Bounds GetBoundsForKey(Vector3Int key)
         {
             Vector3 center = GridToWorld(key);
-
             Vector3 size = new Vector3(
                 IsXActive ? (int)GridSize : 0.01f,
                 IsYActive ? (int)GridSize : 0.01f,
                 IsZActive ? (int)GridSize : 0.01f
             );
-
             return new Bounds(center, size);
         }
 
-        /// <summary>
-        /// Calculates the anchor-relative AABB for the chunk that contains the given world position.
-        /// </summary>
-        public Bounds GetBoundsAtWorldPos(Vector3 worldPos)
-        {
-            Vector3Int key = WorldToGrid(worldPos);
-            return GetBoundsForKey(key);
-        }
+        // --- Key Discovery (Bounds) ---
 
         /// <summary>
-        /// Returns all grid keys covered by the given bounds.
-        /// This method handles 1D, 2D, and 3D registries automatically via ActiveAxes.
+        /// Returns all grid coordinates (keys) that are touched by the given world-space bounds.
         /// </summary>
-        public IEnumerable<Vector3Int> GetKeysInBounds(Bounds relativeBounds)
+        /// <param name="worldBounds">The bounding box in world space to check against.</param>
+        /// <returns>An enumerable of grid keys intersected by the bounds.</returns>
+        public IEnumerable<Vector3Int> GetKeysInBounds(Bounds worldBounds)
         {
-            Vector3Int minKey = WorldToGrid(relativeBounds.min);
-            Vector3Int maxKey = WorldToGrid(relativeBounds.max);
+            Vector3Int minKey = WorldToGrid(worldBounds.min);
+            Vector3Int maxKey = WorldToGrid(worldBounds.max);
 
             for (int x = minKey.x; x <= maxKey.x; x++)
-            {
                 for (int y = minKey.y; y <= maxKey.y; y++)
-                {
                     for (int z = minKey.z; z <= maxKey.z; z++)
-                    {
-                        // Return the key. Masking is already handled by WorldToGrid.
                         yield return new Vector3Int(x, y, z);
-                    }
-                }
-            }
         }
 
         /// <summary>
-        /// Calculates which grid keys are touched by bounds that are already relative to the Anchor.
-        /// Ideal for internal registry updates after an object is already stored.
+        /// Returns all grid coordinates (keys) that are touched by the given local-space bounds (relative to Anchor).
         /// </summary>
+        /// <param name="relativeBounds">The bounding box relative to the grid anchor.</param>
+        /// <returns>An enumerable of grid keys intersected by the relative bounds.</returns>
         public IEnumerable<Vector3Int> GetKeysInRelativeBounds(Bounds relativeBounds)
         {
             Vector3Int minKey = LocalToGrid(relativeBounds.min);
             Vector3Int maxKey = LocalToGrid(relativeBounds.max);
 
             for (int x = minKey.x; x <= maxKey.x; x++)
-            {
                 for (int y = minKey.y; y <= maxKey.y; y++)
-                {
                     for (int z = minKey.z; z <= maxKey.z; z++)
-                    {
                         yield return new Vector3Int(x, y, z);
-                    }
-                }
-            }
         }
 
+        // --- Key Discovery (Radius) ---
+
         /// <summary>
-        /// Returns only keys whose chunk center is within the actual spherical radius (World Space).
+        /// Returns all grid keys within a specified world-space radius.
         /// </summary>
-        public IEnumerable<Vector3Int> GetKeysInRadius(Vector3 center, float radius)
+        /// <param name="worldCenter">The center point of the search in world space.</param>
+        /// <param name="radius">The search radius in meters.</param>
+        /// <param name="useEdgeDistance">If true, calculates distance to the cell's closest edge. If false, uses cell center.</param>
+        /// <returns>An enumerable of keys within the given range.</returns>
+        public IEnumerable<Vector3Int> GetKeysInRadius(Vector3 worldCenter, float radius, bool useEdgeDistance = true)
         {
             float sqrRadius = radius * radius;
-            Bounds searchBounds = new Bounds(center, Vector3.one * radius * 2f);
+            Bounds searchBounds = new Bounds(worldCenter, Vector3.one * radius * 2f);
 
             foreach (var key in GetKeysInBounds(searchBounds))
             {
-                Vector3 chunkPos = GridToWorld(key);
-                if (Vector3.SqrMagnitude(chunkPos - center) <= sqrRadius)
-                {
+                float sqrDist = useEdgeDistance
+                    ? GetSqrDistanceToClosestEdge(key, worldCenter)
+                    : GetSqrDistanceToCenter(key, worldCenter);
+
+                if (sqrDist <= sqrRadius)
                     yield return key;
-                }
             }
         }
 
         /// <summary>
-        /// Returns only keys whose chunk center is within the actual spherical radius (Relative to Anchor).
-        /// This is preferred for internal logic to remain stable during origin shifts.
+        /// Returns all grid keys within a specified radius relative to the Anchor.
         /// </summary>
-        public IEnumerable<Vector3Int> GetKeysInRelativeRadius(Vector3 localCenter, float radius)
+        /// <param name="relativeCenter">The center point relative to the grid anchor.</param>
+        /// <param name="radius">The search radius in meters.</param>
+        /// <param name="useEdgeDistance">If true, calculates distance to the cell's closest edge. If false, uses cell center.</param>
+        /// <returns>An enumerable of keys within the given range.</returns>
+        public IEnumerable<Vector3Int> GetKeysInRelativeRadius(Vector3 relativeCenter, float radius, bool useEdgeDistance = true)
         {
-            float sqrRadius = radius * radius;
-            Bounds localBounds = new Bounds(localCenter, Vector3.one * radius * 2f);
-
-            foreach (var key in GetKeysInRelativeBounds(localBounds))
-            {
-                Vector3 chunkLocalPos = GridToWorld(key);
-                if (Vector3.SqrMagnitude(chunkLocalPos - (localCenter + Anchor)) <= sqrRadius)
-                {
-                    yield return key;
-                }
-            }
+            return GetKeysInRadius(relativeCenter + Anchor, radius, useEdgeDistance);
         }
+
+        // --- Distance Metrics ---
+
+        /// <summary>
+        /// Calculates the squared distance from a world position to the closest edge/point of a grid cell (AABB distance).
+        /// </summary>
+        /// <param name="key">The grid coordinate of the cell.</param>
+        /// <param name="worldPos">The reference position in world space.</param>
+        /// <returns>The squared distance to the cell edge. Returns 0 if the position is inside the cell.</returns>
+        public float GetSqrDistanceToClosestEdge(Vector3Int key, Vector3 worldPos)
+        {
+            Vector3 center = GridToWorld(key);
+            float halfSize = (int)GridSize * 0.5f;
+            float sqrDist = 0;
+
+            // X-Axis
+            if (IsXActive)
+            {
+                float delta = Mathf.Max(0, Mathf.Abs(worldPos.x - center.x) - halfSize);
+                sqrDist += delta * delta;
+            }
+            // Y-Axis
+            if (IsYActive)
+            {
+                float delta = Mathf.Max(0, Mathf.Abs(worldPos.y - center.y) - halfSize);
+                sqrDist += delta * delta;
+            }
+            // Z-Axis
+            if (IsZActive)
+            {
+                float delta = Mathf.Max(0, Mathf.Abs(worldPos.z - center.z) - halfSize);
+                sqrDist += delta * delta;
+            }
+
+            return sqrDist;
+        }
+
+        /// <summary>
+        /// Calculates the squared distance from a world position to the closest edge of the cell containing the target position.
+        /// </summary>
+        /// <param name="targetPos">World position used to identify the target cell.</param>
+        /// <param name="worldPos">The reference position in world space.</param>
+        /// <returns>The squared distance to the identifying cell's edge.</returns>
+        public float GetSqrDistanceToClosestEdge(Vector3 targetPos, Vector3 worldPos)
+        {
+            return GetSqrDistanceToClosestEdge(WorldToGrid(targetPos), worldPos);
+        }
+
+        /// <summary>
+        /// Calculates the squared distance from a world position to the exact center of a grid cell.
+        /// </summary>
+        /// <param name="key">The grid coordinate of the cell.</param>
+        /// <param name="worldPos">The reference position in world space.</param>
+        /// <returns>The squared Euclidean distance to the cell center.</returns>
+        public float GetSqrDistanceToCenter(Vector3Int key, Vector3 worldPos)
+        {
+            return Vector3.SqrMagnitude(worldPos - GridToWorld(key));
+        }
+
+        // --- Transformation & Bounds ---
+
+        /// <summary>
+        /// Returns the world-space center of a specific grid cell key.
+        /// </summary>
+        /// <param name="key">The grid coordinate.</param>
+        /// <returns>The world-space center position.</returns>
+        public Vector3 GetCellCenter(Vector3Int key) => GridToWorld(key);
+
+        /// <summary>
+        /// Returns the world-space center of the grid cell that contains the given world position.
+        /// </summary>
+        /// <param name="worldPos">A position within the desired cell.</param>
+        /// <returns>The world-space center of the identified cell.</returns>
+        public Vector3 GetCellCenter(Vector3 worldPos) => GridToWorld(WorldToGrid(worldPos));
+
+        /// <summary>
+        /// Returns the world-space axis-aligned bounding box (AABB) of a specific grid cell.
+        /// </summary>
+        /// <param name="key">The grid coordinate.</param>
+        /// <returns>The world-space Bounds of the cell.</returns>
+        public Bounds GetCellBounds(Vector3Int key) => GetBoundsForKey(key);
+
+        /// <summary>
+        /// Returns the world-space axis-aligned bounding box (AABB) of the cell containing the given world position.
+        /// </summary>
+        /// <param name="worldPos">A position within the desired cell.</param>
+        /// <returns>The world-space Bounds of the identified cell.</returns>
+        public Bounds GetCellBounds(Vector3 worldPos) => GetBoundsForKey(WorldToGrid(worldPos));
 
         #endregion
 

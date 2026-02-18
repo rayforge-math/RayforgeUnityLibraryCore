@@ -2,12 +2,13 @@ using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
+using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Rendering;
+using Rayforge.Core.ManagedResources.Abstractions;
 using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.ManagedResources.Pooling;
 using Rayforge.Core.Rendering.Helpers;
 using Rayforge.Core.Rendering.Projection;
-using Rayforge.Core.Environment.Spatial.Chunks;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -40,6 +41,14 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         [Tooltip("Movement threshold (% of chunk size) before triggering updates.")]
         [Range(0.01f, 0.5f)]
         public float updateSensitivity = 0.1f;
+
+        [Header("Atlas & Batching")]
+        [Tooltip("Maximum tiles the system can track (total for all LODs).")]
+        public int registryCapacity = 1024;
+
+        [Tooltip("How many metadata changes are grouped per GPU upload call.")]
+        [Range(16, 256)]
+        public int batchSize = 64;
 
         [Tooltip("Define LOD levels (Distances and Resolutions).")]
         public TextureLOD[] lodLevels;
@@ -77,11 +86,15 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         TextureLOD[] _validLodLevels = Array.Empty<TextureLOD>();
 
-        private static readonly BufferCreateFunc<RenderTextureDescriptorWrapper, ManagedRenderTexture> s_Create =
+        /*private static readonly BufferCreateFunc<RenderTextureDescriptorWrapper, ManagedRenderTexture> s_Create =
             _ => ManagedRenderTexture.Create(_);
         private readonly ManagedRenderTexturePool _texturePool = new ManagedRenderTexturePool(s_Create);
+        */
+        //private readonly Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>> _leasedBuffers = new Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>>();
 
-        private readonly Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>> _leasedBuffers = new Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>>();
+        private LodAtlasController<Vector3Int> _atlasController = new LodAtlasController<Vector3Int>();
+        private ManagedTexture2DArray _textureArray;
+
         private readonly HashSet<Vector3Int> _toRelease = new HashSet<Vector3Int>();
         private readonly HashSet<Vector3Int> _toAssign = new HashSet<Vector3Int>();
         private bool _needsBufferSync = false;
@@ -155,7 +168,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             _chunkRegistry = null;
             _objectRegistry = null;
 
-            _texturePool?.Dispose();
+            //_texturePool?.Dispose();
         }
 
         private void OnValidate()
@@ -176,6 +189,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             CreateObjectRegistry(force);
             CreateChunkRegistry(force);
+            CreateLodAtlas(force);
             ResetTrackingPosition();
         }
 
@@ -207,6 +221,36 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
                 _objectRegistry?.Initialize(_chunkRegistry);
                 LogDebug($"Chunk Registry created. GridSize: {(int)chunkSize}m");
+            }
+        }
+
+        private void CreateLodAtlas(bool force = false)
+        {
+            if (_atlasController == null || force)
+            {
+                _atlasController = new LodAtlasController<Vector3Int>();
+                _atlasController.showDebugLogs = showDebugLogs;
+                _atlasController.Initialize(
+                    lods: _validLodLevels,
+                    tileSize: (float)chunkSize,
+                    registryCapacity: registryCapacity,
+                    batchSize: batchSize
+                );
+
+                int totalSlices = _atlasController.RequiredSliceCount;
+                int baseRes = (int)_validLodLevels[0].mapResolution;
+
+                _textureArray?.Dispose();
+
+                Texture2dArrayDescriptor desc = new Texture2dArrayDescriptor
+                {
+                    SliceDescriptor = new Texture2dDescriptor(DefaultDescriptors.HeightmapPrecision(baseRes, baseRes)),
+                    Count = totalSlices
+                };
+                _textureArray = new ManagedTexture2DArray(desc);
+                _textureArray.Create();
+
+                LogDebug($"Atlas System ready. Slices allocated: {totalSlices}");
             }
         }
 
@@ -467,10 +511,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         public void RebakeAll()
         {
+            /*
             foreach (var key in _leasedBuffers.Keys)
             {
                 _chunksPendingBake.Add(key);
             }
+            */
         }
 
         private void SynchronizeChunksWithRegistry()
@@ -552,6 +598,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             foreach (var key in _toRelease)
             {
+                /*
                 if (_leasedBuffers.TryGetValue(key, out var lease))
                 {
                     lease.Return();
@@ -559,6 +606,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
                     LogDebug($"Returned buffer for chunk {key}");
                 }
+                */
             }
             _toRelease.Clear();
 
@@ -573,10 +621,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                     var res = (int)settings.mapResolution;
 
                     var descriptor = new RenderTextureDescriptorWrapper { Descriptor = DefaultDescriptors.HeightmapPrecision(res, res) };
-                    var newLease = _texturePool.Rent(descriptor);
+                    //var newLease = _texturePool.Rent(descriptor);
 
-                    _leasedBuffers[key] = newLease;
-                    chunk.SetHeightmap(newLease.BufferHandle.Buffer);
+                    //_leasedBuffers[key] = newLease;
+                    //chunk.SetHeightmap(newLease.BufferHandle.Buffer);
 
                     _chunksPendingBake.Add(key);
                     LogDebug($"Rented buffer for chunk {key}");

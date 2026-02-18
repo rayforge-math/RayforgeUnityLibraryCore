@@ -1,3 +1,4 @@
+using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.ManagedResources.Abstractions;
 using System;
@@ -77,6 +78,44 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         {
             get => anisoLevel;
             set => anisoLevel = Mathf.Clamp(value, 0, 16);
+        }
+
+        /// <summary>
+        /// Basic constructor for manual initialization.
+        /// </summary>
+        public Texture2dDescriptor(int width, int height, TextureFormat format, int mipCount = 1, bool linear = true)
+        {
+            this.width = width;
+            this.height = height;
+            this.colorFormat = format;
+            this.mipCount = Mathf.Max(1, mipCount);
+            this.linear = linear;
+            this.filterMode = FilterMode.Bilinear;
+            this.wrapMode = TextureWrapMode.Clamp;
+            this.anisoLevel = 1;
+
+            Validate();
+        }
+
+        /// <summary>
+        /// Creates a descriptor from a Unity RenderTextureDescriptor.
+        /// Useful when you want to create a regular Texture2D that matches a RenderTexture's specs.
+        /// </summary>
+        /// <param name="rtDesc">The source RenderTexture descriptor.</param>
+        public Texture2dDescriptor(RenderTextureDescriptor rtDesc)
+        {
+            this.width = rtDesc.width;
+            this.height = rtDesc.height;
+            this.mipCount = Mathf.Max(1, rtDesc.useMipMap ? 1 : 0);
+            this.linear = !rtDesc.sRGB;
+
+            this.colorFormat = rtDesc.colorFormat.ToTextureFormat();
+
+            this.filterMode = FilterMode.Bilinear;
+            this.wrapMode = TextureWrapMode.Clamp;
+            this.anisoLevel = 1;
+
+            Validate();
         }
 
         /// <summary>

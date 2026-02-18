@@ -36,11 +36,17 @@ namespace Rayforge.Core.Environment.Spatial
         #endregion
 
         #region Debug Helper
+
+        /// <summary>
+        /// Logs a message to the custom DebugOutput if logging is enabled.
+        /// This call is completely stripped from non-editor builds.
+        /// </summary>
         [Conditional("UNITY_EDITOR")]
         private void LogDebug(string message, [CallerLineNumber] int line = 0)
         {
             DebugOutput.Log(message, showDebugLogs, lineNumber: line);
         }
+
         #endregion
 
         #region Lifecycle

@@ -1,6 +1,9 @@
 using Rayforge.Core.Common.Rendering.Helpers;
+using Rayforge.Core.Diagnostics;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering
@@ -12,6 +15,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     public class LodAtlasController<TKey> where TKey : struct, IEquatable<TKey>
     {
         #region Internal Types
+
+        public bool showDebugLogs = false;
 
         /// <summary>
         /// Stores the parameters for a pending tile update request.
@@ -105,26 +110,36 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             m_Registry = new SphereMetadataRegistry<TKey, AtlasMappingData>(registryCapacity, batchSize);
             m_LodLevels = new LodLevelManager[lods.Length];
 
+            LogDebug($"Initializing Atlas: {lods.Length} LOD levels, TileSize: {tileSize}");
+
             int currentSliceOffset = 0;
+            float prevDist = 0;
             for (int i = 0; i < lods.Length; i++)
             {
-                float prevDist = (i == 0) ? -1 : lods[i - 1].distanceThreshold;
-                int tilesInRing = GetTileCountForRing(lods[i].distanceThreshold, prevDist, tileSize);
+                float curDist = lods[i].distanceThreshold;
+                int tilesInRing = GetTileCountForRing(curDist, prevDist, tileSize);
 
-                int slotsPerSlice = lods[i].mapResolution.ToSlotCount(lods[0].mapResolution);
+                int slotsPerDim = lods[i].mapResolution.ToSlotCountPerDim(lods[0].mapResolution);
+                int slotsPerSlice = slotsPerDim * slotsPerDim;
                 int reqSlices = Mathf.CeilToInt((float)tilesInRing / slotsPerSlice);
 
                 m_LodLevels[i] = new LodLevelManager
                 {
                     StartSlice = currentSliceOffset,
-                    SlotsPerDim = lods[i].mapResolution.ToSlotCountPerDim(lods[0].mapResolution),
+                    SlotsPerDim = slotsPerDim,
                     TotalCapacity = reqSlices * slotsPerSlice
                 };
+
+                LogDebug($"LOD[{i}]: Dist {curDist}m, Tiles: {tilesInRing}, " +
+                    $"Slices: {reqSlices} (Start: {m_LodLevels[i].StartSlice}), Capacity: {m_LodLevels[i].TotalCapacity}");
+
+                prevDist = curDist;
 
                 currentSliceOffset += reqSlices;
             }
 
             RequiredSliceCount = currentSliceOffset;
+            LogDebug($"Initialization Complete. Total Required Slices: {RequiredSliceCount}");
         }
 
         #endregion
@@ -179,6 +194,14 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </remarks>
         public void ApplyChanges()
         {
+            int removeCount = m_PendingRemovals.Count;
+            int updateCount = m_PendingUpdates.Count;
+
+            if (removeCount > 0 || updateCount > 0)
+            {
+                LogDebug($"Applying Changes: Removing {removeCount}, Updating {updateCount}");
+            }
+
             foreach (var key in m_PendingRemovals)
             {
                 ExecuteRemove(key);
@@ -214,6 +237,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         {
             if (m_ActiveMappings.Remove(key, out var mapping))
             {
+                LogDebug($"ExecuteRemove: Key {key} (LOD: {mapping.lodIndex}, Slot: {mapping.slotIndex})");
+
                 m_LodLevels[mapping.lodIndex].Release(mapping.slotIndex);
                 m_Registry.ReleaseAndKill(key);
             }
@@ -230,6 +255,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
             if (lodChanged)
             {
+                LogDebug($"LOD Change: Key {req.Key} moving from LOD {mapping.lodIndex} to {req.LodIndex}");
+
                 m_LodLevels[mapping.lodIndex].Release(mapping.slotIndex);
                 isNew = true;
             }
@@ -239,6 +266,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 int slot = m_LodLevels[req.LodIndex].Acquire();
                 mapping = (req.LodIndex, slot);
                 m_ActiveMappings[req.Key] = mapping;
+
+                if (!lodChanged) LogDebug($"New Allocation: Key {req.Key} -> LOD {req.LodIndex}, Slot {slot}");
             }
 
             var atlasData = m_LodLevels[mapping.lodIndex].GetMapping(mapping.slotIndex);
@@ -275,10 +304,45 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <returns>The total number of tiles (odd-numbered square side length).</returns>
         private static int GetTileCountForRadius(float radius, float tileSize)
         {
-            if (tileSize <= 0.001f) return 0;
-            int tiles = Mathf.CeilToInt(radius / tileSize);
-            int side = (tiles * 2) + 1;
-            return Mathf.Max(0, side * side);
+            if (tileSize <= 0.001f || radius <= 0) return 0;
+
+            int checkRange = Mathf.CeilToInt(radius / tileSize);
+            checkRange += 1;
+
+            int count = 0;
+            float radiusSq = radius * radius;
+
+            for (int x = -checkRange; x <= checkRange; x++)
+            {
+                for (int y = -checkRange; y <= checkRange; y++)
+                {
+                    float closestX = Mathf.Max(0, Mathf.Abs(x < 0 ? x + 1 : x) * tileSize);
+                    float closestY = Mathf.Max(0, Mathf.Abs(y < 0 ? y + 1 : y) * tileSize);
+
+                    float minDistanceSq = (closestX * closestX) + (closestY * closestY);
+
+                    if (minDistanceSq <= radiusSq)
+                    {
+                        count++;
+                    }
+                }
+            }
+
+            return Mathf.CeilToInt(count);
+        }
+
+        #endregion
+
+        #region Debug Helper
+
+        /// <summary>
+        /// Logs a message to the custom DebugOutput if logging is enabled.
+        /// This call is completely stripped from non-editor builds.
+        /// </summary>
+        [Conditional("UNITY_EDITOR")]
+        private void LogDebug(string message, [CallerLineNumber] int line = 0)
+        {
+            DebugOutput.Log($"[LodAtlasController<{typeof(TKey).Name}>] {message}", showDebugLogs, lineNumber: line);
         }
 
         #endregion

@@ -1,0 +1,45 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Rayforge.Core.Environment.Abstractions
+{
+    public interface ILODGridProvider
+    {
+        /// <summary> The current position of the player/camera focus. </summary>
+        Vector3 ViewerPos { get; }
+
+        /// <summary> The squared distance thresholds for each LOD level. </summary>
+        ReadOnlySpan<float> LodSqrDistances { get; }
+
+        /// <summary> 
+        /// Maps a squared distance to the corresponding LOD index. 
+        /// Returns -1 if the distance exceeds all LOD ranges.
+        /// </summary>
+        int CalculateTargetLOD(float sqrDistance);
+
+        /// <summary>
+        /// Returns all grid keys that fall exactly into a specific LOD level index.
+        /// Useful for atlas allocation and initial batch loading.
+        /// </summary>
+        /// <param name="lodIndex">The index of the LOD (0 to LodCount-1).</param>
+        /// <param name="center">The world-space center of the LOD circles.</param>
+        IEnumerable<Vector3Int> GetKeysInLODLevel(int lodIndex, Vector3 center);
+
+        /// <summary>
+        /// Returns all grid keys that are within the maximum visible range (last LOD).
+        /// </summary>
+        IEnumerable<Vector3Int> GetKeysInFullRange(Vector3 center);
+
+        /// <summary>
+        /// Returns the exact number of grid cells that fall into a specific LOD level.
+        /// Ideal for pre-allocating memory in an Atlas.
+        /// </summary>
+        int GetKeyCountInLODLevel(int lodIndex, Vector3 center);
+
+        /// <summary>
+        /// Returns the total number of grid cells within the maximum visible range.
+        /// </summary>
+        int GetKeyCountInFullRange(Vector3 center);
+    }
+}
