@@ -1,5 +1,6 @@
 using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Diagnostics;
+using Rayforge.Core.Environment.Abstractions;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -100,28 +101,36 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         #region Initialization
 
         /// <summary>
-        /// Initializes the atlas, calculates required slices per LOD ring, and creates the hardware resource.
+        /// Initializes the atlas using a centralized LOD provider.
+        /// The provider dictates exactly how many slices are needed for each LOD ring.
         /// </summary>
-        /// <param name="lods">Configuration for each LOD level.</param>
-        /// <param name="tileSize">The world-space size of a single tile.</param>
-        /// <param name="batchSize">GPU buffer update batch size.</param>
-        public void Initialize(TextureLOD[] lods, float tileSize, int registryCapacity, int batchSize)
+        /// <param name="provider">The source of truth for spatial and LOD logic.</param>
+        /// <param name="lodConfigs">Resolution settings for each LOD level.</param>
+        /// <param name="registryCapacity">Total capacity of the metadata registry.</param>
+        /// <param name="batchSize">GPU sync batch size.</param>
+        public void Initialize(ILODGridProvider provider, TextureLOD[] lodConfigs, int registryCapacity, int batchSize)
         {
             m_Registry = new SphereMetadataRegistry<TKey, AtlasMappingData>(registryCapacity, batchSize);
-            m_LodLevels = new LodLevelManager[lods.Length];
 
-            LogDebug($"Initializing Atlas: {lods.Length} LOD levels, TileSize: {tileSize}");
+            int lodCount = provider.LodCount;
+            m_LodLevels = new LodLevelManager[lodCount];
+
+            LogDebug($"Initializing Atlas with {lodCount} LOD levels from Provider.");
 
             int currentSliceOffset = 0;
-            float prevDist = 0;
-            for (int i = 0; i < lods.Length; i++)
-            {
-                float curDist = lods[i].distanceThreshold;
-                int tilesInRing = GetTileCountForRing(curDist, prevDist, tileSize);
 
-                int slotsPerDim = lods[i].mapResolution.ToSlotCountPerDim(lods[0].mapResolution);
+            for (int i = 0; i < lodCount; i++)
+            {
+                int tilesInRing = provider.GetMaxCapacityForLODLevel(i);
+
+                int slotsPerDim = lodConfigs[i].mapResolution.ToSlotCountPerDim(lodConfigs[0].mapResolution);
                 int slotsPerSlice = slotsPerDim * slotsPerDim;
-                int reqSlices = Mathf.CeilToInt((float)tilesInRing / slotsPerSlice);
+
+                int reqSlices = 0;
+                if (tilesInRing > 0)
+                {
+                    reqSlices = Mathf.CeilToInt((float)tilesInRing / slotsPerSlice);
+                }
 
                 m_LodLevels[i] = new LodLevelManager
                 {
@@ -130,10 +139,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                     TotalCapacity = reqSlices * slotsPerSlice
                 };
 
-                LogDebug($"LOD[{i}]: Dist {curDist}m, Tiles: {tilesInRing}, " +
-                    $"Slices: {reqSlices} (Start: {m_LodLevels[i].StartSlice}), Capacity: {m_LodLevels[i].TotalCapacity}");
-
-                prevDist = curDist;
+                LogDebug($"LOD[{i}]: Tiles in Ring: {tilesInRing}, " +
+                    $"Slices: {reqSlices} (Start: {currentSliceOffset}), Capacity: {m_LodLevels[i].TotalCapacity}");
 
                 currentSliceOffset += reqSlices;
             }
@@ -275,60 +282,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
             m_Registry.SetMetadata(req.Key, spatialData, atlasData);
             req.OnBakeAction?.Invoke(atlasData);
-        }
-
-        #endregion
-
-        #region Geometry Helpers
-
-        /// <summary>
-        /// Calculates the number of tiles contained within a specific distance ring (annulus).
-        /// </summary>
-        /// <param name="largeRadius">The outer radius of the ring.</param>
-        /// <param name="smallRadius">The inner radius of the ring.</param>
-        /// <param name="tileSize">The size of a single tile side.</param>
-        /// <returns>The estimated number of tiles within the ring boundaries.</returns>
-        private static int GetTileCountForRing(float largeRadius, float smallRadius, float tileSize)
-        {
-            int lTiles = GetTileCountForRadius(largeRadius, tileSize);
-            if (smallRadius <= 0 || smallRadius >= largeRadius) return lTiles;
-            int sTiles = GetTileCountForRadius(smallRadius, tileSize);
-            return Mathf.Max(0, lTiles - sTiles);
-        }
-
-        /// <summary>
-        /// Calculates the number of tiles in a square grid covered by a given radius.
-        /// </summary>
-        /// <param name="radius">The radius to cover.</param>
-        /// <param name="tileSize">The size of a single tile side.</param>
-        /// <returns>The total number of tiles (odd-numbered square side length).</returns>
-        private static int GetTileCountForRadius(float radius, float tileSize)
-        {
-            if (tileSize <= 0.001f || radius <= 0) return 0;
-
-            int checkRange = Mathf.CeilToInt(radius / tileSize);
-            checkRange += 1;
-
-            int count = 0;
-            float radiusSq = radius * radius;
-
-            for (int x = -checkRange; x <= checkRange; x++)
-            {
-                for (int y = -checkRange; y <= checkRange; y++)
-                {
-                    float closestX = Mathf.Max(0, Mathf.Abs(x < 0 ? x + 1 : x) * tileSize);
-                    float closestY = Mathf.Max(0, Mathf.Abs(y < 0 ? y + 1 : y) * tileSize);
-
-                    float minDistanceSq = (closestX * closestX) + (closestY * closestY);
-
-                    if (minDistanceSq <= radiusSq)
-                    {
-                        count++;
-                    }
-                }
-            }
-
-            return Mathf.CeilToInt(count);
         }
 
         #endregion

@@ -4,10 +4,13 @@ using UnityEngine;
 
 namespace Rayforge.Core.Environment.Abstractions
 {
-    public interface ILODGridProvider
+    public interface ILODGridProvider : ISpatialGridProvider
     {
         /// <summary> The current position of the player/camera focus. </summary>
         Vector3 ViewerPos { get; }
+
+        /// <summary> The current LOD count. </summary>
+        int LodCount { get; }
 
         /// <summary> The squared distance thresholds for each LOD level. </summary>
         ReadOnlySpan<float> LodSqrDistances { get; }
@@ -41,5 +44,11 @@ namespace Rayforge.Core.Environment.Abstractions
         /// Returns the total number of grid cells within the maximum visible range.
         /// </summary>
         int GetKeyCountInFullRange(Vector3 center);
+
+        /// <summary>
+        /// Calculates the maximum possible number of chunks any LOD level could ever cover,
+        /// regardless of the viewer's position. Essential for safe pre-allocation.
+        /// </summary>
+        int GetMaxCapacityForLODLevel(int lodIndex);
     }
 }

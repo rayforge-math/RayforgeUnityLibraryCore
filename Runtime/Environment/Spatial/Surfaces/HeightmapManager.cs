@@ -231,8 +231,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 _atlasController = new LodAtlasController<Vector3Int>();
                 _atlasController.showDebugLogs = showDebugLogs;
                 _atlasController.Initialize(
-                    lods: _validLodLevels,
-                    tileSize: (float)chunkSize,
+                    provider: _chunkRegistry,
+                    lodConfigs: _validLodLevels,
                     registryCapacity: registryCapacity,
                     batchSize: batchSize
                 );

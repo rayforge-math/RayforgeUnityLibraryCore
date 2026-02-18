@@ -155,6 +155,50 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return count;
         }
 
+        /// <summary>
+        /// Implements ILODGridProvider.GetMaxCapacityForLODLevel.
+        /// Ensures the Atlas has enough slices even in the worst-case grid alignment.
+        /// </summary>
+        public int GetMaxCapacityForLODLevel(int lodIndex)
+        {
+            if (lodIndex < 0 || lodIndex >= LodCount) return 0;
+
+            ReadOnlySpan<float> lods = LodSqrDistances;
+            float outerRadius = Mathf.Sqrt(lods[lodIndex]);
+            float size = (float)GridSize;
+
+            int outerMaxAxis = Mathf.CeilToInt((outerRadius * 2f) / size) + 1;
+            int outerMaxCount = CalculateCountForActiveAxes(outerMaxAxis);
+
+            int innerMinCount = 0;
+            if (lodIndex > 0)
+            {
+                float innerRadius = Mathf.Sqrt(lods[lodIndex - 1]);
+                int innerMinAxis = Mathf.Max(0, Mathf.FloorToInt((innerRadius * 2f) / size) - 1);
+                innerMinCount = CalculateCountForActiveAxes(innerMinAxis);
+            }
+
+            return Mathf.Max(0, outerMaxCount - innerMinCount);
+        }
+
+        /// <summary>
+        /// Helper to calculate cell counts based on which axes are currently active.
+        /// Handles 1D, 2D, and 3D configurations automatically.
+        /// </summary>
+        private int CalculateCountForActiveAxes(int axisCount)
+        {
+            if (axisCount <= 0) return 0;
+
+            int total = 1;
+            bool anyActive = false;
+
+            if (IsXActive) { total *= axisCount; anyActive = true; }
+            if (IsYActive) { total *= axisCount; anyActive = true; }
+            if (IsZActive) { total *= axisCount; anyActive = true; }
+
+            return anyActive ? total : 0;
+        }
+
         #endregion
 
         #region Core LOD Logic
