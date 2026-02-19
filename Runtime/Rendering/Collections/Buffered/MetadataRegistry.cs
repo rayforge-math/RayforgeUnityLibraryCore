@@ -1,3 +1,4 @@
+using Rayforge.Core.Rendering.Abstractions;
 using System;
 using System.Collections.Generic;
 
@@ -11,7 +12,7 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
     public class MetadataRegistry<TKey> where TKey : struct, IEquatable<TKey>
     {
         private readonly KeyedSlotMapper<TKey> m_Mapper;
-        private readonly Dictionary<Type, object> m_Stores = new();
+        private readonly Dictionary<Type, IMetadataStore> m_Stores = new();
 
         private readonly int m_Capacity;
         private readonly int m_BatchSize;
@@ -39,6 +40,38 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
             m_Capacity = capacity;
             m_BatchSize = batchSize;
             m_Mapper = new KeyedSlotMapper<TKey>(capacity);
+        }
+
+        /// <summary>
+        /// Resets the registry by clearing the key-to-slot mapping and resetting all registered data stores.
+        /// Full logical reset. Clears the mapper and zeroes out all CPU arrays and dirty bits.
+        /// </summary>
+        public void Reset()
+        {
+            m_Mapper.Reset();
+
+            foreach (var store in m_Stores.Values)
+            {
+                store.Reset();
+            }
+        }
+
+        /// <summary>
+        /// Synchronizes all modified data across all stores to the GPU.
+        /// Centralized sync point for the entire metadata system.
+        /// </summary>
+        /// <param name="uploadAction">Callback for (Array source, int start, int count, Type storeType).</param>
+        public void SyncAllStores(Action<Array, int, int, Type> uploadAction)
+        {
+            foreach (var entry in m_Stores)
+            {
+                var store = entry.Value;
+                if (store.AnyDirty)
+                {
+                    store.ProcessDirtyBatches((data, start, count) =>
+                        uploadAction(data, start, count, entry.Key));
+                }
+            }
         }
 
         /// <summary>

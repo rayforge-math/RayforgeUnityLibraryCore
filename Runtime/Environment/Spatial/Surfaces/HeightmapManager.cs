@@ -5,9 +5,8 @@ using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Rendering;
 using Rayforge.Core.Environment.Spatial.Rendering.Helpers;
-using Rayforge.Core.ManagedResources.Abstractions;
+using Rayforge.Core.Rendering.EditorStructures;
 using Rayforge.Core.ManagedResources.NativeMemory;
-using Rayforge.Core.ManagedResources.Pooling;
 using Rayforge.Core.Rendering.Helpers;
 using Rayforge.Core.Rendering.Projection;
 using System;
@@ -44,15 +43,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public float updateSensitivity = 0.1f;
 
         [Header("Atlas & Batching")]
-        [Tooltip("Maximum tiles the system can track (total for all LODs).")]
-        public int registryCapacity = 1024;
-
         [Tooltip("How many metadata changes are grouped per GPU upload call.")]
         [Range(16, 256)]
         public int batchSize = 64;
 
         [Tooltip("Define LOD levels (Distances and Resolutions).")]
-        public TextureLOD[] lodLevels;
+        public TextureLodTable _lodTable = new();
         [Tooltip("Define LOD levels (Distances and Resolutions).")]
         public float minRelativeY;
         [Tooltip("Define LOD levels (Distances and Resolutions).")]
@@ -74,6 +70,14 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         [Header("Surfaces")]
         [Tooltip("Manual list of surfaces. If Auto Detect is enabled, this list is populated automatically.")]
         public List<GameObject> surfaces = new List<GameObject>();
+
+        [Header("Debug Visualization")]
+        [Range(0, 511)]
+        [Tooltip("Scroll through the slices of the Texture Array.")]
+        public int debugSliceIndex = 0;
+        [Tooltip("The RenderTexture Array from your Atlas to visualize.")]
+        public Texture2D debugView;
+
         #endregion
 
         #region Private Runtime State
@@ -84,14 +88,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         private SpatialObjectRegistry _objectRegistry;
         private Vector3 _lastUpdatePos;
         private bool _needsSpatialSync = false;
-
-        TextureLOD[] _validLodLevels = Array.Empty<TextureLOD>();
-
-        /*private static readonly BufferCreateFunc<RenderTextureDescriptorWrapper, ManagedRenderTexture> s_Create =
-            _ => ManagedRenderTexture.Create(_);
-        private readonly ManagedRenderTexturePool _texturePool = new ManagedRenderTexturePool(s_Create);
-        */
-        //private readonly Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>> _leasedBuffers = new Dictionary<Vector3Int, LeasedBuffer<ManagedRenderTexture>>();
 
         private LodAtlasController<Vector3Int> _atlasController = new LodAtlasController<Vector3Int>();
         private ManagedRenderTexture _atlasArray;
@@ -107,8 +103,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         private void Awake()
         {
             SetupDependencies();
-            SanitizeLODLevels();
-            CacheValidLodLevels();
+            _lodTable.Sanitize();
 
             EnsureSystemsReady(true);
 
@@ -149,6 +144,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 UpdateChunks();
                 _needsBufferSync = false;
             }
+
+            //if (Application.isPlaying) UpdatePreview();
         }
 
         private void OnDestroy()
@@ -158,11 +155,11 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
             _chunkRegistry?.Dispose();
             _objectRegistry?.Clear();
+            _atlasArray?.Dispose();
 
             _chunkRegistry = null;
             _objectRegistry = null;
-
-            //_texturePool?.Dispose();
+            _atlasArray = null;
         }
 
         private void OnValidate()
@@ -170,8 +167,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             if (!enabled || !gameObject.activeInHierarchy) return;
 
             SetupDependencies();
-            SanitizeLODLevels();
-            CacheValidLodLevels();
+            _lodTable.Sanitize();
 
             UpdateGridSize();
             UpdateLODSettings();
@@ -206,12 +202,11 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 _chunkRegistry = new LODChunkRegistry<AtlasLODChunk>(
                     (GridSize)chunkSize,
                     transform.position,
-                    GetValidLodDistances(),
+                    _lodTable.ValidDistances,
                     true,
                     lodReference,
                     this.transform
                 );
-                //_chunkRegistry.showDebugLogs = showDebugLogs;
 
                 _objectRegistry?.Initialize(_chunkRegistry);
                 LogDebug($"Chunk Registry created. GridSize: {(int)chunkSize}m");
@@ -222,17 +217,17 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             if (_atlasController == null || force)
             {
+                var validLodLevels = _lodTable.ValidEntries;
+
                 _atlasController = new LodAtlasController<Vector3Int>();
-                _atlasController.showDebugLogs = showDebugLogs;
                 _atlasController.Initialize(
                     provider: _chunkRegistry,
-                    lodConfigs: _validLodLevels,
-                    registryCapacity: registryCapacity,
+                    lodConfigs: validLodLevels,
                     batchSize: batchSize
                 );
 
                 int totalSlices = _atlasController.RequiredSliceCount;
-                int baseRes = (int)_validLodLevels[0].mapResolution;
+                int baseRes = (int)validLodLevels[0].mapResolution;
 
                 _atlasArray?.Dispose();
 
@@ -283,7 +278,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             if (_chunkRegistry == null) return;
 
-            float[] distances = GetValidLodDistances();
+            var distances = _lodTable.ValidDistances;
 
             bool updateLod = _chunkRegistry.SetViewer(lodReference);
             updateLod |= _chunkRegistry.UpdateLodDistances(distances);
@@ -297,106 +292,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             {
                 LogDebug("LOD update skipped: Viewer and distances have not changed.");
             }
-        }
-
-        private void SanitizeLODLevels()
-        {
-            if (lodLevels == null || lodLevels.Length == 0) return;
-
-            bool invalid = false;
-
-            for (int i = 0; i < lodLevels.Length; i++)
-            {
-                var current = lodLevels[i];
-
-                if (i > 0)
-                {
-                    var prev = lodLevels[i - 1];
-
-                    if (current.distanceThreshold <= prev.distanceThreshold)
-                        current.distanceThreshold = prev.distanceThreshold + 10.0f;
-
-                    if (!current.mapResolution.IsLowerThan(prev.mapResolution))
-                        current.mapResolution = prev.mapResolution.Downscale();
-
-                    if (current.mapResolution == prev.mapResolution)
-                    {
-                        if (!invalid)
-                        {
-                            LogDebug($"LOD Chain reached resolution limit at index {i}. " +
-                                     "Subsequent levels will be clamped and filtered out during bake.");
-                            invalid = true;
-                        }
-
-                        current.mapResolution = prev.mapResolution;
-                        current.distanceThreshold = prev.distanceThreshold;
-                    }
-                }
-                else
-                {
-                    if (current.distanceThreshold == 0) current.distanceThreshold = 50f;
-                    if (current.mapResolution.IsLowerThan(PowerOfTwoResolution.Resolution32))
-                        current.mapResolution = PowerOfTwoResolution.Resolution256;
-                }
-
-                lodLevels[i] = current;
-            }
-        }
-
-        private float[] GetValidLodDistances()
-        {
-            var distances = new float[_validLodLevels.Length];
-            for (int i = 0; i < _validLodLevels.Length; ++i)
-            {
-                distances[i] = _validLodLevels[i].distanceThreshold;
-            }
-
-            return distances;
-        }
-
-        private void CacheValidLodLevels()
-        {
-            if (lodLevels == null || lodLevels.Length == 0)
-            {
-                LogDebug("GetValidLodLevels: No LOD levels defined.");
-                _validLodLevels = Array.Empty<TextureLOD>();
-                return;
-            }
-
-            List<TextureLOD> validLevels = new List<TextureLOD>(capacity: lodLevels.Length);
-            TextureLOD lastAccepted = default;
-
-            for (int i = 0; i < lodLevels.Length; i++)
-            {
-                var cur = lodLevels[i];
-
-                if (i == 0)
-                {
-                    validLevels.Add(cur);
-                    lastAccepted = cur;
-                    continue;
-                }
-
-                bool resDrops = lastAccepted.mapResolution.IsHigherThan(cur.mapResolution);
-                bool distGrows = cur.distanceThreshold > lastAccepted.distanceThreshold;
-
-                if (resDrops && distGrows)
-                {
-                    validLevels.Add(cur);
-                    lastAccepted = cur;
-                }
-                else
-                {
-                    string reason = "";
-                    if (!resDrops) reason += $"Resolution {cur.mapResolution} is not lower than {lastAccepted.mapResolution}. ";
-                    if (!distGrows) reason += $"Distance {cur.distanceThreshold}m is not further than {lastAccepted.distanceThreshold}m.";
-
-                    LogDebug($"LOD Level [{i}] ignored: {reason}");
-                }
-            }
-
-            LogDebug($"LOD Validation complete: {validLevels.Count} valid levels extracted from {lodLevels.Length} entries.");
-            _validLodLevels = validLevels.ToArray();
         }
 
         #endregion
@@ -694,6 +589,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             {
                 _chunkRegistry.Dispose();
                 CreateChunkRegistry(true);
+            }
+
+            if (_atlasController != null)
+            {
+                _atlasController.ClearAll();
+                CreateLodAtlas(true);
             }
 
             ResetTrackingPosition();

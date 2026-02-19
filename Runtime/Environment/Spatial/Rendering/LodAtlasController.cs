@@ -1,6 +1,7 @@
 using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
+using Rayforge.Core.Rendering.EditorStructures;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -17,7 +18,9 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     {
         #region Internal Types
 
+#if UNITY_EDITOR
         public bool showDebugLogs = false;
+#endif
 
         /// <summary>
         /// Stores the parameters for a pending tile update request.
@@ -80,6 +83,16 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                     RelativeOffset = new Vector2(x * scale, y * scale)
                 };
             }
+
+            /// <summary>
+            /// Resets the occupancy state of this LOD level, effectively freeing all slots.
+            /// Clears the free-slots stack and resets the linear allocation counter.
+            /// </summary>
+            public void Reset()
+            {
+                m_NextAvailableIndex = 0;
+                m_FreeSlots.Clear();
+            }
         }
 
         #endregion
@@ -98,7 +111,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #endregion
 
-        #region Initialization
+        #region Initialization & Cleanup
 
         /// <summary>
         /// Initializes the atlas using a centralized LOD provider.
@@ -106,18 +119,14 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </summary>
         /// <param name="provider">The source of truth for spatial and LOD logic.</param>
         /// <param name="lodConfigs">Resolution settings for each LOD level.</param>
-        /// <param name="registryCapacity">Total capacity of the metadata registry.</param>
         /// <param name="batchSize">GPU sync batch size.</param>
-        public void Initialize(ILODGridProvider provider, TextureLOD[] lodConfigs, int registryCapacity, int batchSize)
+        public void Initialize(ILODGridProvider provider, ReadOnlySpan<TextureLOD> lodConfigs, int batchSize)
         {
-            m_Registry = new SphereMetadataRegistry<TKey, AtlasMappingData>(registryCapacity, batchSize);
-
             int lodCount = provider.LodCount;
             m_LodLevels = new LodLevelManager[lodCount];
 
-            LogDebug($"Initializing Atlas with {lodCount} LOD levels from Provider.");
-
             int currentSliceOffset = 0;
+            int totalAllocatedSlots = 0;
 
             for (int i = 0; i < lodCount; i++)
             {
@@ -132,21 +141,41 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                     reqSlices = Mathf.CeilToInt((float)tilesInRing / slotsPerSlice);
                 }
 
+                int levelCapacity = reqSlices * slotsPerSlice;
+
                 m_LodLevels[i] = new LodLevelManager
                 {
                     StartSlice = currentSliceOffset,
                     SlotsPerDim = slotsPerDim,
-                    TotalCapacity = reqSlices * slotsPerSlice
+                    TotalCapacity = levelCapacity
                 };
 
-                LogDebug($"LOD[{i}]: Tiles in Ring: {tilesInRing}, " +
-                    $"Slices: {reqSlices} (Start: {currentSliceOffset}), Capacity: {m_LodLevels[i].TotalCapacity}");
-
+                totalAllocatedSlots += levelCapacity;
                 currentSliceOffset += reqSlices;
+
+                LogDebug($"LOD[{i}]: Tiles: {tilesInRing} -> Allocated {levelCapacity} slots across {reqSlices} slices.");
             }
 
+            m_Registry = new SphereMetadataRegistry<TKey, AtlasMappingData>(totalAllocatedSlots, batchSize);
+
             RequiredSliceCount = currentSliceOffset;
-            LogDebug($"Initialization Complete. Total Required Slices: {RequiredSliceCount}");
+            LogDebug($"Initialization Complete. Total Slots: {totalAllocatedSlots}, Total Slices: {RequiredSliceCount}");
+        }
+
+        /// <summary>
+        /// Clears all caches.
+        /// </summary>
+        public void ClearAll()
+        {
+            m_Registry.Reset();
+            m_ActiveMappings.Clear();
+            m_PendingRemovals.Clear();
+            m_PendingUpdates.Clear();
+
+            foreach(var entry in m_LodLevels)
+            {
+                entry.Reset();
+            }
         }
 
         #endregion

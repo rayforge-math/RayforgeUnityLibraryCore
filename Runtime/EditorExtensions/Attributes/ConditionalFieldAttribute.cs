@@ -1,7 +1,7 @@
 using UnityEngine;
 using Rayforge.Core.EditorExtensions.Attributes.Helpers;
 using System.Collections.Generic;
-using Rayforge.Core.EditorExtensions.Attributes.Abstractions;
+using Rayforge.Core.EditorExtensions.Abstractions;
 using System;
 
 namespace Rayforge.Core.EditorExtensions.Attributes

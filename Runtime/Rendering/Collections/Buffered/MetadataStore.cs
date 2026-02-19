@@ -1,6 +1,8 @@
+using Rayforge.Core.Common.Rendering.Helpers;
+using Rayforge.Core.Rendering.Abstractions;
 using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace Rayforge.Core.Rendering.Collections.Buffered
 {
@@ -10,11 +12,14 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
     /// This is now a class to ensure stable references when managed by a Registry.
     /// </summary>
     /// <typeparam name="TValue">The unmanaged metadata struct (e.g., SpatialData or AtlasVisualData).</typeparam>
-    public class MetadataStore<TValue> where TValue : unmanaged
+    public class MetadataStore<TValue> : IMetadataStore
+        where TValue : unmanaged
     {
         private readonly TValue[] m_CpuData;
-        private readonly HashSet<int> m_DirtyBatches;
+        private readonly BitArray m_DirtyBits;
         private readonly int m_BatchSize;
+        private readonly int m_TotalBatches;
+        private bool m_AnyDirty;
 
         /// <summary>
         /// Gets the total capacity of the store.
@@ -29,12 +34,7 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// <summary>
         /// Gets a value indicating whether any segments of the data have been modified.
         /// </summary>
-        public bool AnyDirty => m_DirtyBatches.Count > 0;
-
-        /// <summary>
-        /// Gets the collection of batch indices that require a GPU upload.
-        /// </summary>
-        public IReadOnlyCollection<int> DirtyBatches => m_DirtyBatches;
+        public bool AnyDirty => m_AnyDirty;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MetadataStore{TValue}"/> class.
@@ -47,7 +47,26 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
 
             m_CpuData = new TValue[capacity];
             m_BatchSize = Math.Max(1, batchSize);
-            m_DirtyBatches = new HashSet<int>();
+            m_TotalBatches = BufferMath.GetTotalBatches(capacity, m_BatchSize);
+            m_DirtyBits = new BitArray(m_TotalBatches);
+            m_AnyDirty = false;
+        }
+
+        /// <summary>
+        /// Provides an iterator over all currently dirty batch indices.
+        /// Allows external logic to inspect which segments are modified without allocations.
+        /// </summary>
+        public IEnumerable<int> GetDirtyBatchIndices()
+        {
+            if (!m_AnyDirty) yield break;
+
+            for (int i = 0; i < m_TotalBatches; i++)
+            {
+                if (m_DirtyBits.Get(i))
+                {
+                    yield return i;
+                }
+            }
         }
 
         /// <summary>
@@ -75,30 +94,27 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// <param name="uploadCallback">Callback for (Array source, int start, int count).</param>
         public void ProcessDirtyBatches(Action<Array, int, int> uploadCallback)
         {
-            if (m_DirtyBatches.Count == 0) return;
+            if (!m_AnyDirty) return;
 
-            var sortedBatches = m_DirtyBatches.ToList();
-            sortedBatches.Sort();
-
-            int i = 0;
-            while (i < sortedBatches.Count)
+            int current = 0;
+            while (current < m_TotalBatches)
             {
-                int startBatch = sortedBatches[i];
-                int endBatch = startBatch;
-
-                while (i + 1 < sortedBatches.Count && sortedBatches[i + 1] == endBatch + 1)
+                if (!m_DirtyBits.Get(current))
                 {
-                    i++;
-                    endBatch = sortedBatches[i];
+                    current++;
+                    continue;
                 }
 
-                int elementStart = startBatch * m_BatchSize;
-                int elementEnd = Math.Min((endBatch + 1) * m_BatchSize, m_CpuData.Length);
-                int elementCount = elementEnd - elementStart;
+                int startBatch = current;
+                while (current < m_TotalBatches && m_DirtyBits.Get(current))
+                {
+                    current++;
+                }
+                int endBatch = current - 1;
 
-                uploadCallback?.Invoke(m_CpuData, elementStart, elementCount);
+                BufferMath.GetElementRange(startBatch, endBatch, m_BatchSize, m_CpuData.Length, out int start, out int count);
 
-                i++;
+                uploadCallback?.Invoke(m_CpuData, start, count);
             }
 
             ClearDirty();
@@ -110,7 +126,9 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// <param name="index">The index to mark as dirty.</param>
         public void MarkDirty(int index)
         {
-            m_DirtyBatches.Add(index / m_BatchSize);
+            int batchIndex = BufferMath.GetBatchIndex(index, m_BatchSize);
+            m_DirtyBits.Set(batchIndex, true);
+            m_AnyDirty = true;
         }
 
         /// <summary>
@@ -120,12 +138,8 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// </summary>
         public void MarkAllDirty()
         {
-            int totalBatches = (m_CpuData.Length + m_BatchSize - 1) / m_BatchSize;
-
-            for (int i = 0; i < totalBatches; i++)
-            {
-                m_DirtyBatches.Add(i);
-            }
+            m_DirtyBits.SetAll(true);
+            m_AnyDirty = true;
         }
 
         /// <summary>
@@ -133,7 +147,8 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// </summary>
         public void ClearDirty()
         {
-            m_DirtyBatches.Clear();
+            m_DirtyBits.SetAll(false);
+            m_AnyDirty = false;
         }
 
         /// <summary>
@@ -141,5 +156,15 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// </summary>
         /// <returns>The raw CPU-side data array.</returns>
         public TValue[] GetInternalArray() => m_CpuData;
+
+        /// <summary>
+        /// Resets the store by zeroing the CPU array and clearing all dirty tracking markers.
+        /// Ensures no old data remains and the GPU synchronization starts fresh.
+        /// </summary>
+        public void Reset()
+        {
+            Array.Clear(m_CpuData, 0, m_CpuData.Length);
+            ClearDirty();
+        }
     }
 }

@@ -16,7 +16,12 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T>, ISpatialGridProvider
         where T : Chunk<T>
     {
-        #region Grid Settings
+        #region Fields
+
+#if UNITY_EDITOR
+        public bool showDebugLogs = false;
+#endif
+
         /// <summary> The physical size of one side of a chunk cell. </summary>
         public GridSize GridSize { get; private set; }
 
@@ -102,16 +107,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return count;
         }
 
-        #endregion
-
-        #region Debug Helper
-        public bool showDebugLogs = false;
-
-        [Conditional("UNITY_EDITOR")]
-        private void LogDebug(string message, string color = "#FFAB91")
-        {
-            DebugOutput.Log(message, showDebugLogs, color);
-        }
         #endregion
 
         public ChunkRegistry(GridSize gridSize, Vector3 initialAnchor, Transform container = null, string name = "ChunkRegistry")
@@ -456,6 +451,16 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 IsYActive ? pos.y : Anchor.y,
                 IsZActive ? pos.z : Anchor.z
             );
+        }
+
+        #endregion
+
+        #region Debug Helper
+
+        [Conditional("UNITY_EDITOR")]
+        private void LogDebug(string message, string color = "#FFAB91")
+        {
+            DebugOutput.Log(message, showDebugLogs, color);
         }
 
         #endregion

@@ -45,7 +45,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #endregion
 
-        public LODChunkRegistry(GridSize gridSize, Vector3 initialAnchor, float[] lodDistances, bool deactivateOnCulled = true, Transform viewer = null, Transform container = null)
+        public LODChunkRegistry(GridSize gridSize, Vector3 initialAnchor, ReadOnlySpan<float> lodDistances, bool deactivateOnCulled = true, Transform viewer = null, Transform container = null)
             : base(gridSize, initialAnchor, container)
         {
             _deactivateOnCulled = deactivateOnCulled;
@@ -254,7 +254,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// Updates the internal squared distance thresholds.
         /// Re-calculates squared values to keep the Update loop math simple and fast.
         /// </summary>
-        public bool UpdateLodDistances(float[] newDistances)
+        public bool UpdateLodDistances(ReadOnlySpan<float> newDistances)
         {
             if (newDistances == null) return false;
 

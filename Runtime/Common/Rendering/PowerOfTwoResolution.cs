@@ -4,6 +4,7 @@ namespace Rayforge.Core.Common.Rendering
 {
     public enum PowerOfTwoResolution : int
     {
+        None = 0,
         Resolution32 = 32,
         Resolution64 = 64,
         Resolution128 = 128,

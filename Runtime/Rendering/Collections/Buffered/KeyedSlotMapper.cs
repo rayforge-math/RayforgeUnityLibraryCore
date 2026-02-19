@@ -50,6 +50,20 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         }
 
         /// <summary>
+        /// Resets the mapper by clearing all active mappings and returning all indices to the pool.
+        /// Clears the dictionary and reuse stack, and resets the high-water mark.
+        /// </summary>
+        public void Reset()
+        {
+            if (!IsInitialized) return;
+
+            m_KeyToSlot.Clear();
+            m_ReuseStack.Clear();
+
+            m_NextAvailableIndex = 0;
+        }
+
+        /// <summary>
         /// Retrieves the stable index for a given key. If the key is new, a new index is allocated.
         /// </summary>
         /// <param name="key">The unique key to map.</param>
