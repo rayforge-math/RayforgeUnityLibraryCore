@@ -1,6 +1,8 @@
-using UnityEngine;
-using UnityEditor;
+using Rayforge.Core.Rendering.Textures;
 using Rayforge.Core.Environment.Spatial.Chunks;
+using UnityEditor;
+using UnityEngine;
+using Rayforge.Core.Rendering.Abstractions;
 
 
 namespace Rayforge.Core.Environment.Spatial.Rendering
@@ -10,14 +12,14 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     /// It does not hold references to textures or material blocks, keeping the memory footprint minimal.
     /// </summary>
     [ChunkConfig(SpatialAxes.Surface)]
-    public class AtlasLODChunk : LODChunk<AtlasLODChunk>
+    public class TextureLodChunk : LODChunk<TextureLodChunk>, ITextureMapped
     {
         /// <summary>
         /// The view metadata (Slice, Scale, Offset) for this chunk in the global atlas.
         /// Stored by value (struct) to minimize memory overhead.
         /// </summary>
         [Header("Atlas Mapping")]
-        public AtlasMappingData Mapping;
+        public TextureMappingData Mapping { get; private set; }
 
         /// <summary>
         /// Checks if the current mapping has been initialized. 
@@ -27,19 +29,18 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         /// <summary>
         /// Updates the view coordinates for this chunk.
-        /// English: Because Mapping is a struct, this performs a quick bitwise copy of the data.
         /// </summary>
         /// <param name="data">The mapping data provided by the AtlasController.</param>
-        public void SetAtlasMapping(AtlasMappingData data)
+        public void SetTextureMapping(TextureMappingData data)
         {
             Mapping = data;
         }
 
         /// <summary>
         /// Resets the mapping data to an invalid state.
-        /// English: Useful for pooling to ensure old data isn't used for rendering.
+        /// Useful for pooling to ensure old data isn't used for rendering.
         /// </summary>
-        public void ClearAtlasMapping()
+        public void ClearMapping()
         {
             Mapping = default;
         }
@@ -81,12 +82,12 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     }
 
 #if UNITY_EDITOR
-    [CustomEditor(typeof(AtlasLODChunk))]
-    public class AtlasLODChunkEditor : Editor
+    [CustomEditor(typeof(TextureLodChunk))]
+    public class TextureLodChunkEditor : Editor
     {
         public override void OnInspectorGUI()
         {
-            var chunk = (AtlasLODChunk)target;
+            var chunk = (TextureLodChunk)target;
 
             EditorGUILayout.LabelField("LOD Configuration", EditorStyles.boldLabel);
             EditorGUILayout.IntField("Current LOD", chunk.CurrentLOD);

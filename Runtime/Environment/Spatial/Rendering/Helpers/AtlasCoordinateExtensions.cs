@@ -1,3 +1,4 @@
+using Rayforge.Core.Rendering.Textures;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering.Helpers
@@ -10,7 +11,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering.Helpers
         /// <param name="mapping">The normalized source data.</param>
         /// <param name="atlasResolution">The total resolution of the target TextureArray.</param>
         /// <returns>A view containing absolute pixel coordinates.</returns>
-        public static AtlasSlotView ToSlotView(this AtlasMappingData mapping, int atlasResolution)
+        public static AtlasSlotView ToSlotView(this TextureMappingData mapping, int atlasResolution)
         {
             float size = atlasResolution * mapping.RelativeScale;
 
@@ -28,7 +29,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering.Helpers
         /// <param name="mapping">The normalized source data.</param>
         /// <param name="atlasResolution">The resolution of the target texture array.</param>
         /// <returns>A Rect defined in absolute pixel coordinates.</returns>
-        public static Rect ToViewportRect(this AtlasMappingData mapping, int atlasResolution)
+        public static Rect ToViewportRect(this TextureMappingData mapping, int atlasResolution)
         {
             float size = atlasResolution * mapping.RelativeScale;
             return new Rect(

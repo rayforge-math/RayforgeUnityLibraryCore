@@ -12,13 +12,26 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
     /// </summary>
     /// <typeparam name="TEntry">A struct implementing <see cref="ILodEntry{TSelf}"/>.</typeparam>
     [Serializable]
-    public class UniversalLodTable<TEntry> where TEntry : struct, ILodEntry<TEntry>
+    public class UniversalLodTable<TEntry> : ISerializationCallbackReceiver
+        where TEntry : struct, ILodEntry<TEntry>
     {
+        #region Fields & Events
+
         [SerializeField]
         private TEntry[] _entries = new TEntry[0];
 
         private TEntry[] _validEntries = Array.Empty<TEntry>();
         private float[] _validDistances = Array.Empty<float>();
+
+        /// <summary>
+        /// Notifies listeners that the valid LOD chain has been updated.
+        /// Passes the table instance as the sender.
+        /// </summary>
+        public event Action<UniversalLodTable<TEntry>> OnTableChanged;
+
+        #endregion
+
+        #region Properties & Indexer
 
         /// <summary>
         /// Provides high-performance, read-only access to the sanitized LOD entries.
@@ -36,6 +49,17 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
         /// Returns the number of validated entries in the cache.
         /// </summary>
         public int Count => _validEntries.Length;
+
+        /// <summary>
+        /// Indexer for quick access to validated entries.
+        /// </summary>
+        /// <param name="index">The index of the valid LOD level.</param>
+        /// <returns>The validated LOD entry at the specified index.</returns>
+        public TEntry this[int index] => _validEntries[index];
+
+        #endregion
+
+        #region Sanitization Logic
 
         /// <summary>
         /// Validates the LOD chain. 
@@ -56,9 +80,9 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
                 {
                     current.DistanceThreshold = prev.DistanceThreshold + minStep;
                 }
-                else
-                {
-                    if (current.DistanceThreshold < minFirstDistance) current.DistanceThreshold = minFirstDistance;
+                else if (i == 0 && current.DistanceThreshold < minFirstDistance)
+                { 
+                    current.DistanceThreshold = minFirstDistance;
                 }
 
                 if (!current.IsLogicalSuccessor(prev))
@@ -81,8 +105,11 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
         {
             if (_entries.Length == 0)
             {
+                bool wasNotEmpty = _validEntries.Length > 0;
                 _validEntries = Array.Empty<TEntry>();
                 _validDistances = Array.Empty<float>();
+
+                if (wasNotEmpty) OnTableChanged?.Invoke(this);
                 return;
             }
 
@@ -106,18 +133,63 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
                 }
             }
 
-            _validEntries = validList.ToArray();
-            _validDistances = distanceList.ToArray();
+            if (!AreDistancesEqual(distanceList))
+            {
+                _validEntries = validList.ToArray();
+                _validDistances = distanceList.ToArray();
+
+                OnTableChanged?.Invoke(this);
+            }
         }
 
         /// <summary>
+        /// Compares a list of distances against the currently cached valid distances.
+        /// </summary>
+        /// <param name="newList">The new list of distances to check.</param>
+        /// <returns>True if the distances are identical within floating point precision.</returns>
+        private bool AreDistancesEqual(List<float> newList)
+        {
+            if (_validDistances.Length != newList.Count) return false;
+
+            for (int i = 0; i < _validDistances.Length; i++)
+            {
+                if (!Mathf.Approximately(_validDistances[i], newList[i])) return false;
+            }
+            return true;
+        }
+
+        #endregion
+
+        #region Management
+
+        /// <summary>
         /// Completely clears the table and resets the internal entries and caches.
+        /// Triggers <see cref="OnTableChanged"/> if the table was not already empty.
         /// </summary>
         public void Clear()
         {
+            if (_entries.Length == 0) return;
+
             _entries = new TEntry[0];
-            _validEntries = Array.Empty<TEntry>();
-            _validDistances = Array.Empty<float>();
+            RebuildCache();
         }
+
+        #endregion
+
+        #region ISerializationCallbackReceiver
+
+        /// <summary> Internal Unity callback. Not used. </summary>
+        void ISerializationCallbackReceiver.OnBeforeSerialize() { }
+
+        /// <summary>
+        /// Internal Unity callback. Rebuilds the transient caches after deserialization 
+        /// to ensure the table is ready for use after loading a scene or asset.
+        /// </summary>
+        void ISerializationCallbackReceiver.OnAfterDeserialize()
+        {
+            RebuildCache();
+        }
+
+        #endregion
     }
 }

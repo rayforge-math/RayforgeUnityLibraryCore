@@ -1,9 +1,7 @@
-using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Helpers;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Chunks
@@ -13,17 +11,27 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     /// Implements spatial indexing, factory logic, and Floating Origin support.
     /// </summary>
     /// <typeparam name="T">The specific chunk type.</typeparam>
-    public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T>, ISpatialGridProvider
+    public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T>, ISpatialGridProvider<Vector3Int>
         where T : Chunk<T>
     {
         #region Fields
 
-#if UNITY_EDITOR
-        public bool showDebugLogs = false;
-#endif
-
         /// <summary> The physical size of one side of a chunk cell. </summary>
-        public GridSize GridSize { get; private set; }
+        public GridSize GridSize
+        {
+            get => _gridSize;
+            private set
+            {
+                if (_gridSize == value) return;
+
+                _gridSize = value;
+                ClearChunks();
+                RegistryName = _baseName;
+
+                OnGridStructureChanged?.Invoke(this);  
+            }
+        }
+        private GridSize _gridSize;
 
         /// <summary> 
         /// The unique identification string of this registry instance.
@@ -45,17 +53,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// Updates the grid resolution and destroys all existing chunks
         /// as their spatial keys are no longer valid for the new size.
         /// </summary>
-        public void SetGridSize(GridSize newSize)
-        {
-            if (GridSize == newSize) return;
-
-            LogDebug($"Reformatting Grid: {(int)GridSize}m -> {(int)newSize}m. Destroying all chunks.");
-
-            ClearChunks();
-            var oldSize = GridSize;
-            GridSize = newSize;
-            RegistryName = _baseName;
-        }
+        public void SetGridSize(GridSize newSize) => GridSize = newSize;
         
         /// <summary> 
         /// The world-space origin offset for the grid calculation.
@@ -66,12 +64,30 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             get => _anchor;
             protected set
             {
+                if (_anchor == value) return;
+
+                Vector3 delta = value - _anchor;
                 _anchor = value;
+
                 if (!ContainerLinkedToAnchor && Container != null)
                     Container.transform.position = _anchor;
+
+                OnAnchorChanged?.Invoke(this, delta);
             }
         }
         private Vector3 _anchor;
+
+        /// <summary>
+        /// Triggered when the grid's scale or fundamental structure changes 
+        /// (e.g., GridSize change). Requires a full rebuild of dependent systems.
+        /// </summary>
+        public event Action<ISpatialGridProvider<Vector3Int>> OnGridStructureChanged;
+
+        /// <summary> 
+        /// Triggered when the grid origin shifts. 
+        /// Passes the provider and the delta movement.
+        /// </summary>
+        public event Action<ISpatialGridProvider<Vector3Int>, Vector3> OnAnchorChanged;
 
         /// <summary> Cached mask to determine which axes are handled by this registry's indexing. </summary>
         private readonly SpatialAxes _axes;
@@ -117,8 +133,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             _axes = Chunk<T>.ActiveAxes;
             _baseName = name;
             RegistryName = _baseName;
-
-            LogDebug($"Initialized: Size={GridSize}, Anchor={Anchor}, Axes={_axes}");
         }
 
         #region Factory Implementation
@@ -168,8 +182,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         private bool CreateInternal(Vector3Int validKey, Action<T> onConfigure, out T chunk)
         {
-            LogDebug($"Creating Chunk at {validKey}");
-
             bool isNew = GetOrCreate(
                 validKey,
                 $"Chunk_{validKey.x}_{validKey.y}_{validKey.z}",
@@ -420,7 +432,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public void NotifyOriginShift(Vector3 delta)
         {
             Anchor += delta;
-            LogDebug($"Origin Shift detected: Delta {delta}. New Anchor: {Anchor}");
         }
 
         #endregion
@@ -451,16 +462,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 IsYActive ? pos.y : Anchor.y,
                 IsZActive ? pos.z : Anchor.z
             );
-        }
-
-        #endregion
-
-        #region Debug Helper
-
-        [Conditional("UNITY_EDITOR")]
-        private void LogDebug(string message, string color = "#FFAB91")
-        {
-            DebugOutput.Log(message, showDebugLogs, color);
         }
 
         #endregion

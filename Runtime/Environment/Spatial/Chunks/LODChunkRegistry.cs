@@ -14,7 +14,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     /// automatically respecting ActiveAxes for 2D or 3D distance checks.
     /// </summary>
     /// <typeparam name="T">The chunk type implementing both spatial and LOD interfaces.</typeparam>
-    public class LODChunkRegistry<T> : ChunkRegistry<T>, ILODGridProvider
+    public class LODChunkRegistry<T> : ChunkRegistry<T>, ILODGridProvider<Vector3Int>
         where T : LODChunk<T>
     {
         #region Fields & Config
@@ -43,6 +43,9 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <summary> Implementation of ILODGridProvider. Returns number of LOD levels. </summary>
         public int LodCount => _lodSqrDistances?.Length ?? 0;
 
+        /// <summary> Implementation of ILODGridProvider. </summary>
+        public event Action<ILODGridProvider<Vector3Int>> OnLODSettingsChanged;
+
         #endregion
 
         public LODChunkRegistry(GridSize gridSize, Vector3 initialAnchor, ReadOnlySpan<float> lodDistances, bool deactivateOnCulled = true, Transform viewer = null, Transform container = null)
@@ -50,7 +53,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         {
             _deactivateOnCulled = deactivateOnCulled;
             Viewer = viewer;
-            UpdateLodDistances(lodDistances);
+            ApplyLodConfiguration(lodDistances, false);
         }
 
         #region Factory Overrides
@@ -67,7 +70,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 UpdateChunkLOD(chunk, ViewerPos);
             }
 
-            LogDebug($"Created Chunk {key} with initial LOD {chunk.CurrentLOD}");
             return isNew;
         }
 
@@ -244,17 +246,16 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             if (Viewer != viewer)
             {
                 Viewer = viewer;
-                LogDebug($"Viewer changed to: {(viewer != null ? viewer.name : "NULL")}");
                 return true;
             }
             return false;
         }
 
         /// <summary>
-        /// Updates the internal squared distance thresholds.
-        /// Re-calculates squared values to keep the Update loop math simple and fast.
+        /// The single source of truth for changing LOD arrays.
+        /// Handles validation, allocation, and notification.
         /// </summary>
-        public bool UpdateLodDistances(ReadOnlySpan<float> newDistances)
+        private bool ApplyLodConfiguration(ReadOnlySpan<float> newDistances, bool notify)
         {
             if (newDistances == null) return false;
 
@@ -283,18 +284,18 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 _lodSqrDistances[i] = d * d;
             }
 
-            LogDebug($"LOD Distances synchronized. Levels: {count}. Max Range: {newDistances[count - 1]}m");
+            if (notify) OnLODSettingsChanged?.Invoke(this);
+
             return true;
         }
 
-        #endregion
+        /// <summary>
+        /// Updates the internal squared distance thresholds.
+        /// Re-calculates squared values to keep the Update loop math simple and fast.
+        /// </summary>
+        public bool UpdateLodDistances(ReadOnlySpan<float> newDistances)
+            => ApplyLodConfiguration(newDistances, true);
 
-        #region Debug Helper
-        [Conditional("UNITY_EDITOR")]
-        private void LogDebug(string message, string color = "#FFAB91")
-        {
-            DebugOutput.Log(message, showDebugLogs, color);
-        }
         #endregion
     }
 }

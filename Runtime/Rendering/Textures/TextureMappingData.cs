@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial.Rendering
+namespace Rayforge.Core.Rendering.Textures
 {
     /// <summary>
     /// The master data for a chunk's location in the atlas.
@@ -10,7 +10,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     /// </summary>
     [Serializable]
     [StructLayout(LayoutKind.Sequential)]
-    public struct AtlasMappingData
+    public struct TextureMappingData
     {
         /// <summary>
         /// The Z-index (layer) of the Texture2DArray where the data is stored.
@@ -34,7 +34,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// Provides a default mapping state representing an inactive or culled chunk.
         /// SliceIndex is set to -1 to flag it as invalid.
         /// </summary>
-        public static AtlasMappingData Inactive => new AtlasMappingData
+        public static TextureMappingData Inactive => new TextureMappingData
         {
             SliceIndex = -1,
             RelativeScale = 1f,

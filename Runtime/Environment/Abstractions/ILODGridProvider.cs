@@ -4,7 +4,8 @@ using UnityEngine;
 
 namespace Rayforge.Core.Environment.Abstractions
 {
-    public interface ILODGridProvider : ISpatialGridProvider
+    public interface ILODGridProvider<TKey> : ISpatialGridProvider<TKey>
+         where TKey : struct, IEquatable<TKey>
     {
         /// <summary> The current position of the player/camera focus. </summary>
         Vector3 ViewerPos { get; }
@@ -19,6 +20,12 @@ namespace Rayforge.Core.Environment.Abstractions
         ReadOnlySpan<float> LodDistances { get; }
 
         /// <summary> 
+        /// Triggered when distance values change, but the count remains the same. 
+        /// Requires only a re-evaluation of current chunk LODs.
+        /// </summary>
+        event Action<ILODGridProvider<TKey>> OnLODSettingsChanged;
+
+        /// <summary> 
         /// Maps a squared distance to the corresponding LOD index. 
         /// Returns -1 if the distance exceeds all LOD ranges.
         /// </summary>
@@ -30,12 +37,12 @@ namespace Rayforge.Core.Environment.Abstractions
         /// </summary>
         /// <param name="lodIndex">The index of the LOD (0 to LodCount-1).</param>
         /// <param name="center">The world-space center of the LOD circles.</param>
-        IEnumerable<Vector3Int> GetKeysInLODLevel(int lodIndex, Vector3 center);
+        IEnumerable<TKey> GetKeysInLODLevel(int lodIndex, Vector3 center);
 
         /// <summary>
         /// Returns all grid keys that are within the maximum visible range (last LOD).
         /// </summary>
-        IEnumerable<Vector3Int> GetKeysInFullRange(Vector3 center);
+        IEnumerable<TKey> GetKeysInFullRange(Vector3 center);
 
         /// <summary>
         /// Returns the exact number of grid cells that fall into a specific LOD level.

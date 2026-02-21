@@ -3,8 +3,6 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
-using UnityEngine.SocialPlatforms;
-using UnityEngine.TerrainUtils;
 
 namespace Rayforge.Core.Rendering.Projection
 {
@@ -98,7 +96,7 @@ namespace Rayforge.Core.Rendering.Projection
                 MinY = minY,
                 MaxY = maxY
             };
-
+            
             Bake(target, sliceIndex, viewportRect, param, renderers, terrains);
         }
 

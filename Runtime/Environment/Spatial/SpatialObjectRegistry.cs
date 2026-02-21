@@ -1,85 +1,71 @@
-using Rayforge.Core.Environment.Abstractions;
+using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Diagnostics;
+using Rayforge.Core.Environment.Abstractions;
 using System.Collections.Generic;
 using System.Diagnostics;
-using UnityEngine;
 using System.Runtime.CompilerServices;
+using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
 {
     /// <summary>
-    /// Manages the registration and spatial partitioning of objects.
-    /// Acts as a pure spatial hash, mapping object states to grid cells.
+    /// Manages registration and spatial partitioning.
+    /// Uses a two-step lookup: Cell -> IDs -> Components for maximum data integrity.
     /// </summary>
-    public class SpatialObjectRegistry
+    public class SpatialObjectRegistry :
+        ISpatialCollection,
+        IIterable<MeshRenderer, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>>,
+        IIterable<Terrain, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>>
     {
         #region Fields
-        /// <summary> Primary storage: InstanceID -> State. </summary>
-        private readonly Dictionary<int, SpatialObjectState> _registry = new Dictionary<int, SpatialObjectState>();
 
-        /// <summary> 
-        /// Spatial Index: CellKey (2D) -> Set of InstanceIDs. 
-        /// </summary>
-        private readonly Dictionary<Vector3Int, HashSet<int>> _spatialBuckets = new Dictionary<Vector3Int, HashSet<int>>();
+        /// <summary> Primary storage: InstanceID -> State for MeshRenderers. </summary>
+        private readonly Dictionary<int, SpatialState<MeshRenderer>> _meshRegistry = new();
 
-        private readonly HashSet<Vector3Int> _dirtyBuckets = new HashSet<Vector3Int>();
+        /// <summary> Primary storage: InstanceID -> State for Terrains. </summary>
+        private readonly Dictionary<int, SpatialState<Terrain>> _terrainRegistry = new();
 
-        /// <summary> The provider used to calculate grid keys from world bounds. </summary>
-        private ISpatialGridProvider _gridProvider;
+        /// <summary> Spatial Index: CellKey -> Set of Mesh InstanceIDs. </summary>
+        private readonly Dictionary<Vector3Int, HashSet<int>> _meshBuckets = new();
+
+        /// <summary> Spatial Index: CellKey -> Set of Terrain InstanceIDs. </summary>
+        private readonly Dictionary<Vector3Int, HashSet<int>> _terrainBuckets = new();
+
+        private readonly HashSet<Vector3Int> _dirtyBuckets = new();
+        private ISpatialGridProvider<Vector3Int> _gridProvider;
 
         public bool showDebugLogs = false;
-
-        /// <summary> Helper to check if the registry is ready for spatial operations. </summary>
         public bool IsInitialized => _gridProvider != null;
-
-        public Dictionary<int, SpatialObjectState>.KeyCollection GetAllIds() => _registry.Keys;
-        #endregion
-
-        #region Debug Helper
-
-        /// <summary>
-        /// Logs a message to the custom DebugOutput if logging is enabled.
-        /// This call is completely stripped from non-editor builds.
-        /// </summary>
-        [Conditional("UNITY_EDITOR")]
-        private void LogDebug(string message, [CallerLineNumber] int line = 0)
-        {
-            DebugOutput.Log(message, showDebugLogs, lineNumber: line);
-        }
 
         #endregion
 
         #region Lifecycle
 
-        /// <summary>
-        /// Connects the registry to a grid provider and rebuilds buckets.
-        /// </summary>
-        public void Initialize(ISpatialGridProvider gridProvider)
+        public void Initialize(ISpatialGridProvider<Vector3Int> gridProvider)
         {
-            LogDebug("Initializing with Grid Provider. Remapping all objects.");
+            LogDebug("Initializing Registry. Remapping ID-based buckets.");
             _gridProvider = gridProvider;
 
-            _spatialBuckets.Clear();
+            _meshBuckets.Clear();
+            _terrainBuckets.Clear();
             _dirtyBuckets.Clear();
 
             if (_gridProvider == null) return;
 
-            foreach (var entry in _registry)
-            {
-                UpdateBucketsForObject(entry.Key, entry.Value.anchorBounds, true);
-            }
+            foreach (var entry in _meshRegistry)
+                UpdateBuckets(_meshBuckets, entry.Key, entry.Value.anchorBounds, true);
+
+            foreach (var entry in _terrainRegistry)
+                UpdateBuckets(_terrainBuckets, entry.Key, entry.Value.anchorBounds, true);
         }
 
-        /// <summary>
-        /// Completely wipes all registered objects and spatial data.
-        /// Use this before a full scene rescan to ensure no "ghost" objects remain.
-        /// </summary>
         public void Clear()
         {
-            LogDebug("Registry: Performing full clear of all objects and buckets.");
-
-            _registry.Clear();
-            _spatialBuckets.Clear();
+            _meshRegistry.Clear();
+            _terrainRegistry.Clear();
+            _meshBuckets.Clear();
+            _terrainBuckets.Clear();
             _dirtyBuckets.Clear();
         }
 
@@ -87,143 +73,194 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Registration Logic
 
-        /// <summary>
-        /// Registers or updates a GameObject in the spatial registry.
-        /// </summary>
-        /// <returns>
-        /// True if the registry was actually modified (new object or spatial change). 
-        /// False if the object is already up-to-date or registration failed.
-        /// </returns>
         public bool TryRegister(GameObject obj)
         {
             if (obj == null || !IsInitialized) return false;
 
             int id = obj.GetInstanceID();
-            if (!TryCreateRelativeState(obj, out SpatialObjectState newState))
-                return false;
+            bool changed = false;
 
-            if (_registry.TryGetValue(id, out SpatialObjectState oldState))
+            if (obj.TryGetComponent<MeshRenderer>(out var renderer))
+            {
+                if (obj.TryGetComponent<MeshFilter>(out var filter) && filter.sharedMesh != null)
+                {
+                    var newState = SpatialState<MeshRenderer>.Create(_gridProvider.Anchor, renderer);
+                    if (UpdateTypedRegistry(_meshRegistry, _meshBuckets, id, newState))
+                        changed = true;
+                }
+            }
+
+            if (obj.TryGetComponent<Terrain>(out var terrain) && terrain.terrainData != null)
+            {
+                var newState = SpatialState<Terrain>.Create(_gridProvider.Anchor, terrain);
+                if (UpdateTypedRegistry(_terrainRegistry, _terrainBuckets, id, newState))
+                    changed = true;
+            }
+
+            return changed;
+        }
+
+        public bool Unregister(int id)
+        {
+            bool removed = false;
+
+            if (_meshRegistry.TryGetValue(id, out var mState))
+            {
+                UpdateBuckets(_meshBuckets, id, mState.anchorBounds, false);
+                _meshRegistry.Remove(id);
+                removed = true;
+            }
+
+            if (_terrainRegistry.TryGetValue(id, out var tState))
+            {
+                UpdateBuckets(_terrainBuckets, id, tState.anchorBounds, false);
+                _terrainRegistry.Remove(id);
+                removed = true;
+            }
+
+            return removed;
+        }
+
+        private bool UpdateTypedRegistry<T>(
+            Dictionary<int, SpatialState<T>> registry,
+            Dictionary<Vector3Int, HashSet<int>> bucketDict,
+            int id,
+            SpatialState<T> newState) where T : Component
+        {
+            if (registry.TryGetValue(id, out var oldState))
             {
                 if (oldState.Equals(newState)) return false;
-
-                LogDebug($"Updating object: {obj.name}. Spatial state changed.");
-
-                UpdateBucketsForObject(id, oldState.anchorBounds, false);
-                _registry[id] = newState;
-                UpdateBucketsForObject(id, newState.anchorBounds, true);
-            }
-            else
-            {
-                LogDebug($"Registering new object: {obj.name}");
-                _registry.Add(id, newState);
-                UpdateBucketsForObject(id, newState.anchorBounds, true);
+                UpdateBuckets(bucketDict, id, oldState.anchorBounds, false);
             }
 
+            registry[id] = newState;
+            UpdateBuckets(bucketDict, id, newState.anchorBounds, true);
             return true;
         }
 
+        #endregion
+
+        #region ISpatialCollection & Dispatcher Implementation
+
         /// <summary>
-        /// Removes an object from the registry and its spatial buckets.
+        /// English: Unified generic entry point. Dispatches to the correct internal engine based on T.
+        /// This replaces GetComponentsInCell for a cleaner, type-safe API.
         /// </summary>
-        /// <returns>True if the object was found and removed, false otherwise.</returns>
-        public bool Unregister(int id)
+        public bool TryGetIterator<T>(Vector3Int key, out IIterator<T> iterator) where T : Component
         {
-            if (_registry.TryGetValue(id, out SpatialObjectState state))
+            iterator = null;
+
+            if (typeof(T) == typeof(MeshRenderer))
             {
-                LogDebug($"Removing object: {id}");
-                UpdateBucketsForObject(id, state.anchorBounds, false);
-                _registry.Remove(id);
+                if (TryGetMeshIterator(key, out var concrete))
+                {
+                    iterator = concrete as IIterator<T>;
+                    return true;
+                }
+            }
+            else if (typeof(T) == typeof(Terrain))
+            {
+                if (TryGetTerrainIterator(key, out var concrete))
+                {
+                    iterator = concrete as IIterator<T>;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public ICollection<int> GetAllIds()
+        {
+            var ids = new List<int>(_meshRegistry.Count + _terrainRegistry.Count);
+            ids.AddRange(_meshRegistry.Keys);
+            ids.AddRange(_terrainRegistry.Keys);
+            return ids;
+        }
+
+        public bool HasEntriesInCell(Vector3Int key)
+        {
+            return (_meshBuckets.TryGetValue(key, out var m) && m.Count > 0) ||
+                   (_terrainBuckets.TryGetValue(key, out var t) && t.Count > 0);
+        }
+
+        public IIterator<Vector3Int> GetDirtyCells()
+        {
+            var enumerator = _dirtyBuckets.GetEnumerator();
+            return new Iterator<Vector3Int, HashSet<Vector3Int>.Enumerator>(enumerator,
+                (ref HashSet<Vector3Int>.Enumerator s, out Vector3Int res) =>
+                {
+                    bool next = s.MoveNext();
+                    res = next ? s.Current : default;
+                    return next;
+                });
+        }
+
+        #endregion
+
+        #region Specialized Internal Engines (Struct Path)
+
+        public bool TryGetMeshIterator(Vector3Int key, out Iterator<MeshRenderer, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>> iter)
+        {
+            if (_meshBuckets.TryGetValue(key, out var bucket))
+            {
+                var state = new SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>(key, bucket.GetEnumerator());
+                iter = new Iterator<MeshRenderer, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>>(state, TryGetNext);
                 return true;
+            }
+            iter = default; return false;
+        }
+
+        public bool TryGetTerrainIterator(Vector3Int key, out Iterator<Terrain, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>> iter)
+        {
+            if (_terrainBuckets.TryGetValue(key, out var bucket))
+            {
+                var state = new SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>(key, bucket.GetEnumerator());
+                iter = new Iterator<Terrain, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>>(state, TryGetNext);
+                return true;
+            }
+            iter = default; return false;
+        }
+
+        #endregion
+
+        #region IIterable Implementation (Spatial Iterators)
+
+        public bool TryGetNext(ref SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator> state, out MeshRenderer result)
+        {
+            result = null;
+            while (state.Internal.MoveNext())
+            {
+                if (_meshRegistry.TryGetValue(state.Internal.Current, out var spatialState))
+                {
+                    result = spatialState.component;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public bool TryGetNext(ref SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator> state, out Terrain result)
+        {
+            result = null;
+            while (state.Internal.MoveNext())
+            {
+                if (_terrainRegistry.TryGetValue(state.Internal.Current, out var spatialState))
+                {
+                    result = spatialState.component;
+                    return true;
+                }
             }
             return false;
         }
 
         #endregion
 
-        #region Dirty State Management
-
-        /// <summary>
-        /// Provides an enumerator over dirty buckets. 
-        /// IMPORTANT: Call ClearDirtyBuckets() after processing to reset the state.
-        /// </summary>
-        public IEnumerable<Vector3Int> GetDirtyBuckets()
-        {
-            foreach (var key in _dirtyBuckets)
-            {
-                yield return key;
-            }
-        }
-
-        public void ClearDirtyBuckets()
-        {
-            _dirtyBuckets.Clear();
-        }
-
-        /// <summary>
-        /// Manually mark a specific cell as dirty.
-        /// </summary>
-        public void MarkDirty(Vector3Int key) => _dirtyBuckets.Add(key);
-
-        #endregion
-
-        #region Spatial Queries
-
-        /// <summary>
-        /// Provides an enumerable of all MeshRenderer within a specific spatial cell.
-        /// </summary>
-        public IEnumerable<MeshRenderer> GetRenderersInCell(Vector3Int key)
-        {
-            if (!_spatialBuckets.TryGetValue(key, out var ids))
-                yield break;
-
-            foreach (int id in ids)
-            {
-                if (_registry.TryGetValue(id, out var state) && state.renderer != null)
-                {
-                    yield return state.renderer;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Provides an enumerable of all Terrains within a specific spatial cell.
-        /// </summary>
-        public IEnumerable<Terrain> GetTerrainsInCell(Vector3Int key)
-        {
-            if (!_spatialBuckets.TryGetValue(key, out var ids))
-                yield break;
-
-            foreach (int id in ids)
-            {
-                if (_registry.TryGetValue(id, out var state) && state.terrain != null)
-                {
-                    yield return state.terrain;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Checks if a specific cell contains any registered objects.
-        /// </summary>
-        public bool HasDataInBucket(Vector3Int key)
-        {
-            return _spatialBuckets.ContainsKey(key);
-        }
-
-        #endregion
-
         #region Bucket Management
 
-        /// <summary>
-        /// Internal helper to add or remove an object from the grid buckets.
-        /// It asks the provider: "Which keys are touched by these bounds?"
-        /// </summary>
-        private void UpdateBucketsForObject(int id, Bounds bounds, bool add)
+        private void UpdateBuckets(Dictionary<Vector3Int, HashSet<int>> bucketDict, int id, Bounds bounds, bool add)
         {
             if (!IsInitialized) return;
-
-            System.Text.StringBuilder sb = showDebugLogs ? new System.Text.StringBuilder() : null;
-            int affectedCount = 0;
 
             foreach (Vector3Int key in _gridProvider.GetKeysInRelativeBounds(bounds))
             {
@@ -231,34 +268,15 @@ namespace Rayforge.Core.Environment.Spatial
 
                 if (add)
                 {
-                    if (!_spatialBuckets.TryGetValue(key, out var bucket))
-                    {
-                        bucket = new HashSet<int>();
-                        _spatialBuckets[key] = bucket;
-                    }
+                    if (!bucketDict.TryGetValue(key, out var bucket))
+                        bucketDict[key] = bucket = new HashSet<int>();
                     bucket.Add(id);
                 }
-                else
+                else if (bucketDict.TryGetValue(key, out var bucket))
                 {
-                    if (_spatialBuckets.TryGetValue(key, out var bucket))
-                    {
-                        bucket.Remove(id);
-                        if (bucket.Count == 0) _spatialBuckets.Remove(key);
-                    }
+                    bucket.Remove(id);
+                    if (bucket.Count == 0) bucketDict.Remove(key);
                 }
-
-                if (showDebugLogs)
-                {
-                    if (affectedCount > 0) sb.Append(", ");
-                    sb.Append(key.ToString());
-                    affectedCount++;
-                }
-            }
-
-            if (showDebugLogs)
-            {
-                string op = add ? "Mapped to" : "Removed from";
-                LogDebug($"{op} {affectedCount} buckets: [{sb}] (ID: {id})");
             }
         }
 
@@ -266,29 +284,11 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Helpers
 
-        private bool TryCreateRelativeState(GameObject obj, out SpatialObjectState state)
-        {
-            state = default;
-            if (!IsInitialized) return false;
+        public void ClearDirtyCells() => _dirtyBuckets.Clear();
 
-            if (obj.TryGetComponent<Terrain>(out var terrain))
-            {
-                if (terrain.terrainData == null) return false;
-                state = SpatialObjectState.Create(_gridProvider.Anchor, terrain);
-                return true;
-            }
-
-            if (obj.TryGetComponent<MeshRenderer>(out var renderer))
-            {
-                if (!obj.TryGetComponent<MeshFilter>(out var filter) || filter.sharedMesh == null)
-                    return false;
-
-                state = SpatialObjectState.Create(_gridProvider.Anchor, renderer);
-                return true;
-            }
-
-            return false;
-        }
+        [Conditional("UNITY_EDITOR")]
+        private void LogDebug(string message, [CallerLineNumber] int line = 0)
+            => DebugOutput.Log(message, showDebugLogs, lineNumber: line);
 
         #endregion
     }
