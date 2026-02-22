@@ -1,251 +1,195 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Iterator;
-using Rayforge.Core.Diagnostics;
 using Rayforge.Core.Environment.Abstractions;
+using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
 {
     /// <summary>
-    /// Manages registration and spatial partitioning.
-    /// Uses a two-step lookup: Cell -> IDs -> Components for maximum data integrity.
+    /// Handles typed spatial partitioning for a specific component type.
+    /// Kapselt die Registrierung und das Bucket-Management für einen einzelnen Typen.
     /// </summary>
-    public class SpatialObjectRegistry :
-        ISpatialCollection,
-        IIterable<MeshRenderer, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>>,
-        IIterable<Terrain, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>>
+    /// <typeparam name="TKey">The spatial key type (e.g., Vector3Int).</typeparam>
+    /// <typeparam name="TType">The component type to be managed (must be a Unity Component).</typeparam>
+    public class SpatialObjectRegistry<TKey, TType> : ISpatialRegistry<TKey, TType>
+        where TType : Component
+        where TKey : struct, IEquatable<TKey>
     {
         #region Fields
 
-        /// <summary> Primary storage: InstanceID -> State for MeshRenderers. </summary>
-        private readonly Dictionary<int, SpatialState<MeshRenderer>> _meshRegistry = new();
+        /// <summary> Primary storage: InstanceID -> State. </summary>
+        private readonly Dictionary<int, SpatialState<TType>> _registry = new();
 
-        /// <summary> Primary storage: InstanceID -> State for Terrains. </summary>
-        private readonly Dictionary<int, SpatialState<Terrain>> _terrainRegistry = new();
+        /// <summary> Spatial Index: CellKey -> Set of InstanceIDs. </summary>
+        private readonly Dictionary<TKey, HashSet<int>> _buckets = new();
 
-        /// <summary> Spatial Index: CellKey -> Set of Mesh InstanceIDs. </summary>
-        private readonly Dictionary<Vector3Int, HashSet<int>> _meshBuckets = new();
+        /// <summary> 
+        /// Tracks cells that need re-baking. 
+        /// Reference to either an internal or external shared HashSet.
+        /// </summary>
+        private HashSet<TKey> _dirtyBuckets;
 
-        /// <summary> Spatial Index: CellKey -> Set of Terrain InstanceIDs. </summary>
-        private readonly Dictionary<Vector3Int, HashSet<int>> _terrainBuckets = new();
+        private ISpatialGridProvider<TKey> _gridProvider;
 
-        private readonly HashSet<Vector3Int> _dirtyBuckets = new();
-        private ISpatialGridProvider<Vector3Int> _gridProvider;
+        /// <summary> Gets the total number of registered objects. </summary>
+        public int RegisteredCount => _registry.Count;
 
-        public bool showDebugLogs = false;
+        /// <summary> Gets all registered instance IDs. </summary>
+        public ICollection<int> AllIds => _registry.Keys;
+
+        /// <summary> Checks if the registry is initialized and has a valid grid provider. </summary>
         public bool IsInitialized => _gridProvider != null;
 
         #endregion
 
         #region Lifecycle
 
-        public void Initialize(ISpatialGridProvider<Vector3Int> gridProvider)
+        /// <summary>
+        /// Initializes the registry with a grid provider and an optional shared dirty tracker.
+        /// </summary>
+        /// <param name="gridProvider">The provider for coordinate mapping.</param>
+        /// <param name="externalDirtyTracker">Optional shared HashSet to track modified cells across multiple registries.</param>
+        public void Initialize(ISpatialGridProvider<TKey> gridProvider, HashSet<TKey> externalDirtyTracker = null)
         {
-            LogDebug("Initializing Registry. Remapping ID-based buckets.");
             _gridProvider = gridProvider;
+            _dirtyBuckets = externalDirtyTracker ?? new HashSet<TKey>();
 
-            _meshBuckets.Clear();
-            _terrainBuckets.Clear();
-            _dirtyBuckets.Clear();
-
-            if (_gridProvider == null) return;
-
-            foreach (var entry in _meshRegistry)
-                UpdateBuckets(_meshBuckets, entry.Key, entry.Value.anchorBounds, true);
-
-            foreach (var entry in _terrainRegistry)
-                UpdateBuckets(_terrainBuckets, entry.Key, entry.Value.anchorBounds, true);
+            if (_gridProvider != null)
+            {
+                FullRemap();
+            }
+            else
+            {
+                Clear();
+            }
         }
 
+        /// <summary>
+        /// Clears and rebuilds all spatial buckets based on the current registry state.
+        /// </summary>
+        public void FullRemap()
+        {
+            if (!IsInitialized) return;
+
+            _buckets.Clear();
+            _dirtyBuckets.Clear();
+
+            foreach (var entry in _registry)
+            {
+                UpdateBuckets(entry.Key, entry.Value.anchorBounds, true);
+            }
+        }
+
+        /// <summary>
+        /// Removes all objects and clears all spatial indices.
+        /// </summary>
         public void Clear()
         {
-            _meshRegistry.Clear();
-            _terrainRegistry.Clear();
-            _meshBuckets.Clear();
-            _terrainBuckets.Clear();
+            _registry.Clear();
+            _buckets.Clear();
             _dirtyBuckets.Clear();
         }
+
+        /// <summary>
+        /// Clears the list of modified (dirty) cells.
+        /// </summary>
+        public void ClearDirtyCells() => _dirtyBuckets.Clear();
 
         #endregion
 
         #region Registration Logic
 
-        public bool TryRegister(GameObject obj)
+        /// <summary>
+        /// Registers or updates an object in the spatial grid.
+        /// Returns true if the registration resulted in a spatial change.
+        /// </summary>
+        /// <param name="id">The unique InstanceID of the object.</param>
+        /// <param name="newState">The new spatial state including bounds and component reference.</param>
+        public bool TryRegister(int id, SpatialState<TType> newState)
         {
-            if (obj == null || !IsInitialized) return false;
+            if (!IsInitialized) return false;
 
-            int id = obj.GetInstanceID();
-            bool changed = false;
-
-            if (obj.TryGetComponent<MeshRenderer>(out var renderer))
-            {
-                if (obj.TryGetComponent<MeshFilter>(out var filter) && filter.sharedMesh != null)
-                {
-                    var newState = SpatialState<MeshRenderer>.Create(_gridProvider.Anchor, renderer);
-                    if (UpdateTypedRegistry(_meshRegistry, _meshBuckets, id, newState))
-                        changed = true;
-                }
-            }
-
-            if (obj.TryGetComponent<Terrain>(out var terrain) && terrain.terrainData != null)
-            {
-                var newState = SpatialState<Terrain>.Create(_gridProvider.Anchor, terrain);
-                if (UpdateTypedRegistry(_terrainRegistry, _terrainBuckets, id, newState))
-                    changed = true;
-            }
-
-            return changed;
-        }
-
-        public bool Unregister(int id)
-        {
-            bool removed = false;
-
-            if (_meshRegistry.TryGetValue(id, out var mState))
-            {
-                UpdateBuckets(_meshBuckets, id, mState.anchorBounds, false);
-                _meshRegistry.Remove(id);
-                removed = true;
-            }
-
-            if (_terrainRegistry.TryGetValue(id, out var tState))
-            {
-                UpdateBuckets(_terrainBuckets, id, tState.anchorBounds, false);
-                _terrainRegistry.Remove(id);
-                removed = true;
-            }
-
-            return removed;
-        }
-
-        private bool UpdateTypedRegistry<T>(
-            Dictionary<int, SpatialState<T>> registry,
-            Dictionary<Vector3Int, HashSet<int>> bucketDict,
-            int id,
-            SpatialState<T> newState) where T : Component
-        {
-            if (registry.TryGetValue(id, out var oldState))
+            if (_registry.TryGetValue(id, out var oldState))
             {
                 if (oldState.Equals(newState)) return false;
-                UpdateBuckets(bucketDict, id, oldState.anchorBounds, false);
+
+                UpdateBuckets(id, oldState.anchorBounds, false);
             }
 
-            registry[id] = newState;
-            UpdateBuckets(bucketDict, id, newState.anchorBounds, true);
+            _registry[id] = newState;
+            UpdateBuckets(id, newState.anchorBounds, true);
             return true;
+        }
+
+        /// <summary>
+        /// Removes an object from the registry and its corresponding spatial buckets.
+        /// </summary>
+        /// <param name="id">The unique InstanceID of the object to remove.</param>
+        /// <returns>True if the object was found and removed.</returns>
+        public bool Unregister(int id)
+        {
+            if (_registry.TryGetValue(id, out var state))
+            {
+                UpdateBuckets(id, state.anchorBounds, false);
+                return _registry.Remove(id);
+            }
+            return false;
         }
 
         #endregion
 
-        #region ISpatialCollection & Dispatcher Implementation
+        #region ISpatialRegistry & Dispatcher Implementation
 
         /// <summary>
-        /// English: Unified generic entry point. Dispatches to the correct internal engine based on T.
-        /// This replaces GetComponentsInCell for a cleaner, type-safe API.
+        /// Unified generic entry point. Dispatches to the internal engine if T matches TType.
         /// </summary>
-        public bool TryGetIterator<T>(Vector3Int key, out IIterator<T> iterator) where T : Component
+        /// <param name="key">The spatial cell coordinate.</param>
+        /// <param name="iterator">The resulting iterator if the type matches.</param>
+        /// <returns>True if the requested type T is managed by this registry.</returns>
+        public bool TryGetIterator(TKey key, out IIterator<TType> iterator)
         {
             iterator = null;
 
-            if (typeof(T) == typeof(MeshRenderer))
+            if (_buckets.TryGetValue(key, out var bucket))
             {
-                if (TryGetMeshIterator(key, out var concrete))
-                {
-                    iterator = concrete as IIterator<T>;
-                    return true;
-                }
-            }
-            else if (typeof(T) == typeof(Terrain))
-            {
-                if (TryGetTerrainIterator(key, out var concrete))
-                {
-                    iterator = concrete as IIterator<T>;
-                    return true;
-                }
+                var state = new SpatialIteratorState<TKey, TType>(
+                    bucket.GetEnumerator(),
+                    _registry
+                );
+
+                iterator = new Iterator<TType, SpatialIteratorState<TKey, TType>>(state);
+                return true;
             }
 
             return false;
         }
 
-        public ICollection<int> GetAllIds()
-        {
-            var ids = new List<int>(_meshRegistry.Count + _terrainRegistry.Count);
-            ids.AddRange(_meshRegistry.Keys);
-            ids.AddRange(_terrainRegistry.Keys);
-            return ids;
-        }
+        /// <summary> Checks if a specific cell contains any objects of type TType. </summary>
+        public bool HasEntriesInCell(TKey key) => _buckets.TryGetValue(key, out var b) && b.Count > 0;
 
-        public bool HasEntriesInCell(Vector3Int key)
-        {
-            return (_meshBuckets.TryGetValue(key, out var m) && m.Count > 0) ||
-                   (_terrainBuckets.TryGetValue(key, out var t) && t.Count > 0);
-        }
-
-        public IIterator<Vector3Int> GetDirtyCells()
+        /// <summary> Returns an iterator over all cells that have been modified since the last clear. </summary>
+        public IIterator<TKey> GetDirtyCells()
         {
             var enumerator = _dirtyBuckets.GetEnumerator();
-            return new Iterator<Vector3Int, HashSet<Vector3Int>.Enumerator>(enumerator,
-                (ref HashSet<Vector3Int>.Enumerator s, out Vector3Int res) =>
-                {
-                    bool next = s.MoveNext();
-                    res = next ? s.Current : default;
-                    return next;
-                });
-        }
-
-        #endregion
-
-        #region Specialized Internal Engines (Struct Path)
-
-        public bool TryGetMeshIterator(Vector3Int key, out Iterator<MeshRenderer, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>> iter)
-        {
-            if (_meshBuckets.TryGetValue(key, out var bucket))
-            {
-                var state = new SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>(key, bucket.GetEnumerator());
-                iter = new Iterator<MeshRenderer, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>>(state, TryGetNext);
-                return true;
-            }
-            iter = default; return false;
-        }
-
-        public bool TryGetTerrainIterator(Vector3Int key, out Iterator<Terrain, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>> iter)
-        {
-            if (_terrainBuckets.TryGetValue(key, out var bucket))
-            {
-                var state = new SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>(key, bucket.GetEnumerator());
-                iter = new Iterator<Terrain, SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator>>(state, TryGetNext);
-                return true;
-            }
-            iter = default; return false;
+            var state = new EnumeratorState<TKey, HashSet<TKey>.Enumerator>(enumerator);
+            return new Iterator<TKey, EnumeratorState<TKey, HashSet<TKey>.Enumerator>>(state);
         }
 
         #endregion
 
         #region IIterable Implementation (Spatial Iterators)
 
-        public bool TryGetNext(ref SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator> state, out MeshRenderer result)
+        /// <summary>
+        /// Logic for the iterator to step through the InstanceIDs in a bucket and resolve them to components.
+        /// </summary>
+        public bool TryGetNext(ref SpatialIteratorState<TKey, HashSet<int>.Enumerator> state, out TType result)
         {
             result = null;
             while (state.Internal.MoveNext())
             {
-                if (_meshRegistry.TryGetValue(state.Internal.Current, out var spatialState))
-                {
-                    result = spatialState.component;
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        public bool TryGetNext(ref SpatialIteratorState<Vector3Int, HashSet<int>.Enumerator> state, out Terrain result)
-        {
-            result = null;
-            while (state.Internal.MoveNext())
-            {
-                if (_terrainRegistry.TryGetValue(state.Internal.Current, out var spatialState))
+                if (_registry.TryGetValue(state.Internal.Current, out var spatialState))
                 {
                     result = spatialState.component;
                     return true;
@@ -256,39 +200,32 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
-        #region Bucket Management
+        #region Internal Bucket Management
 
-        private void UpdateBuckets(Dictionary<Vector3Int, HashSet<int>> bucketDict, int id, Bounds bounds, bool add)
+        /// <summary>
+        /// Internal helper to add or remove an object's ID from all affected spatial cells.
+        /// </summary>
+        private void UpdateBuckets(int id, Bounds bounds, bool add)
         {
-            if (!IsInitialized) return;
-
-            foreach (Vector3Int key in _gridProvider.GetKeysInRelativeBounds(bounds))
+            foreach (TKey key in _gridProvider.GetKeysInRelativeBounds(bounds))
             {
                 _dirtyBuckets.Add(key);
 
                 if (add)
                 {
-                    if (!bucketDict.TryGetValue(key, out var bucket))
-                        bucketDict[key] = bucket = new HashSet<int>();
+                    if (!_buckets.TryGetValue(key, out var bucket))
+                        _buckets[key] = bucket = new HashSet<int>();
+
                     bucket.Add(id);
                 }
-                else if (bucketDict.TryGetValue(key, out var bucket))
+                else if (_buckets.TryGetValue(key, out var bucket))
                 {
                     bucket.Remove(id);
-                    if (bucket.Count == 0) bucketDict.Remove(key);
+
+                    if (bucket.Count == 0) _buckets.Remove(key);
                 }
             }
         }
-
-        #endregion
-
-        #region Helpers
-
-        public void ClearDirtyCells() => _dirtyBuckets.Clear();
-
-        [Conditional("UNITY_EDITOR")]
-        private void LogDebug(string message, [CallerLineNumber] int line = 0)
-            => DebugOutput.Log(message, showDebugLogs, lineNumber: line);
 
         #endregion
     }

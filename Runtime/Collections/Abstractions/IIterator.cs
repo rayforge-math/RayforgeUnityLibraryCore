@@ -1,4 +1,5 @@
 using Rayforge.Core.Collections.Iterator;
+using System;
 
 namespace Rayforge.Core.Collections.Abstractions
 {
@@ -7,7 +8,7 @@ namespace Rayforge.Core.Collections.Abstractions
     /// Hides internal state implementation (like TState) from the caller.
     /// </summary>
     /// <typeparam name="TType">The type of the objects being iterated.</typeparam>
-    public interface IIterator<out TType>
+    public interface IIterator<out TType> : IDisposable
     {
         /// <summary>
         /// Gets the element at the current position of the iterator.

@@ -1,5 +1,5 @@
+using Rayforge.Core.Collections.Abstractions;
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Abstractions
@@ -37,12 +37,12 @@ namespace Rayforge.Core.Environment.Abstractions
         /// </summary>
         /// <param name="lodIndex">The index of the LOD (0 to LodCount-1).</param>
         /// <param name="center">The world-space center of the LOD circles.</param>
-        IEnumerable<TKey> GetKeysInLODLevel(int lodIndex, Vector3 center);
+        IIterator<TKey> GetKeysInLODLevel(int lodIndex, Vector3 center);
 
         /// <summary>
         /// Returns all grid keys that are within the maximum visible range (last LOD).
         /// </summary>
-        IEnumerable<TKey> GetKeysInFullRange(Vector3 center);
+        IIterator<TKey> GetKeysInFullRange(Vector3 center);
 
         /// <summary>
         /// Returns the exact number of grid cells that fall into a specific LOD level.

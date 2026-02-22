@@ -1,5 +1,6 @@
 using Rayforge.Core.Environment.Abstractions;
 using System;
+using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Chunks
 {
@@ -32,7 +33,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// spatial data in its cell has been modified (e.g., to trigger a re-bake).
         /// </param>
         public static void Synchronize<TChunk>(
-            ISpatialCollection spatialData,
+            ISpatialCollection<Vector3Int> spatialData,
             ChunkRegistry<TChunk> chunkRegistry,
             Action<TChunk> onCreate,
             Action<TChunk> onDataChanged) 

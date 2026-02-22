@@ -1,36 +1,62 @@
+using Rayforge.Core.Collections.Abstractions;
+using UnityEngine;
+using System;
+using System.Collections.Generic;
+
 namespace Rayforge.Core.Environment.Spatial
 {
     /// <summary>
-    /// A specialized state container that wraps a spatial key and its corresponding internal enumerator.
-    /// This acts as the "payload" for the universal Iterator, bridging the gap between 
-    /// the spatial grid and the underlying data collection.
+    /// A specialized, zero-allocation state container that resolves internal IDs from a spatial bucket 
+    /// into actual component instances by accessing the storage dictionary directly.
     /// </summary>
-    /// <typeparam name="TKey">The type used for spatial indexing (e.g., Vector3Int).</typeparam>
-    /// <typeparam name="TInternalState">The enumerator type of the internal collection (e.g., HashSet.Enumerator).</typeparam>
-    public struct SpatialIteratorState<TKey, TInternalState>
-        where TKey : struct
-        where TInternalState : struct
+    /// <typeparam name="TKey">The spatial identifier type (e.g., Vector3Int).</typeparam>
+    /// <typeparam name="TType">The component type being iterated.</typeparam>
+    public struct SpatialIteratorState<TKey, TType> : IIterationLogic<TType, SpatialIteratorState<TKey, TType>>
+        where TKey : struct, IEquatable<TKey>
+        where TType : Component
     {
         /// <summary>
-        /// The spatial identifier (e.g., grid cell coordinates) for the current iteration.
+        /// The internal enumerator for the ID collection (bucket).
+        /// Public field to allow the Iterator to modify the struct's internal state via ref.
         /// </summary>
-        public readonly TKey Key;
+        public HashSet<int>.Enumerator _bucket;
 
         /// <summary>
-        /// The internal enumerator or state tracker for the specific data bucket.
-        /// This is modified as the iteration progresses.
+        /// Direct reference to the registry's storage dictionary.
+        /// Stored directly to eliminate one layer of indirection (Registry -> Dictionary).
         /// </summary>
-        public TInternalState Internal;
+        private readonly Dictionary<int, SpatialState<TType>> _storage;
 
         /// <summary>
-        /// Initializes a new instance of the SpatialIteratorState struct.
+        /// Initializes a new instance of the <see cref="SpatialIteratorState{TKey, TType}"/> struct.
         /// </summary>
-        /// <param name="key">The spatial key representing the bucket or cell.</param>
-        /// <param name="internalState">The starting state of the internal enumerator.</param>
-        public SpatialIteratorState(TKey key, TInternalState internalState)
+        /// <param name="bucket">The struct-based enumerator for the specific spatial cell.</param>
+        /// <param name="storage">The internal dictionary used for O(1) ID-to-Object resolution.</param>
+        public SpatialIteratorState(HashSet<int>.Enumerator bucket, Dictionary<int, SpatialState<TType>> storage)
         {
-            Key = key;
-            Internal = internalState;
+            _bucket = bucket;
+            _storage = storage;
+        }
+
+        /// <summary>
+        /// Advances the bucket enumerator and resolves the found ID to its component instance.
+        /// </summary>
+        /// <param name="self">Reference to the current state to allow in-place modification.</param>
+        /// <param name="result">The resolved component instance if found; otherwise default.</param>
+        /// <returns>True if a valid component was found and resolved; false otherwise.</returns>
+        public bool MoveNext(ref SpatialIteratorState<TKey, TType> self, out TType result)
+        {
+            while (self._bucket.MoveNext())
+            {
+                if (self._storage.TryGetValue(self._bucket.Current, out var state))
+                {
+                    result = state.component;
+                    return true;
+                }
+            }
+
+            result = default;
+            return false;
         }
     }
 }

@@ -1,9 +1,7 @@
-using Rayforge.Core.Diagnostics;
+using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Environment.Abstractions;
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Chunks
@@ -48,12 +46,12 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #endregion
 
-        public LODChunkRegistry(GridSize gridSize, Vector3 initialAnchor, ReadOnlySpan<float> lodDistances, bool deactivateOnCulled = true, Transform viewer = null, Transform container = null)
-            : base(gridSize, initialAnchor, container)
+        public LODChunkRegistry(SpatialSettings spatialSettings, LodSettings lodSettings, Transform viewer = null, Transform container = null)
+            : base(spatialSettings, container)
         {
-            _deactivateOnCulled = deactivateOnCulled;
+            _deactivateOnCulled = lodSettings.DeactivateOnCulled;
             Viewer = viewer;
-            ApplyLodConfiguration(lodDistances, false);
+            ApplyLodConfiguration(lodSettings.LodDistances, false);
         }
 
         #region Factory Overrides
@@ -94,20 +92,21 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <summary>
         /// Returns all grid keys that fall exactly into a specific LOD level.
         /// </summary>
-        public IEnumerable<Vector3Int> GetKeysInLODLevel(int lodIndex, Vector3 center)
+        public IIterator<Vector3Int> GetKeysInLODLevel(int lodIndex, Vector3 center)
         {
-            if (lodIndex < 0 || lodIndex >= LodCount) yield break;
+            if (lodIndex < 0 || lodIndex >= LodCount)
+                return Iterator<Vector3Int, GridLodLevelState>.Empty();
 
             float outerRadius = LodDistances[lodIndex];
+            Bounds searchBounds = new Bounds(center, Vector3.one * outerRadius * 2f);
 
-            foreach (var key in GetKeysInRadius(center, outerRadius, useEdgeDistance: true))
-            {
-                float sqrDist = GetSqrDistanceToClosestEdge(key, center);
-                if (CalculateTargetLOD(sqrDist) == lodIndex)
-                {
-                    yield return key;
-                }
-            }
+            Vector3Int minKey = WorldToGrid(searchBounds.min);
+            Vector3Int maxKey = WorldToGrid(searchBounds.max);
+
+            var rangeState = new GridRangeState(minKey, maxKey);
+            var lodState = new GridLodLevelState(rangeState, lodIndex, center, outerRadius, this);
+
+            return new Iterator<Vector3Int, GridLodLevelState>(lodState, (ref GridLodLevelState s, out Vector3Int res) => s.MoveNext(out res));
         }
 
         /// <summary>
@@ -136,9 +135,10 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <summary>
         /// Returns all keys within the maximum visibility range.
         /// </summary>
-        public IEnumerable<Vector3Int> GetKeysInFullRange(Vector3 center)
+        public IIterator<Vector3Int> GetKeysInFullRange(Vector3 center)
         {
-            if (LodCount == 0) return Enumerable.Empty<Vector3Int>();
+            if (LodCount == 0)
+                return Iterator<Vector3Int, GridRadiusState>.Empty();
 
             float maxRadius = LodDistances[LodCount - 1];
             return GetKeysInRadius(center, maxRadius, useEdgeDistance: true);
@@ -151,19 +151,14 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         {
             if (LodCount == 0) return 0;
 
-            var distances = LodDistances;
-            float maxRadius = distances[LodCount - 1];
-            Bounds searchBounds = new Bounds(center, Vector3.one * maxRadius * 2f);
+            float maxRadius = LodDistances[LodCount - 1];
             int count = 0;
 
-            var sqrDistances = LodSqrDistances;
-            foreach (var key in GetKeysInBounds(searchBounds))
+            foreach (var _ in GetKeysInRadius(center, maxRadius, useEdgeDistance: true))
             {
-                if (GetSqrDistanceToClosestEdge(key, center) <= sqrDistances[LodCount - 1])
-                {
-                    count++;
-                }
+                count++;
             }
+
             return count;
         }
 

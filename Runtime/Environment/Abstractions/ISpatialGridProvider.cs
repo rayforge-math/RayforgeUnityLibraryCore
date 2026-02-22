@@ -1,3 +1,4 @@
+using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using System;
 using System.Collections.Generic;
@@ -36,24 +37,24 @@ namespace Rayforge.Core.Environment.Abstractions
         /// <summary> 
         /// Returns all grid coordinates (keys) that are touched by the given world bounds. 
         /// </summary>
-        IEnumerable<TKey> GetKeysInBounds(Bounds worldBounds);
+        IIterator<TKey> GetKeysInBounds(Bounds worldBounds);
 
         /// <summary> 
         /// Returns all grid coordinates (keys) that are touched by the given local bounds. 
         /// </summary>
-        public IEnumerable<TKey> GetKeysInRelativeBounds(Bounds relativeBounds);
+        public IIterator<TKey> GetKeysInRelativeBounds(Bounds relativeBounds);
 
         /// <summary>
         /// Returns all grid keys within a certain world-space radius.
         /// </summary>
         /// <param name="useEdgeDistance">If true, uses distance to the closest edge (AABB). If false, uses cell center.</param>
-        IEnumerable<TKey> GetKeysInRadius(Vector3 worldCenter, float radius, bool useEdgeDistance = true);
+        IIterator<TKey> GetKeysInRadius(Vector3 worldCenter, float radius, bool useEdgeDistance = true);
 
         /// <summary>
         /// Returns all grid keys within a certain radius relative to the Anchor.
         /// </summary>
         /// <param name="useEdgeDistance">If true, uses distance to the closest edge (AABB). If false, uses cell center.</param>
-        IEnumerable<TKey> GetKeysInRelativeRadius(Vector3 relativeCenter, float radius, bool useEdgeDistance = true);
+        IIterator<TKey> GetKeysInRelativeRadius(Vector3 relativeCenter, float radius, bool useEdgeDistance = true);
 
         /// <summary> 
         /// Calculates the squared distance from a world position to the closest point/edge of a grid cell.

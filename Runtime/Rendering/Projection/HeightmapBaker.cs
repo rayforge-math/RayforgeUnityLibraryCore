@@ -1,4 +1,5 @@
-﻿using Rayforge.Core.Common;
+﻿using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Common;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -86,8 +87,8 @@ namespace Rayforge.Core.Rendering.Projection
             Vector2 extent,
             float minY,
             float maxY,
-            IEnumerable<MeshRenderer> renderers,
-            IEnumerable<Terrain> terrains = null)
+            IIterator<MeshRenderer> renderers,
+            IIterator<Terrain> terrains = null)
         {
             var param = new HeightmapBakeParams
             {
@@ -115,8 +116,8 @@ namespace Rayforge.Core.Rendering.Projection
             int sliceIndex,
             Rect viewportRect,
             HeightmapBakeParams param,
-            IEnumerable<MeshRenderer> renderers,
-            IEnumerable<Terrain> terrains = null)
+            IIterator<MeshRenderer> renderers,
+            IIterator<Terrain> terrains = null)
         {
             k_Cmd.Clear();
 
@@ -152,8 +153,8 @@ namespace Rayforge.Core.Rendering.Projection
             Vector2 extent,
             float minY,
             float maxY,
-            IEnumerable<MeshRenderer> renderers,
-            IEnumerable<Terrain> terrains = null)
+            IIterator<MeshRenderer> renderers,
+            IIterator<Terrain> terrains = null)
         {
             var param = new HeightmapBakeParams
             {
@@ -183,8 +184,8 @@ namespace Rayforge.Core.Rendering.Projection
             int sliceIndex,
             Rect viewportRect,
             HeightmapBakeParams param,
-            IEnumerable<MeshRenderer> renderers,
-            IEnumerable<Terrain> terrains = null)
+            IIterator<MeshRenderer> renderers,
+            IIterator<Terrain> terrains = null)
         {
             if (renderers == null && terrains == null) throw new ArgumentNullException("No render sources provided.");
 
@@ -206,8 +207,8 @@ namespace Rayforge.Core.Rendering.Projection
         private static void SetupBakeCommandBuffer_internal(
             CommandBuffer cmd,
             HeightmapBakeParams param,
-            IEnumerable<MeshRenderer> renderers,
-            IEnumerable<Terrain> terrains = null)
+            IIterator<MeshRenderer> renderers,
+            IIterator<Terrain> terrains = null)
         {
             if (cmd == null) throw new ArgumentNullException(nameof(cmd));
 

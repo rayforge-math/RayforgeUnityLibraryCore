@@ -1,3 +1,5 @@
+using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Helpers;
 using System;
@@ -49,12 +51,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         private string _baseName;
 
-        /// <summary>
-        /// Updates the grid resolution and destroys all existing chunks
-        /// as their spatial keys are no longer valid for the new size.
-        /// </summary>
-        public void SetGridSize(GridSize newSize) => GridSize = newSize;
-        
         /// <summary> 
         /// The world-space origin offset for the grid calculation.
         /// Treated as a full 3D point to allow vertical offsets even for 2D grids.
@@ -76,6 +72,18 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             }
         }
         private Vector3 _anchor;
+
+        /// <summary>
+        /// Updates the grid resolution and destroys all existing chunks
+        /// as their spatial keys are no longer valid for the new size.
+        /// </summary>
+        public void SetGridSize(GridSize newSize) => GridSize = newSize;
+
+        /// <summary>
+        /// Updates the grid origin. Use this for Floating Origin shifts.
+        /// </summary>
+        /// <param name="newAnchor">The new world-space origin.</param>
+        public void SetAnchor(Vector3 newAnchor) => Anchor = newAnchor;
 
         /// <summary>
         /// Triggered when the grid's scale or fundamental structure changes 
@@ -125,11 +133,11 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #endregion
 
-        public ChunkRegistry(GridSize gridSize, Vector3 initialAnchor, Transform container = null, string name = "ChunkRegistry")
+        public ChunkRegistry(SpatialSettings settings, Transform container = null, string name = "ChunkRegistry")
             : base(container)
         {
-            GridSize = gridSize;
-            Anchor = initialAnchor;
+            GridSize = settings.GridSize;
+            Anchor = settings.Anchor;
             _axes = Chunk<T>.ActiveAxes;
             _baseName = name;
             RegistryName = _baseName;
@@ -269,15 +277,13 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         /// <param name="worldBounds">The bounding box in world space to check against.</param>
         /// <returns>An enumerable of grid keys intersected by the bounds.</returns>
-        public IEnumerable<Vector3Int> GetKeysInBounds(Bounds worldBounds)
+        public IIterator<Vector3Int> GetKeysInBounds(Bounds worldBounds)
         {
             Vector3Int minKey = WorldToGrid(worldBounds.min);
             Vector3Int maxKey = WorldToGrid(worldBounds.max);
 
-            for (int x = minKey.x; x <= maxKey.x; x++)
-                for (int y = minKey.y; y <= maxKey.y; y++)
-                    for (int z = minKey.z; z <= maxKey.z; z++)
-                        yield return new Vector3Int(x, y, z);
+            var state = new GridRangeState(minKey, maxKey);
+            return new Iterator<Vector3Int, GridRangeState>(state, (ref GridRangeState s, out Vector3Int res) => s.MoveNext(out res));
         }
 
         /// <summary>
@@ -285,15 +291,13 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         /// <param name="relativeBounds">The bounding box relative to the grid anchor.</param>
         /// <returns>An enumerable of grid keys intersected by the relative bounds.</returns>
-        public IEnumerable<Vector3Int> GetKeysInRelativeBounds(Bounds relativeBounds)
+        public IIterator<Vector3Int> GetKeysInRelativeBounds(Bounds relativeBounds)
         {
             Vector3Int minKey = LocalToGrid(relativeBounds.min);
             Vector3Int maxKey = LocalToGrid(relativeBounds.max);
 
-            for (int x = minKey.x; x <= maxKey.x; x++)
-                for (int y = minKey.y; y <= maxKey.y; y++)
-                    for (int z = minKey.z; z <= maxKey.z; z++)
-                        yield return new Vector3Int(x, y, z);
+            var state = new GridRangeState(minKey, maxKey);
+            return new Iterator<Vector3Int, GridRangeState>(state, (ref GridRangeState s, out Vector3Int res) => s.MoveNext(out res));
         }
 
         // --- Key Discovery (Radius) ---
@@ -305,20 +309,16 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <param name="radius">The search radius in meters.</param>
         /// <param name="useEdgeDistance">If true, calculates distance to the cell's closest edge. If false, uses cell center.</param>
         /// <returns>An enumerable of keys within the given range.</returns>
-        public IEnumerable<Vector3Int> GetKeysInRadius(Vector3 worldCenter, float radius, bool useEdgeDistance = true)
+        public IIterator<Vector3Int> GetKeysInRadius(Vector3 worldCenter, float radius, bool useEdgeDistance = true)
         {
-            float sqrRadius = radius * radius;
             Bounds searchBounds = new Bounds(worldCenter, Vector3.one * radius * 2f);
+            Vector3Int minKey = WorldToGrid(searchBounds.min);
+            Vector3Int maxKey = WorldToGrid(searchBounds.max);
 
-            foreach (var key in GetKeysInBounds(searchBounds))
-            {
-                float sqrDist = useEdgeDistance
-                    ? GetSqrDistanceToClosestEdge(key, worldCenter)
-                    : GetSqrDistanceToCenter(key, worldCenter);
+            var rangeState = new GridRangeState(minKey, maxKey);
+            var radiusState = new GridRadiusState(rangeState, worldCenter, radius, useEdgeDistance, this);
 
-                if (sqrDist <= sqrRadius)
-                    yield return key;
-            }
+            return new Iterator<Vector3Int, GridRadiusState>(radiusState, (ref GridRadiusState s, out Vector3Int res) => s.MoveNext(out res));
         }
 
         /// <summary>
@@ -328,7 +328,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <param name="radius">The search radius in meters.</param>
         /// <param name="useEdgeDistance">If true, calculates distance to the cell's closest edge. If false, uses cell center.</param>
         /// <returns>An enumerable of keys within the given range.</returns>
-        public IEnumerable<Vector3Int> GetKeysInRelativeRadius(Vector3 relativeCenter, float radius, bool useEdgeDistance = true)
+        public IIterator<Vector3Int> GetKeysInRelativeRadius(Vector3 relativeCenter, float radius, bool useEdgeDistance = true)
         {
             return GetKeysInRadius(relativeCenter + Anchor, radius, useEdgeDistance);
         }

@@ -1,5 +1,4 @@
 using Rayforge.Core.Environment.Abstractions;
-using Rayforge.Core.Environment.Spatial.Chunks;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -27,10 +26,11 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         #region Private Runtime State
 
-        private SpatialObjectRegistry _objectRegistry;
+        /// <summary> The shared spatial database where validated surfaces are stored. </summary>
+        private SpatialSurfaceRegistry _objectRegistry;
 
+        /// <summary> Cache of InstanceIDs currently owned by this specific tracker. </summary>
         private readonly HashSet<int> _surfaceIds = new HashSet<int>();
-        private readonly List<int> _cleanupBuffer = new List<int>(32);
 
         /// <summary>
         /// Provides public access to the internal settings.
@@ -42,59 +42,48 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         }
 
         /// <summary>
-        /// Returns a read-only view of the currently tracked surfaces.
+        /// Returns a read-only view of the currently tracked surfaces managed by this tracker.
         /// </summary>
         public IReadOnlyList<GameObject> TrackedSurfaces => _surfaces;
 
         /// <summary>
-        /// Provides read-only access to the registry for spatial queries.
-        /// </summary>
-        public ISpatialCollection Registry => _objectRegistry;
-
-        /// <summary>
-        /// True if the registry or list has changed and requires an external spatial update.
+        /// True if the tracker's list or registry entries have changed since the last clear.
         /// </summary>
         public bool IsDirty { get; private set; }
 
         #endregion
 
+        #region Lifecycle & Initialization
+
         /// <summary>
-        /// Initializes the internal registry using the provided chunk infrastructure.
+        /// Connects the tracker to an external spatial registry and synchronizes existing data.
         /// </summary>
-        /// <param name="chunkRegistry">The grid/chunk system required by the spatial registry.</param>
-        public void Initialize(ISpatialGridProvider<Vector3Int> chunkRegistry)
+        /// <param name="externalRegistry">The shared spatial database to populate.</param>
+        public void Initialize(SpatialSurfaceRegistry externalRegistry)
         {
-            if(_objectRegistry == null)
-            {
-                _objectRegistry = new SpatialObjectRegistry();
-            }
-            else
-            {
-                _objectRegistry.Clear();
-            }
-
-            _objectRegistry.Initialize(chunkRegistry);
-
+            _objectRegistry = externalRegistry;
             _surfaceIds.Clear();
-            foreach (var obj in _surfaces)
+
+            if (_objectRegistry != null && _objectRegistry.IsInitialized)
             {
-                if (obj != null)
+                foreach (var obj in _surfaces)
                 {
-                    _objectRegistry.TryRegister(obj);
-                    _surfaceIds.Add(obj.GetInstanceID());
+                    if (obj != null && _objectRegistry.TryRegister(obj))
+                    {
+                        _surfaceIds.Add(obj.GetInstanceID());
+                    }
                 }
             }
         }
 
         /// <summary>
-        /// Performs a complete rebuild of the registry using internal settings and hierarchy scanning.
+        /// Performs a complete rebuild of the tracker state by syncing the list and scanning hierarchy.
         /// </summary>
         /// <param name="root">The root transform to start the hierarchy scan from.</param>
         public void RebuildRegistry(Transform root)
         {
             if (_objectRegistry == null) return;
 
-            _objectRegistry.Clear();
             SyncFromList();
 
             if (_settings.scanHierarchy && root != null)
@@ -103,28 +92,13 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             }
         }
 
-        /// <summary>
-        /// Clears all runtime data including the registry and ID cache, but keeps the serialized surface list.
-        /// </summary>
-        public void ClearState()
-        {
-            _objectRegistry?.Clear();
-            _surfaceIds.Clear();
-            _cleanupBuffer.Clear();
-            IsDirty = true;
-        }
+        #endregion
+
+        #region Registry Synchronization
 
         /// <summary>
-        /// Wipes everything including the serialized list and the registry.
-        /// </summary>
-        public void ClearAll()
-        {
-            _surfaces.Clear();
-            ClearState();
-        }
-
-        /// <summary>
-        /// Synchronizes the internal list with the registry and removes invalid entries.
+        /// Synchronizes the internal surface list with the external registry. 
+        /// Removes invalid or null entries.
         /// </summary>
         private void SyncFromList()
         {
@@ -150,26 +124,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
                 TryRegisterInternal(obj);
             }
-
-            _cleanupBuffer.Clear();
-            foreach (int id in _objectRegistry.GetAllIds())
-            {
-                if (!_surfaceIds.Contains(id))
-                {
-                    _cleanupBuffer.Add(id);
-                }
-            }
-
-            foreach (int idToRemove in _cleanupBuffer)
-            {
-                RemoveSurface(idToRemove);
-            }
         }
 
         /// <summary>
-        /// Recursively scans a hierarchy and adds new valid candidates.
+        /// Recursively scans a transform hierarchy to find and register new surface candidates.
         /// </summary>
-        /// <param name="parent">The current parent transform in the recursion.</param>
+        /// <param name="parent">The starting transform for the recursion.</param>
         private void ScanHierarchyRecursive(Transform parent)
         {
             foreach (Transform child in parent)
@@ -188,11 +148,15 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             }
         }
 
+        #endregion
+
+        #region Public API (Add / Remove)
+
         /// <summary>
-        /// Attempts to add a specific surface. Validates it against internal settings first.
+        /// Validates and attempts to add a GameObject to the shared registry.
         /// </summary>
-        /// <param name="obj">The GameObject to be tracked as a surface.</param>
-        /// <returns>True if the object was valid and successfully registered.</returns>
+        /// <param name="obj">The GameObject candidate.</param>
+        /// <returns>True if the object passed validation and was registered.</returns>
         public bool TryAddSurface(GameObject obj)
         {
             if (obj == null || _objectRegistry == null) return false;
@@ -202,10 +166,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         }
 
         /// <summary>
-        /// Internal helper to update registry, list, and ID cache simultaneously.
+        /// Registers an object in the external database and updates local tracking state.
         /// </summary>
         /// <param name="obj">The validated GameObject to register.</param>
-        /// <returns>True if registration was successful.</returns>
+        /// <returns>True if registration in the external registry was successful.</returns>
         private bool TryRegisterInternal(GameObject obj)
         {
             int id = obj.GetInstanceID();
@@ -222,10 +186,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         }
 
         /// <summary>
-        /// Removes a surface from the tracking set and the spatial registry.
+        /// Removes a surface from the local tracking set and unregisters it from the shared spatial database.
         /// </summary>
         /// <param name="id">The InstanceID of the GameObject to remove.</param>
-        /// <returns>True if the object was found and successfully removed.</returns>
+        /// <returns>True if the object was found and successfully removed from the registry.</returns>
         public bool RemoveSurface(int id)
         {
             if (_objectRegistry == null) return false;
@@ -242,16 +206,60 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             return false;
         }
 
+        #endregion
+
+        #region State Management
+
         /// <summary>
-        /// Resets the spatial sync flag after the manager has handled the update.
+        /// Clears the tracker's ID cache and removes its surfaces from the registry, 
+        /// but keeps the internal serialized list.
+        /// </summary>
+        public void ClearState()
+        {
+            if (_objectRegistry != null)
+            {
+                foreach (int id in _surfaceIds)
+                {
+                    _objectRegistry.Unregister(id);
+                }
+            }
+
+            _surfaceIds.Clear();
+            IsDirty = true;
+        }
+
+        /// <summary>
+        /// Wipes all local surface data and removes them from the external registry.
+        /// </summary>
+        public void ClearAll()
+        {
+            ClearState();
+            _surfaces.Clear();
+        }
+
+        /// <summary>
+        /// Resets the dirty flag after an external system has processed the changes.
         /// </summary>
         public void ClearDirty() => IsDirty = false;
 
         /// <summary>
-        /// Evaluates a transform against internal name and area filtering rules.
+        /// Resets the tracker completely, clearing both local lists and registry entries.
         /// </summary>
-        /// <param name="t">The transform of the candidate object.</param>
-        /// <returns>True if the object matches all criteria in SurfaceTrackerSettings.</returns>
+        public void Reset()
+        {
+            ClearAll();
+            IsDirty = true;
+        }
+
+        #endregion
+
+        #region Validation Logic
+
+        /// <summary>
+        /// Evaluates a transform against the internal SurfaceTrackerSettings (Name filter, Area threshold).
+        /// </summary>
+        /// <param name="t">The transform of the candidate.</param>
+        /// <returns>True if the transform meets all defined criteria.</returns>
         private bool IsValidCandidate(Transform t)
         {
             if (!string.IsNullOrEmpty(_settings.nameFilter) && !t.name.Contains(_settings.nameFilter))
@@ -272,15 +280,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             return true;
         }
 
-        /// <summary>
-        /// Completely clears all tracking data and resets the spatial sync flag.
-        /// </summary>
-        public void Reset()
-        {
-            _surfaces.Clear();
-            _surfaceIds.Clear();
-            _objectRegistry?.Clear();
-            IsDirty = true;
-        }
+        #endregion
     }
 }

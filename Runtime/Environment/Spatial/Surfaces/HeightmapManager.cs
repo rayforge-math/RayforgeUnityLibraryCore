@@ -1,11 +1,13 @@
 using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Diagnostics;
+using Rayforge.Core.EditorExtensions.EditorStructures;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Rendering;
 using Rayforge.Core.Environment.Spatial.Rendering.Helpers;
 using Rayforge.Core.Environment.Spatial.Surfaces;
+using Rayforge.Core.Environment.Tracking;
 using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.Rendering.EditorStructures;
 using Rayforge.Core.Rendering.Helpers;
@@ -51,16 +53,13 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #region Private Runtime State
 
-        private LODChunkRegistry<TextureLodChunk> _chunkRegistry;
-        private LodAtlasMapper<Vector3Int> _atlasMapper;
-        private TextureChunkCoordinator<TextureLodChunk> _bakeCoordinator;
+        private SpatialObjectRegistry _objectRegistry;
+        private TextureChunkCoordinator _bakeCoordinator;
         private ManagedRenderTexture _atlasArray;
 
         private Vector3 _lastUpdatePos;
 
-        private bool IsReady => lodReference != null && _chunkRegistry != null &&
-                                 _atlasMapper != null && _bakeCoordinator != null &&
-                                 _atlasArray != null;
+        private bool IsReady => lodReference != null && _bakeCoordinator != null && _atlasArray != null;
 
         #endregion
 
@@ -68,37 +67,51 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void Awake()
         {
+            lodTable.OnTableChanged += HandleLodTableChanged;
+
             SetupDependencies();
+
             EnsureSystemsReady(true);
 
             if (shiftRelay != null)
                 shiftRelay.OnWorldShiftDetected += HandleOriginShift;
         }
 
+        private void OnValidate()
+        {
+            lodTable.Sanitize();
+        }
+
+        private void OnDestroy()
+        {
+            lodTable.OnTableChanged -= HandleLodTableChanged;
+        }
+
         private void Update()
         {
             if (!IsReady) return;
-
-            // 1. Update World LODs (Registry logic)
+            /*
             if (CheckMovementThreshold())
             {
                 _chunkRegistry.UpdateLODs();
             }
 
-            // 2. Synchronize Topology & Mapping
-            // English: This handles ChunkSyncUtility and internal Mapper.SetTile calls.
             if (surfaceTracker.IsDirty)
             {
                 _bakeCoordinator.UpdateTopology(surfaceTracker.Registry);
                 surfaceTracker.ClearDirty();
             }
 
-            // 3. Bake Pass
-            // English: ExecuteBake internally calls _atlasMapper.BroadcastMappings.
             _bakeCoordinator.ExecuteBake((key, mapping) =>
             {
                 PerformGpuBake(key, mapping);
             });
+            */
+        }
+
+        private void HandleLodTableChanged(UniversalLodTable<TextureLOD> lodTable)
+        {
+            if(_bakeCoordinator.)
         }
 
         private void RefreshEditor()
@@ -138,19 +151,21 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                     lodReference,
                     transform
                 );
+
+
+                _objectRe
+
                 surfaceTracker.Initialize(_chunkRegistry);
             }
 
             if (_atlasMapper == null || force)
             {
-                // English: The Mapper needs the Registry as an ILODGridProvider for capacity calculation.
                 _atlasMapper = new LodAtlasMapper<Vector3Int>();
                 _atlasMapper.Initialize(_chunkRegistry, lodTable.ValidEntries, batchSize);
             }
 
             if (_bakeCoordinator == null || force)
             {
-                // English: Now we inject both fully initialized dependencies.
                 _bakeCoordinator = new TextureChunkCoordinator<TextureLodChunk>(_atlasMapper, _chunkRegistry);
             }
 

@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Tracking
 {
     /// <summary>
     /// A relay that tracks accumulated movement. 
