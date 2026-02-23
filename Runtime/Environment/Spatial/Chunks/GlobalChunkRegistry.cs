@@ -12,13 +12,30 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     public static class GlobalChunkRegistry<T>
         where T : Chunk<T>
     {
-        private const GridSize k_GridSize = (GridSize)GridSizeBinary.Medium;
+        private const GridSize k_DefaultGridSize = (GridSize)GridSizeBinary.Medium;
 
         /// <summary> 
         /// The underlying singleton instance of the registry. 
         /// Initialized with default settings.
         /// </summary>
-        public static readonly ChunkRegistry<T> Instance = new ChunkRegistry<T>(k_GridSize, Vector3.zero);
+        public static readonly ChunkRegistry<T> Instance;
+
+        /// <summary>
+        /// Static constructor: Initializes the shared instance with world-defaults.
+        /// This runs exactly once per type T when the class is first accessed.
+        /// </summary>
+        static GlobalChunkRegistry()
+        {
+            Instance = new ChunkRegistry<T>();
+
+            var defaultSettings = new SpatialSettings
+            {
+                GridSize = k_DefaultGridSize,
+                Anchor = Vector3.zero
+            };
+
+            Instance.Initialize(defaultSettings);
+        }
 
         #region Grid Properties
         /// <summary> Read-only access to the physical size of one side of a chunk cell. </summary>

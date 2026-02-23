@@ -1,5 +1,5 @@
+using Rayforge.Core.Collections.Abstractions;
 using System;
-using System.Collections.Generic;
 
 namespace Rayforge.Core.Rendering.Abstractions
 {
@@ -15,9 +15,21 @@ namespace Rayforge.Core.Rendering.Abstractions
         int Capacity { get; }
 
         /// <summary>
+        /// Gets the byte size of a single element in the underlying data store.
+        /// Directly used as the 'stride' parameter when creating a ComputeBuffer.
+        /// </summary>
+        int Stride { get; }
+
+        /// <summary>
         /// Gets a value indicating whether any data segments have been modified and require synchronization.
         /// </summary>
         bool AnyDirty { get; }
+
+        /// <summary>
+        /// Gets the underlying data as a raw Array.
+        /// Use this for untyped operations like ComputeBuffer.SetData.
+        /// </summary>
+        Array RawData { get; }
 
         /// <summary>
         /// Resets the store to its initial state, clearing all data and dirty flags.
@@ -49,6 +61,6 @@ namespace Rayforge.Core.Rendering.Abstractions
         /// Allows external systems to inspect changes for custom logic or compute dispatching.
         /// </summary>
         /// <returns>An enumerable of dirty batch indices.</returns>
-        IEnumerable<int> GetDirtyBatchIndices();
+        IIterator<int> GetDirtyBatchIndices();
     }
 }

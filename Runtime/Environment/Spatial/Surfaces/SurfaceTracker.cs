@@ -51,6 +51,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         public bool IsDirty { get; private set; }
 
+        /// <summary> 
+        /// True if the tracker is connected to a valid and initialized registry. 
+        /// Ensures we don't scan or register if the backend is missing.
+        /// </summary>
+        public bool IsInitialized => _objectRegistry != null && _objectRegistry.IsInitialized;
+
         #endregion
 
         #region Lifecycle & Initialization
@@ -61,17 +67,21 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <param name="externalRegistry">The shared spatial database to populate.</param>
         public void Initialize(SpatialSurfaceRegistry externalRegistry)
         {
+            ClearState();
+
             _objectRegistry = externalRegistry;
             _surfaceIds.Clear();
 
-            if (_objectRegistry != null && _objectRegistry.IsInitialized)
+            if (_objectRegistry == null || !_objectRegistry.IsInitialized) return;
+
+            for (int i = _surfaces.Count - 1; i >= 0; i--)
             {
-                foreach (var obj in _surfaces)
+                GameObject obj = _surfaces[i];
+
+                if (obj == null || !IsValidCandidate(obj.transform) || !TryRegisterInternal(obj))
                 {
-                    if (obj != null && _objectRegistry.TryRegister(obj))
-                    {
-                        _surfaceIds.Add(obj.GetInstanceID());
-                    }
+                    _surfaces.RemoveAt(i);
+                    IsDirty = true;
                 }
             }
         }
@@ -173,10 +183,11 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         private bool TryRegisterInternal(GameObject obj)
         {
             int id = obj.GetInstanceID();
+            bool alreadyTracked = _surfaceIds.Contains(id);
 
             if (_objectRegistry.TryRegister(obj))
             {
-                if (!_surfaceIds.Contains(id)) _surfaceIds.Add(id);
+                if (!alreadyTracked) _surfaceIds.Add(id);
                 if (!_surfaces.Contains(obj)) _surfaces.Add(obj);
 
                 IsDirty = true;
@@ -219,12 +230,9 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             if (_objectRegistry != null)
             {
                 foreach (int id in _surfaceIds)
-                {
                     _objectRegistry.Unregister(id);
-                }
             }
-
-            _surfaceIds.Clear();
+            _surfaceIds?.Clear();
             IsDirty = true;
         }
 
@@ -234,7 +242,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public void ClearAll()
         {
             ClearState();
-            _surfaces.Clear();
+            _surfaces?.Clear();
+            IsDirty = true;
         }
 
         /// <summary>
@@ -248,6 +257,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public void Reset()
         {
             ClearAll();
+            _objectRegistry = null;
             IsDirty = true;
         }
 

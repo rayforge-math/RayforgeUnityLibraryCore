@@ -31,7 +31,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         private ISpatialGridProvider<Vector3Int> _gridProvider;
 
         /// <summary> Gets whether the registry has been initialized with a grid provider. </summary>
-        public bool IsInitialized => _gridProvider != null;
+        public bool IsInitialized =>
+            _gridProvider != null &&
+            _meshRegistry != null && _meshRegistry.IsInitialized &&
+            _terrainRegistry != null && _terrainRegistry.IsInitialized;
 
         #endregion
 
@@ -43,24 +46,20 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <param name="gridProvider">The provider for coordinate mapping.</param>
         public void Initialize(ISpatialGridProvider<Vector3Int> gridProvider)
         {
-            if (_gridProvider != null)
-            {
-                _gridProvider.OnGridStructureChanged -= HandleGridStructureChanged;
-            }
+            Reset();
 
             _gridProvider = gridProvider;
 
             if (_gridProvider != null)
             {
                 _gridProvider.OnGridStructureChanged += HandleGridStructureChanged;
+
+                _meshRegistry = new SpatialObjectRegistry<Vector3Int, MeshRenderer>();
+                _terrainRegistry = new SpatialObjectRegistry<Vector3Int, Terrain>();
+
+                _meshRegistry.Initialize(gridProvider, _sharedDirtyBuckets);
+                _terrainRegistry.Initialize(gridProvider, _sharedDirtyBuckets);
             }
-
-            _meshRegistry = new SpatialObjectRegistry<Vector3Int, MeshRenderer>();
-            _terrainRegistry = new SpatialObjectRegistry<Vector3Int, Terrain>();
-
-            // Initialize sub-registries with the provider and the shared tracker.
-            _meshRegistry.Initialize(gridProvider, _sharedDirtyBuckets);
-            _terrainRegistry.Initialize(gridProvider, _sharedDirtyBuckets);
         }
 
         /// <summary>
@@ -81,7 +80,25 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             _meshRegistry?.Clear();
             _terrainRegistry?.Clear();
-            _sharedDirtyBuckets.Clear();
+            _sharedDirtyBuckets?.Clear();
+        }
+
+        /// <summary>
+        /// Fully de-initializes the registry, detaches events, and nulls out sub-registries.
+        /// Use this for a "hard reset" or during teardown.
+        /// </summary>
+        public void Reset()
+        {
+            if (_gridProvider != null)
+            {
+                _gridProvider.OnGridStructureChanged -= HandleGridStructureChanged;
+                _gridProvider = null;
+            }
+
+            Clear();
+
+            _meshRegistry = null;
+            _terrainRegistry = null;
         }
 
         /// <summary>
@@ -198,13 +215,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public IIterator<Vector3Int> GetDirtyCells()
         {
             var enumerator = _sharedDirtyBuckets.GetEnumerator();
-            return new Iterator<Vector3Int, HashSet<Vector3Int>.Enumerator>(enumerator,
-                (ref HashSet<Vector3Int>.Enumerator s, out Vector3Int res) =>
-                {
-                    bool next = s.MoveNext();
-                    res = next ? s.Current : default;
-                    return next;
-                });
+            var state = new EnumeratorState<Vector3Int, HashSet<Vector3Int>.Enumerator>(enumerator);
+            return new Iterator<Vector3Int, EnumeratorState<Vector3Int, HashSet<Vector3Int>.Enumerator>>(state);
         }
 
         /// <summary>

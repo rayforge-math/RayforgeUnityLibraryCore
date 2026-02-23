@@ -30,7 +30,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         /// Gets or sets the underlying <see cref="RenderTextureDescriptor"/>.
         /// Setting this will trigger validation of dimensions and samples.
         /// </summary>
-        public RenderTextureDescriptor Descriptor
+        public RenderTextureDescriptor InternalDescriptor
         {
             get => descriptor;
             set

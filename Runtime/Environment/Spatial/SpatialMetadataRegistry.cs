@@ -1,3 +1,5 @@
+using Rayforge.Core.Environment.Abstractions;
+using Rayforge.Core.Rendering.Abstractions;
 using Rayforge.Core.Rendering.Collections.Buffered;
 using System;
 
@@ -10,22 +12,24 @@ namespace Rayforge.Core.Environment.Spatial
     /// <typeparam name="TKey">The unique identifier type for the entities (e.g., Vector3Int for Chunks).</typeparam>
     /// <typeparam name="TSpatial">The struct type used for GPU culling (e.g., SphereSpatialData).</typeparam>
     /// <typeparam name="TVisual">The struct type used for GPU rendering (e.g., MatrixSpatialData).</typeparam>
-    public abstract class SpatialMetadataRegistry<TKey, TSpatial, TVisual> : MetadataRegistry<TKey>
+    public abstract class SpatialMetadataRegistry<TKey, TSpatial, TVisual> : MetadataRegistry<TKey>, ISpatialMetadataRegistry
         where TKey : struct, IEquatable<TKey>
         where TSpatial : unmanaged
         where TVisual : unmanaged
     {
-        /// <summary>
-        /// The primary data store for spatial/culling information. 
-        /// Usually consumed by compute shaders for frustum or occlusion culling.
-        /// </summary>
-        public MetadataStore<TSpatial> SpatialStore { get; }
+        private readonly MetadataStore<TSpatial> m_SpatialStore;
+        private readonly MetadataStore<TVisual> m_VisualStore;
 
         /// <summary>
-        /// The primary data store for visual/transformation information. 
-        /// Usually contains matrices or other vertex-relevant data.
+        /// Grants read-only access to the spatial store via the non-generic interface.
+        /// English comment: Useful for external buffer management or debugging.
         /// </summary>
-        public MetadataStore<TVisual> VisualStore { get; }
+        public IMetadataStore SpatialMetadata => m_SpatialStore;
+
+        /// <summary>
+        /// Grants read-only access to the visual store via the non-generic interface.
+        /// </summary>
+        public IMetadataStore VisualMetadata => m_VisualStore;
 
         /// <summary>
         /// Initializes a new spatial registry and automatically registers the mandatory spatial and visual stores.
@@ -34,8 +38,8 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="batchSize">Size of a single dirty-tracking batch for optimized GPU uploads.</param>
         protected SpatialMetadataRegistry(int capacity, int batchSize) : base(capacity, batchSize)
         {
-            SpatialStore = AddStore<TSpatial>();
-            VisualStore = AddStore<TVisual>();
+            m_SpatialStore = AddStore<TSpatial>();
+            m_VisualStore = AddStore<TVisual>();
         }
 
         /// <summary>
@@ -48,8 +52,8 @@ namespace Rayforge.Core.Environment.Spatial
         public void SetMetadata(TKey key, TSpatial spatial, TVisual visual)
         {
             int idx = GetOrAllocateIndex(key);
-            SpatialStore.Set(idx, spatial);
-            VisualStore.Set(idx, visual);
+            m_SpatialStore.Set(idx, spatial);
+            m_VisualStore.Set(idx, visual);
         }
 
         /// <summary>
@@ -61,7 +65,7 @@ namespace Rayforge.Core.Environment.Spatial
         public void SetSpatial(TKey key, TSpatial spatial)
         {
             int idx = GetOrAllocateIndex(key);
-            SpatialStore.Set(idx, spatial);
+            m_SpatialStore.Set(idx, spatial);
         }
 
         /// <summary>
@@ -73,7 +77,7 @@ namespace Rayforge.Core.Environment.Spatial
         public void SetVisual(TKey key, TVisual visual)
         {
             int idx = GetOrAllocateIndex(key);
-            VisualStore.Set(idx, visual);
+            m_VisualStore.Set(idx, visual);
         }
 
         /// <summary>
@@ -87,8 +91,8 @@ namespace Rayforge.Core.Environment.Spatial
         {
             if (TryGetIndex(key, out int index))
             {
-                spatial = SpatialStore.Get(index);
-                visual = VisualStore.Get(index);
+                spatial = m_SpatialStore.Get(index);
+                visual = m_VisualStore.Get(index);
                 return true;
             }
 
@@ -107,7 +111,7 @@ namespace Rayforge.Core.Environment.Spatial
         {
             if (TryGetIndex(key, out int index))
             {
-                spatial = SpatialStore.Get(index);
+                spatial = m_SpatialStore.Get(index);
                 return true;
             }
             spatial = default;
@@ -124,7 +128,7 @@ namespace Rayforge.Core.Environment.Spatial
         {
             if (TryGetIndex(key, out int index))
             {
-                visual = VisualStore.Get(index);
+                visual = m_VisualStore.Get(index);
                 return true;
             }
             visual = default;
@@ -139,8 +143,8 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="onVisualChanged">Callback invoked for modified visual data ranges (sourceArray, offset, count).</param>
         public void ExtractChanges(Action<Array, int, int> onSpatialChanged, Action<Array, int, int> onVisualChanged)
         {
-            SpatialStore.ProcessDirtyBatches(onSpatialChanged);
-            VisualStore.ProcessDirtyBatches(onVisualChanged);
+            m_SpatialStore.ProcessDirtyBatches(onSpatialChanged);
+            m_VisualStore.ProcessDirtyBatches(onVisualChanged);
         }
 
         /// <summary>
@@ -156,8 +160,8 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public void MarkAllDirty()
         {
-            SpatialStore.MarkAllDirty();
-            VisualStore.MarkAllDirty();
+            m_SpatialStore.MarkAllDirty();
+            m_VisualStore.MarkAllDirty();
         }
 
         /// <summary>
@@ -168,7 +172,7 @@ namespace Rayforge.Core.Environment.Spatial
         {
             if (TryGetIndex(key, out int index))
             {
-                SpatialStore.Set(index, GetInvalidSpatialData());
+                m_SpatialStore.Set(index, GetInvalidSpatialData());
                 Release(key);
             }
         }

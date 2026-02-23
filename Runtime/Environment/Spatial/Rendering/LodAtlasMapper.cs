@@ -1,3 +1,4 @@
+using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Rendering.EditorStructures;
@@ -15,10 +16,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     public class LodAtlasMapper<TKey> where TKey : struct, IEquatable<TKey>
     {
         #region Internal Types
-
-#if UNITY_EDITOR
-        public bool showDebugLogs = false;
-#endif
 
         /// <summary>
         /// Stores the parameters for a pending tile update request.
@@ -109,8 +106,23 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         private LodLevelManager[] m_LodLevels;
         private readonly Dictionary<TKey, (int lodIndex, int slotIndex)> m_ActiveMappings = new();
 
+        /// <summary>
+        /// The total number of slices required in the Texture2DArray to fit all LOD levels.
+        /// </summary>
         public int RequiredSliceCount { get; private set; }
-        public bool IsInitialized => m_LodLevels != null;
+
+        /// <summary>
+        /// The reference resolution of a single slot at LOD 0.
+        /// All other LOD resolutions are relative to this base.
+        /// </summary>
+        public PowerOfTwoResolution BaseResolution { get; private set; }
+
+        public bool IsInitialized => m_LodLevels != null && m_LodLevels.Length > 0 && m_Registry != null;
+
+        /// <summary>
+        /// Grants read-only access to the internal registry.
+        /// </summary>
+        public ISpatialMetadataRegistry Registry => m_Registry;
 
         private readonly HashSet<TKey> m_PendingRemovals = new();
         private readonly Dictionary<TKey, TileUpdateRequest> m_PendingUpdates = new();
@@ -128,8 +140,12 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <param name="provider">The source of truth for spatial and LOD logic.</param>
         /// <param name="lodConfigs">Resolution settings for each LOD level.</param>
         /// <param name="batchSize">GPU sync batch size.</param>
-        public void Initialize(ILODGridProvider<TKey> provider, ReadOnlySpan<TextureLOD> lodConfigs, int batchSize)
+        public void Initialize(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
         {
+            if (lodResolutions.Length == 0) throw new ArgumentException("At least one LOD resolution must be provided.");
+
+            ClearAll();
+
             int lodCount = provider.LodCount;
             m_LodLevels = new LodLevelManager[lodCount];
 
@@ -139,7 +155,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             for (int i = 0; i < lodCount; i++)
             {
                 int tilesInRing = provider.GetMaxCapacityForLODLevel(i);
-                int slotsPerDim = lodConfigs[i].mapResolution.ToSlotCountPerDim(lodConfigs[0].mapResolution);
+                int slotsPerDim = lodResolutions[i].ToSlotCountPerDim(lodResolutions[0]);
                 int slotsPerSlice = slotsPerDim * slotsPerDim;
 
                 int reqSlices = 0;

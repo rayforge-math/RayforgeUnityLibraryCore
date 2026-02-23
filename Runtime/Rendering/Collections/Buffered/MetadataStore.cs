@@ -1,8 +1,10 @@
+using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Rendering.Abstractions;
 using System;
 using System.Collections;
-using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace Rayforge.Core.Rendering.Collections.Buffered
 {
@@ -27,6 +29,12 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         public int Capacity => m_CpuData.Length;
 
         /// <summary>
+        /// Gets the byte size of a single element in the underlying data store.
+        /// Directly used as the 'stride' parameter when creating a ComputeBuffer.
+        /// </summary>
+        public int Stride => Marshal.SizeOf(typeof(TValue));
+
+        /// <summary>
         /// Gets the number of elements per dirty-tracking segment.
         /// </summary>
         public int BatchSize => m_BatchSize;
@@ -35,6 +43,12 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// Gets a value indicating whether any segments of the data have been modified.
         /// </summary>
         public bool AnyDirty => m_AnyDirty;
+
+        /// <summary>
+        /// Gets the underlying data as a raw Array.
+        /// English comment: Use this for untyped operations like ComputeBuffer.SetData.
+        /// </summary>
+        public Array RawData => m_CpuData;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MetadataStore{TValue}"/> class.
@@ -56,17 +70,10 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// Provides an iterator over all currently dirty batch indices.
         /// Allows external logic to inspect which segments are modified without allocations.
         /// </summary>
-        public IEnumerable<int> GetDirtyBatchIndices()
+        public IIterator<int> GetDirtyBatchIndices()
         {
-            if (!m_AnyDirty) yield break;
-
-            for (int i = 0; i < m_TotalBatches; i++)
-            {
-                if (m_DirtyBits.Get(i))
-                {
-                    yield return i;
-                }
-            }
+            var logic = new BitIteratorState(m_DirtyBits, m_TotalBatches);
+            return new Iterator<int, BitIteratorState>(logic);
         }
 
         /// <summary>

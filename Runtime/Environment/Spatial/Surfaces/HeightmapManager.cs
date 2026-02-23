@@ -1,11 +1,7 @@
-using Rayforge.Core.Common.Rendering;
-using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.EditorExtensions.EditorStructures;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
-using Rayforge.Core.Environment.Spatial.Rendering;
-using Rayforge.Core.Environment.Spatial.Rendering.Helpers;
 using Rayforge.Core.Environment.Spatial.Surfaces;
 using Rayforge.Core.Environment.Tracking;
 using Rayforge.Core.ManagedResources.NativeMemory;
@@ -53,13 +49,13 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #region Private Runtime State
 
-        private SpatialObjectRegistry _objectRegistry;
-        private TextureChunkCoordinator _bakeCoordinator;
+        private readonly SpatialSurfaceRegistry _surfaceRegistry = new();
+        private readonly TextureChunkCoordinator _textureCoordinator = new();
         private ManagedRenderTexture _atlasArray;
 
         private Vector3 _lastUpdatePos;
 
-        private bool IsReady => lodReference != null && _bakeCoordinator != null && _atlasArray != null;
+        private bool IsReady => lodReference != null && _textureCoordinator != null && _atlasArray != null;
 
         #endregion
 
@@ -70,7 +66,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             lodTable.OnTableChanged += HandleLodTableChanged;
 
             SetupDependencies();
-
             EnsureSystemsReady(true);
 
             if (shiftRelay != null)
@@ -111,7 +106,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void HandleLodTableChanged(UniversalLodTable<TextureLOD> lodTable)
         {
-            if(_bakeCoordinator.)
+            //if(_bakeCoordinator.)
         }
 
         private void RefreshEditor()
@@ -126,7 +121,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void PerformGpuBake(Vector3Int key, TextureMappingData mapping)
         {
-            if (!_chunkRegistry.TryGetEntry(key, out var chunk)) return;
+            //if (!_chunkRegistry.TryGetEntry(key, out var chunk)) return;
 
             // English: Your specific Heightmap baking logic using the mapping data.
             // mapping.SliceIndex and mapping.RelativeOffset/Scale tell the shader where to draw.
@@ -140,53 +135,21 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void EnsureSystemsReady(bool force = false)
         {
-            if (_chunkRegistry == null || force)
+            InitCoordinator(force);
+
+            if (_textureCoordinator.IsInitialized)
             {
-                _chunkRegistry?.Dispose();
-                _chunkRegistry = new LODChunkRegistry<TextureLodChunk>(
-                    (GridSize)chunkSize,
-                    transform.position,
-                    lodTable.ValidDistances,
-                    true,
-                    lodReference,
-                    transform
-                );
-
-
-                _objectRe
-
-                surfaceTracker.Initialize(_chunkRegistry);
+                InitSurfaceRegistry(_textureCoordinator.LodGridProvider, force);
             }
 
-            if (_atlasMapper == null || force)
+            if (_surfaceRegistry.IsInitialized)
             {
-                _atlasMapper = new LodAtlasMapper<Vector3Int>();
-                _atlasMapper.Initialize(_chunkRegistry, lodTable.ValidEntries, batchSize);
+                InitSurfaceTracker(_surfaceRegistry, force);
             }
 
-            if (_bakeCoordinator == null || force)
+            if (_textureCoordinator.IsInitialized)
             {
-                _bakeCoordinator = new TextureChunkCoordinator<TextureLodChunk>(_atlasMapper, _chunkRegistry);
-            }
-
-            CreateAtlasTexture(force);
-        }
-
-        private void CreateAtlasTexture(bool force)
-        {
-            if (_atlasArray == null || force)
-            {
-                _atlasArray?.Dispose();
-
-                int totalSlices = _atlasMapper.RequiredSliceCount;
-                int res = (int)lodTable.ValidEntries[0].mapResolution;
-
-                var desc = DefaultDescriptors.HeightmapPrecision(res, res);
-                desc.dimension = UnityEngine.Rendering.TextureDimension.Tex2DArray;
-                desc.volumeDepth = totalSlices;
-
-                _atlasArray = new ManagedRenderTexture(new RenderTextureDescriptorWrapper { Descriptor = desc });
-                _atlasArray.Create();
+                CreateAtlasTexture(_textureCoordinator, force);
             }
         }
 
@@ -199,7 +162,86 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 lodReference = Camera.main.transform;
         }
 
+        private void InitCoordinator(bool force = false)
+        {
+            if (!_textureCoordinator.IsInitialized || force)
+            {
+                _textureCoordinator.Reset();
+
+                SpatialSettings spatialSettings = new SpatialSettings
+                {
+                    GridSize = (GridSize)chunkSize,
+                    Anchor = transform.position
+                };
+                _textureCoordinator.Initialize(spatialSettings, lodTable.ValidEntries, batchSize, lodReference, transform);
+            }
+        }
+
+        private void InitSurfaceRegistry(ILODGridProvider<Vector3Int> gridProvider, bool force = false)
+        {
+            if (gridProvider == null || !gridProvider.IsInitialized) return;
+
+            if (!_surfaceRegistry.IsInitialized || force)
+            {
+                _surfaceRegistry.Reset();
+
+                _surfaceRegistry.Initialize(gridProvider);
+            }
+        }
+
+        private void InitSurfaceTracker(SpatialSurfaceRegistry registry, bool force = false)
+        {
+            if (registry == null || !registry.IsInitialized) return;
+
+            if (surfaceTracker == null || !surfaceTracker.IsInitialized || force)
+            {
+                if (surfaceTracker == null)
+                    surfaceTracker = new SurfaceTracker();
+                else
+                    surfaceTracker.ClearState();
+
+                surfaceTracker.Initialize(registry);
+                surfaceTracker.RebuildRegistry(transform);
+            }
+        }
+
+        private void CreateAtlasTexture(TextureChunkCoordinator coordinator, bool force)
+        {
+            if (coordinator == null || ! coordinator.IsInitialized) return;
+
+            if (_atlasArray == null || force)
+            {
+                var sliceCount = coordinator.RequiredSliceCount;
+                var resolution = (int)coordinator.BaseResolution;
+
+                var newDesc = DefaultDescriptors.HeightmapPrecision(resolution, resolution).ToAtlasArray(sliceCount);
+
+                bool shouldRecreate = force || _atlasArray == null || !_atlasArray.IsCreated;
+
+                if (!shouldRecreate && _atlasArray != null)
+                {
+                    if (!_atlasArray.Descriptor.InternalDescriptor.IsCompatible(newDesc))
+                    {
+                        shouldRecreate = true;
+                    }
+                }
+
+                if (shouldRecreate)
+                {
+                    if (_atlasArray != null)
+                    {
+                        _atlasArray.Release();
+                    }
+
+                    var newWrapper = new RenderTextureDescriptorWrapper { InternalDescriptor = newDesc };
+                    _atlasArray = new ManagedRenderTexture(newWrapper);
+                    _atlasArray.Create();
+                }
+            }
+        }
+
         #endregion
+
         /*
         #region Initialization & Dependencies
 
@@ -269,7 +311,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         */
 
         #region Configuration & Validation
-
+        /*
         private void UpdateGridSize()
         {
             if (_chunkRegistry != null && _chunkRegistry.GridSize != (GridSize)chunkSize)
@@ -301,7 +343,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 LogDebug("LOD update skipped: Viewer and distances have not changed.");
             }
         }
-
+        */
         #endregion
         
         #region Runtime Processing & Baking
@@ -319,21 +361,17 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             return false;
         }
 
-
-
         #endregion
 
         #region System Events & Cleanup
 
         private void HandleOriginShift(Vector3 delta)
         {
-            _chunkRegistry?.NotifyOriginShift(delta);
+            _textureCoordinator?.NotifyOriginShift(delta);
             _lastUpdatePos += delta;
         }
 
         public void ResetTrackingPosition() => _lastUpdatePos = lodReference ? lodReference.position : Vector3.zero;
-
-       
 
         /// <summary>
         /// English: Completely wipes all registered surfaces, destroys all chunks, 

@@ -3,7 +3,6 @@ using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Helpers;
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Chunks
@@ -28,7 +27,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
                 _gridSize = value;
                 ClearChunks();
-                RegistryName = _baseName;
+                if (IsInitialized) RegistryName = _baseName;
 
                 OnGridStructureChanged?.Invoke(this);  
             }
@@ -98,7 +97,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public event Action<ISpatialGridProvider<Vector3Int>, Vector3> OnAnchorChanged;
 
         /// <summary> Cached mask to determine which axes are handled by this registry's indexing. </summary>
-        private readonly SpatialAxes _axes;
+        private SpatialAxes _axes;
 
         public bool IsXActive => (_axes & SpatialAxes.X) != 0;
         public bool IsYActive => (_axes & SpatialAxes.Y) != 0;
@@ -133,15 +132,34 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #endregion
 
-        public ChunkRegistry(SpatialSettings settings, Transform container = null, string name = "ChunkRegistry")
-            : base(container)
+        #region Lifecycle
+
+        /// <summary>
+        /// Default constructor. English: Initialize() must be called to setup the grid parameters.
+        /// </summary>
+        public ChunkRegistry() : base() { }
+
+        /// <summary>
+        /// Initializes the grid registry with spatial settings.
+        /// Sets up axes based on the generic type T and configures the spatial anchor.
+        /// </summary>
+        /// <param name="settings">The spatial configuration (GridSize, Anchor).</param>
+        /// <param name="parent">Optional parent transform in the Unity hierarchy.</param>
+        /// <param name="name">Base name for the container GameObject.</param>
+        public virtual void Initialize(SpatialSettings settings, Transform parent = null, string name = "ChunkRegistry")
         {
-            GridSize = settings.GridSize;
-            Anchor = settings.Anchor;
+            base.Initialize(parent, name);
+
             _axes = Chunk<T>.ActiveAxes;
             _baseName = name;
+
+            _gridSize = settings.GridSize;
+            _anchor = settings.Anchor;
+
             RegistryName = _baseName;
         }
+
+        #endregion
 
         #region Factory Implementation
 
@@ -281,9 +299,8 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         {
             Vector3Int minKey = WorldToGrid(worldBounds.min);
             Vector3Int maxKey = WorldToGrid(worldBounds.max);
-
             var state = new GridRangeState(minKey, maxKey);
-            return new Iterator<Vector3Int, GridRangeState>(state, (ref GridRangeState s, out Vector3Int res) => s.MoveNext(out res));
+            return new Iterator<Vector3Int, GridRangeState>(state);
         }
 
         /// <summary>
@@ -295,9 +312,8 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         {
             Vector3Int minKey = LocalToGrid(relativeBounds.min);
             Vector3Int maxKey = LocalToGrid(relativeBounds.max);
-
             var state = new GridRangeState(minKey, maxKey);
-            return new Iterator<Vector3Int, GridRangeState>(state, (ref GridRangeState s, out Vector3Int res) => s.MoveNext(out res));
+            return new Iterator<Vector3Int, GridRangeState>(state);
         }
 
         // --- Key Discovery (Radius) ---
@@ -317,8 +333,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
             var rangeState = new GridRangeState(minKey, maxKey);
             var radiusState = new GridRadiusState(rangeState, worldCenter, radius, useEdgeDistance, this);
-
-            return new Iterator<Vector3Int, GridRadiusState>(radiusState, (ref GridRadiusState s, out Vector3Int res) => s.MoveNext(out res));
+            return new Iterator<Vector3Int, GridRadiusState>(radiusState);
         }
 
         /// <summary>

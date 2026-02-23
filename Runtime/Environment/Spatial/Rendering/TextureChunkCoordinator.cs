@@ -1,10 +1,13 @@
+using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Rendering;
+using Rayforge.Core.Rendering.EditorStructures;
 using Rayforge.Core.Rendering.Textures;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using static UnityEngine.Rendering.STP;
 
 namespace Rayforge.Core.Environment.Spatial.Surfaces
 {
@@ -14,16 +17,106 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// </summary>
     public class TextureChunkCoordinator
     {
-        private readonly LodAtlasMapper<Vector3Int> _mapper;
-        private readonly LODChunkRegistry<TextureLodChunk> _chunkRegistry;
+        private readonly LodAtlasMapper<Vector3Int> _mapper = new();
+        private readonly LODChunkRegistry<TextureLodChunk> _chunkRegistry = new();
 
         private readonly HashSet<Vector3Int> _toAssign = new();
         private readonly HashSet<Vector3Int> _toRelease = new();
 
-        public TextureChunkCoordinator(SpatialSettings spatialSettings, LodSettings lodSettings, Transform viewer, Transform container)
+        #region GPU Buffer Metadata Access
+
+        /// <summary>
+        /// The total number of slices required in the Texture2DArray to fit all LOD levels.
+        /// English: Use this value as the 'depth' when allocating your Texture2DArray.
+        /// </summary>
+        public int RequiredSliceCount => _mapper?.RequiredSliceCount ?? 0;
+
+        /// <summary>
+        /// The reference resolution of a single slot at LOD 0.
+        /// English: This defines the width and height of the Texture2DArray.
+        /// </summary>
+        public PowerOfTwoResolution BaseResolution => _mapper?.BaseResolution ?? default;
+
+        /// <summary>
+        /// Gets the total capacity (number of slots) required for the GPU buffers.
+        /// Use this as the 'count' parameter for ComputeBuffer allocation.
+        /// </summary>
+        public int BufferCapacity => _mapper?.Registry.Capacity ?? 0;
+
+        /// <summary>
+        /// Gets the stride (byte size) for the spatial data buffer.
+        /// </summary>
+        public int SpatialStride => _mapper?.Registry.SpatialMetadata.Stride ?? 0;
+
+        /// <summary>
+        /// Gets the stride (byte size) for the visual mapping buffer.
+        /// </summary>
+        public int VisualStride => _mapper?.Registry.VisualMetadata.Stride ?? 0;
+
+        /// <summary>
+        /// Gets the highest index currently in use to optimize Compute Shader dispatch.
+        /// Helps avoiding unnecessary thread groups on the GPU.
+        /// </summary>
+        public int HighestActiveIndex => _mapper?.Registry.HighestIndex ?? -1;
+
+        #endregion
+
+        #region Properties
+
+        /// <summary>
+        /// Provides read-only access to the LOD configuration and spatial queries.
+        /// Returns null if not initialized.
+        /// </summary>
+        public ILODGridProvider<Vector3Int> LodGridProvider => _chunkRegistry;
+
+        /// <summary>
+        /// Checks if the coordinator has been initialized with a valid registry and mapper.
+        /// </summary>
+        public bool IsInitialized =>
+            _mapper != null && _mapper.IsInitialized &&
+            _chunkRegistry != null && _chunkRegistry.IsInitialized;
+
+        #endregion
+
+        #region Lifecycle
+
+        /// <summary>
+        /// Initializes the coordinator by extracting spatial and visual configurations from the provided LOD definitions.
+        /// Acts as the central bridge to synchronize the LOD registry and the atlas mapping logic.
+        /// </summary>
+        /// <param name="spatialSettings">The core grid configuration (size, active axes, etc.).</param>
+        /// <param name="lodConfigs">The master list of LOD levels, defining both distances and texture resolutions.</param>
+        /// <param name="batchSize">Number of elements to process in a single GPU update block.</param>
+        /// <param name="viewer">The transform used to calculate distances for LOD switching.</param>
+        /// <param name="container">The parent transform where chunk GameObjects will be organized.</param>
+        /// <param name="deactivateOnCulled">If true, chunks outside the maximum LOD range will be disabled.</param>
+        public void Initialize(
+            SpatialSettings spatialSettings,
+            ReadOnlySpan<TextureLOD> lodConfigs,
+            int batchSize,
+            Transform viewer,
+            Transform container,
+            bool deactivateOnCulled = true)
         {
-            _mapper = new LodAtlasMapper<Vector3Int>();
-            _chunkRegistry = new LODChunkRegistry<TextureLodChunk>(spatialSettings, lodSettings, viewer, container);
+            Reset();
+
+            Span<float> distances = stackalloc float[lodConfigs.Length];
+            Span<PowerOfTwoResolution> resolutions = stackalloc PowerOfTwoResolution[lodConfigs.Length];
+
+            for (int i = 0; i < lodConfigs.Length; i++)
+            {
+                distances[i] = lodConfigs[i].distanceThreshold;
+                resolutions[i] = lodConfigs[i].mapResolution;
+            }
+
+            var lodSettings = new LodSettings
+            {
+                LodDistances = distances,
+                DeactivateOnCulled = deactivateOnCulled
+            };
+
+            _chunkRegistry.Initialize(spatialSettings, lodSettings, viewer, container);
+            _mapper.Initialize(_chunkRegistry, resolutions, batchSize);
 
             foreach (var chunk in _chunkRegistry.AllEntries)
             {
@@ -32,11 +125,72 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         }
 
         /// <summary>
+        /// Clears all chunks and resets the atlas mapping, but keeps the coordinator alive.
+        /// </summary>
+        public void Reset()
+        {
+            _chunkRegistry?.ClearChunks();
+            _mapper?.ClearAll();
+
+            _toAssign.Clear();
+            _toRelease.Clear();
+        }
+
+        #endregion
+
+        #region High-Frequency Updates (Exposed)
+
+        /// <summary>
+        /// Updates the viewer position for LOD calculations. 
+        /// Safe to call every frame or when the camera changes.
+        /// </summary>
+        public void SetViewer(Transform viewer)
+        {
+            if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
+            _chunkRegistry.SetViewer(viewer);
+        }
+
+        /// <summary>
+        /// Shifts the coordinate system anchor to support large-scale world movement.
+        /// </summary>
+        public void SetAnchor(Vector3 newAnchor)
+        {
+            if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
+            _chunkRegistry.SetAnchor(newAnchor);
+        }
+
+        /// <summary>
+        /// Shifts the coordinate system anchor to support large-scale world movement.
+        /// Updates the registry and ensures the spatial mapping stays consistent.
+        /// </summary>
+        public void NotifyOriginShift(Vector3 delta)
+        {
+            if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
+            _chunkRegistry.NotifyOriginShift(delta);
+        }
+
+        /// <summary>
+        /// Updates all chunks' LOD state based on current viewer position.
+        /// Call this before UpdateTopology.
+        /// </summary>
+        public void RefreshLODs()
+        {
+            if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
+            _chunkRegistry.UpdateLODs();
+        }
+
+        #endregion
+
+        #region Topology
+
+        /// <summary>
         /// Phase 1: Update Mapping State.
         /// Feeds registry changes into the mapper. Call this after the LOD update.
         /// </summary>
         public void UpdateTopology(ISpatialCollection<Vector3Int> masterSource)
         {
+            if (!IsInitialized) return;
+
             ChunkSyncUtility.Synchronize(
                 masterSource,
                 _chunkRegistry,
@@ -63,6 +217,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
             _mapper.UpdateMappings();
         }
+
+        #endregion
 
         /// <summary>
         /// Phase 2: Execution.

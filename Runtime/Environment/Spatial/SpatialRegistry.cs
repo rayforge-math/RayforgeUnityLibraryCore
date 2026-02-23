@@ -15,6 +15,7 @@ namespace Rayforge.Core.Environment.Spatial
         where TValue : ISpatialEntry, IDisposable
     {
         #region Data Structures
+
         /// <summary> Internal storage for spatial objects. Encapsulated to ensure dirty-flag integrity. </summary>
         private readonly Dictionary<TKey, TValue> _storage = new Dictionary<TKey, TValue>();
 
@@ -31,6 +32,12 @@ namespace Rayforge.Core.Environment.Spatial
 
         /// <summary> Provides read-only access to all currently registered entries. </summary>
         public Dictionary<TKey, TValue>.ValueCollection AllEntries => _storage.Values;
+
+        /// <summary>
+        /// Returns true if Initialize has been called and the container exists.
+        /// </summary>
+        public bool IsInitialized => _isInitialized && _container != null && _container.gameObject != null;
+        private bool _isInitialized = false;
 
         /// <summary> 
         /// The unique identification string of this registry instance.
@@ -55,16 +62,26 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
-        /// <summary>
-        /// Initializes the registry. 
-        /// </summary>
-        /// <param name="parent">Optional parent transform. If null, the registry gets positioned in root.</param>
-        /// <param name="defaultName">The name for the auto-generated container.</param>
-        protected SpatialRegistry(Transform parent = null, string defaultName = "SpatialRegistry_Container")
-        {
-            GameObject go = new GameObject(defaultName);
+        #region Initialization & Setup
 
+        /// <summary>
+        /// Empty default constructor to prevent premature side effects.
+        /// </summary>
+        protected SpatialRegistry() { }
+
+        /// <summary>
+        /// Initializes the registry, creates the container GameObject and sets up the hierarchy.
+        /// English comment: Call this to activate the registry. If already initialized, it will perform a Reset.
+        /// </summary>
+        /// <param name="parent">Optional parent transform.</param>
+        /// <param name="defaultName">The name for the auto-generated container.</param>
+        public virtual void Initialize(Transform parent = null, string defaultName = "SpatialRegistry_Container")
+        {
+            if (IsInitialized) Clear();
+
+            GameObject go = new GameObject(defaultName);
             _container = go.transform;
+
             RegistryName = defaultName;
 
             if (parent != null)
@@ -72,16 +89,20 @@ namespace Rayforge.Core.Environment.Spatial
                 _container.SetParent(parent, false);
                 _container.localPosition = Vector3.zero;
                 _container.localRotation = Quaternion.identity;
-
                 _containerLinkedToAnchor = true;
             }
             else
             {
                 _containerLinkedToAnchor = false;
             }
+
+            _isInitialized = true;
         }
 
+        #endregion
+
         #region Lifecycle Management
+
         /// <summary>
         /// The master factory method. Retrieves an existing entry or creates, parents, and registers a new one.
         /// </summary>
@@ -92,6 +113,11 @@ namespace Rayforge.Core.Environment.Spatial
         /// <returns>The existing or newly created entry.</returns>
         protected bool GetOrCreate(TKey key, string name, Vector3 position, Func<GameObject, TKey, TValue> factory, out TValue result)
         {
+            if (!IsInitialized)
+            {
+                throw new InvalidOperationException($"Registry {GetType().Name} is not initialized. Call Initialize() first.");
+            }
+
             if (_storage.TryGetValue(key, out result))
             {
                 if (result != null && result.gameObject != null)
@@ -174,6 +200,10 @@ namespace Rayforge.Core.Environment.Spatial
                 else UnityEngine.Object.DestroyImmediate(_container.gameObject);
                 _container = null;
             }
+
+            _containerLinkedToAnchor = false;
+            _globalDirty = true;
+            _isInitialized = false;
         }
 
         private void DestroyEntry(TValue entry)

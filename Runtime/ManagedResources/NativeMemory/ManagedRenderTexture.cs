@@ -39,7 +39,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             if (d.Height <= 0)
                 throw new ArgumentOutOfRangeException(nameof(d.Height), "RenderTexture height must be greater than zero.");
 
-            var texture = new RenderTexture(d.Descriptor)
+            var texture = new RenderTexture(d.InternalDescriptor)
             {
                 filterMode = d.FilterMode,
                 wrapMode = d.WrapMode,

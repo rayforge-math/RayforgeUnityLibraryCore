@@ -9,7 +9,8 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
     /// Bridges logical keys to multiple typed data stores (Spatial, Visual, etc.).
     /// </summary>
     /// <typeparam name="TKey">The unique identifier type (e.g., Vector3Int for Chunks).</typeparam>
-    public class MetadataRegistry<TKey> where TKey : struct, IEquatable<TKey>
+    public class MetadataRegistry<TKey> : IMetadataRegistry
+        where TKey : struct, IEquatable<TKey>
     {
         private readonly KeyedSlotMapper<TKey> m_Mapper;
         private readonly Dictionary<Type, IMetadataStore> m_Stores = new();
@@ -21,6 +22,11 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// Gets the total capacity shared across all stores.
         /// </summary>
         public int Capacity => m_Capacity;
+
+        /// <summary>
+        /// Gets the active batch size.
+        /// </summary>
+        public int BatchSize => m_BatchSize;
 
         /// <summary>
         /// Gets the number of currently active keys in the registry.

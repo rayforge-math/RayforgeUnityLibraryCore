@@ -1,3 +1,4 @@
+using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Environment.Abstractions;
 using UnityEngine;
 
@@ -6,7 +7,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     /// <summary>
     /// Filters keys from a radius iterator to only return those matching a specific LOD level.
     /// </summary>
-    public struct GridLodLevelState
+    public struct GridLodLevelState : IIterationLogic<Vector3Int, GridLodLevelState>
     {
         private GridRangeState _rangeState;
         private readonly int _targetLod;
@@ -23,15 +24,15 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             _registry = registry;
         }
 
-        public bool MoveNext(out Vector3Int result)
+        public bool MoveNext(ref GridLodLevelState self, out Vector3Int result)
         {
-            while (_rangeState.MoveNext(out result))
+            while (self._rangeState.MoveNext(ref self._rangeState, out result))
             {
-                float sqrDist = _registry.GetSqrDistanceToClosestEdge(result, _center);
+                float sqrDist = self._registry.GetSqrDistanceToClosestEdge(result, self._center);
 
-                if (sqrDist > _maxSqrDist) continue;
+                if (sqrDist > self._maxSqrDist) continue;
 
-                if (_registry.CalculateTargetLOD(sqrDist) == _targetLod)
+                if (self._registry.CalculateTargetLOD(sqrDist) == self._targetLod)
                 {
                     return true;
                 }

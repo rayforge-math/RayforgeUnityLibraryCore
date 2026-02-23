@@ -39,8 +39,11 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary> Gets all registered instance IDs. </summary>
         public ICollection<int> AllIds => _registry.Keys;
 
-        /// <summary> Checks if the registry is initialized and has a valid grid provider. </summary>
-        public bool IsInitialized => _gridProvider != null;
+        /// <summary>
+        /// Checks if the registry is fully operational.
+        /// Requires a valid grid provider and an active dirty bucket collection.
+        /// </summary>
+        public bool IsInitialized => _gridProvider != null && _dirtyBuckets != null;
 
         #endregion
 
@@ -53,16 +56,14 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="externalDirtyTracker">Optional shared HashSet to track modified cells across multiple registries.</param>
         public void Initialize(ISpatialGridProvider<TKey> gridProvider, HashSet<TKey> externalDirtyTracker = null)
         {
+            Reset();
+
             _gridProvider = gridProvider;
             _dirtyBuckets = externalDirtyTracker ?? new HashSet<TKey>();
 
             if (_gridProvider != null)
             {
                 FullRemap();
-            }
-            else
-            {
-                Clear();
             }
         }
 
@@ -87,9 +88,19 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public void Clear()
         {
-            _registry.Clear();
-            _buckets.Clear();
-            _dirtyBuckets.Clear();
+            _registry?.Clear();
+            _buckets?.Clear();
+            _dirtyBuckets?.Clear();
+        }
+
+        /// <summary>
+        /// Hard reset: Clears all data and detaches the grid provider and dirty tracker.
+        /// </summary>
+        public void Reset()
+        {
+            Clear();
+            _gridProvider = null;
+            _dirtyBuckets = null;
         }
 
         /// <summary>
@@ -179,27 +190,6 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
-        #region IIterable Implementation (Spatial Iterators)
-
-        /// <summary>
-        /// Logic for the iterator to step through the InstanceIDs in a bucket and resolve them to components.
-        /// </summary>
-        public bool TryGetNext(ref SpatialIteratorState<TKey, HashSet<int>.Enumerator> state, out TType result)
-        {
-            result = null;
-            while (state.Internal.MoveNext())
-            {
-                if (_registry.TryGetValue(state.Internal.Current, out var spatialState))
-                {
-                    result = spatialState.component;
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        #endregion
-
         #region Internal Bucket Management
 
         /// <summary>
@@ -207,6 +197,8 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         private void UpdateBuckets(int id, Bounds bounds, bool add)
         {
+            if (!IsInitialized) return;
+
             foreach (TKey key in _gridProvider.GetKeysInRelativeBounds(bounds))
             {
                 _dirtyBuckets.Add(key);

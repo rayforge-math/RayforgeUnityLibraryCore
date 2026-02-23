@@ -15,6 +15,9 @@ namespace Rayforge.Core.Environment.Abstractions
         /// <summary> The world-space origin of the grid. </summary>
         Vector3 Anchor { get; }
 
+        /// <summary> Checks whether the underlying system is ready. </summary>
+        bool IsInitialized { get; }
+
         /// <summary>
         /// Triggered when the grid's scale or fundamental structure changes.
         /// Passes the provider itself as the sender.

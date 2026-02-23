@@ -19,7 +19,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         private float[] _lodSqrDistances;
         private float[] _lodDistances;
-        private readonly bool _deactivateOnCulled;
+        private bool _deactivateOnCulled;
 
         public Transform Viewer { get; private set; }
 
@@ -29,7 +29,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         public ReadOnlySpan<float> LodSqrDistances => _lodSqrDistances;
 
-        /// <summary> 
+        /// <summary>
         /// High-performance access to the thresholds. 
         /// Avoids array copying and heap allocations.
         /// </summary>
@@ -46,13 +46,84 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #endregion
 
-        public LODChunkRegistry(SpatialSettings spatialSettings, LodSettings lodSettings, Transform viewer = null, Transform container = null)
-            : base(spatialSettings, container)
+        #region Lifecycle
+
+        /// <summary>
+        /// Default constructor. Does not allocate LOD arrays yet.
+        /// </summary>
+        public LODChunkRegistry() : base() { }
+
+        /// <summary>
+        /// Initializes the LOD registry.
+        /// Combines spatial setup with LOD threshold configuration.
+        /// </summary>
+        public void Initialize(SpatialSettings spatialSettings, LodSettings lodSettings, Transform viewer = null, Transform container = null)
         {
+            base.Initialize(spatialSettings, container, "LODChunkRegistry");
+
             _deactivateOnCulled = lodSettings.DeactivateOnCulled;
             Viewer = viewer;
+
             ApplyLodConfiguration(lodSettings.LodDistances, false);
         }
+
+        /// <summary>
+        /// Updates the internal squared distance thresholds.
+        /// Re-calculates squared values to keep the Update loop math simple and fast.
+        /// </summary>
+        public bool UpdateLodDistances(ReadOnlySpan<float> newDistances)
+            => ApplyLodConfiguration(newDistances, true);
+
+        /// <summary> Updates the viewer reference (e.g., when switching cameras). </summary>
+        public bool SetViewer(Transform viewer)
+        {
+            if (Viewer != viewer)
+            {
+                Viewer = viewer;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// The single source of truth for changing LOD arrays.
+        /// Handles validation, allocation, and notification.
+        /// </summary>
+        private bool ApplyLodConfiguration(ReadOnlySpan<float> newDistances, bool notify)
+        {
+            if (newDistances == null || newDistances.Length == 0) return false;
+
+            if (_lodDistances != null && _lodDistances.Length == newDistances.Length)
+            {
+                bool changed = false;
+                for (int i = 0; i < newDistances.Length; i++)
+                {
+                    if (!Mathf.Approximately(_lodDistances[i], newDistances[i]))
+                    {
+                        changed = true;
+                        break;
+                    }
+                }
+                if (!changed) return false;
+            }
+
+            int count = newDistances.Length;
+            _lodDistances = new float[count];
+            _lodSqrDistances = new float[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                float d = newDistances[i];
+                _lodDistances[i] = d;
+                _lodSqrDistances[i] = d * d;
+            }
+
+            if (notify) OnLODSettingsChanged?.Invoke(this);
+
+            return true;
+        }
+
+        #endregion
 
         #region Factory Overrides
 
@@ -98,15 +169,14 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 return Iterator<Vector3Int, GridLodLevelState>.Empty();
 
             float outerRadius = LodDistances[lodIndex];
-            Bounds searchBounds = new Bounds(center, Vector3.one * outerRadius * 2f);
 
+            Bounds searchBounds = new Bounds(center, Vector3.one * outerRadius * 2f);
             Vector3Int minKey = WorldToGrid(searchBounds.min);
             Vector3Int maxKey = WorldToGrid(searchBounds.max);
 
             var rangeState = new GridRangeState(minKey, maxKey);
             var lodState = new GridLodLevelState(rangeState, lodIndex, center, outerRadius, this);
-
-            return new Iterator<Vector3Int, GridLodLevelState>(lodState, (ref GridLodLevelState s, out Vector3Int res) => s.MoveNext(out res));
+            return new Iterator<Vector3Int, GridLodLevelState>(lodState);
         }
 
         /// <summary>
@@ -230,66 +300,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             int targetLod = CalculateTargetLOD(sqrDist);
             return ((ILODReceiver)chunk).UpdateLOD(targetLod, _deactivateOnCulled);
         }
-
-        #endregion
-
-        #region Management & Origin Shift
-
-        /// <summary> Updates the viewer reference (e.g., when switching cameras). </summary>
-        public bool SetViewer(Transform viewer)
-        {
-            if (Viewer != viewer)
-            {
-                Viewer = viewer;
-                return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// The single source of truth for changing LOD arrays.
-        /// Handles validation, allocation, and notification.
-        /// </summary>
-        private bool ApplyLodConfiguration(ReadOnlySpan<float> newDistances, bool notify)
-        {
-            if (newDistances == null) return false;
-
-            if (_lodDistances != null && _lodDistances.Length == newDistances.Length)
-            {
-                bool changed = false;
-                for (int i = 0; i < newDistances.Length; i++)
-                {
-                    if (!Mathf.Approximately(_lodDistances[i], newDistances[i]))
-                    {
-                        changed = true;
-                        break;
-                    }
-                }
-                if (!changed) return false;
-            }
-
-            int count = newDistances.Length;
-            _lodDistances = new float[count];
-            _lodSqrDistances = new float[count];
-
-            for (int i = 0; i < count; i++)
-            {
-                float d = newDistances[i];
-                _lodDistances[i] = d;
-                _lodSqrDistances[i] = d * d;
-            }
-
-            if (notify) OnLODSettingsChanged?.Invoke(this);
-
-            return true;
-        }
-
-        /// <summary>
-        /// Updates the internal squared distance thresholds.
-        /// Re-calculates squared values to keep the Update loop math simple and fast.
-        /// </summary>
-        public bool UpdateLodDistances(ReadOnlySpan<float> newDistances)
-            => ApplyLodConfiguration(newDistances, true);
 
         #endregion
     }
