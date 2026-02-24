@@ -46,6 +46,12 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <summary> Implementation of ILODGridProvider. </summary>
         public event Action<ILODGridProvider<Vector3Int>> OnLODSettingsChanged;
 
+        /// <summary> 
+        /// Returns the number of chunks that are currently within a valid LOD range (LOD >= 0).
+        /// </summary>
+        public int ActiveCellCount => _activeCellCountCache;
+        private int _activeCellCountCache = 0;
+
         #endregion
 
         #region Lifecycle
@@ -159,10 +165,38 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             bool isNew = base.GetOrCreateChunk(key, onConfigure, out chunk);
             if (isNew)
             {
+                chunk.OnLODChanged += HandleChunkLODChanged;
+                chunk.OnCleanup += HandleChunkDestroyed;
                 UpdateChunkLOD(chunk, ViewerPos);
             }
 
             return isNew;
+        }
+
+        /// <summary>
+        /// Reacts to individual chunk LOD changes to keep the global ActiveCellCount in sync.
+        /// </summary>
+        private void HandleChunkLODChanged(ILODState sender, int oldLod, int newLod)
+        {
+            bool wasActive = oldLod >= 0;
+            bool isActive = newLod >= 0;
+
+            if (!wasActive && isActive) _activeCellCountCache++;
+            else if (wasActive && !isActive) _activeCellCountCache--;
+        }
+
+        /// <summary>
+        /// Ensures the active count is decremented if an active chunk is destroyed.
+        /// </summary>
+        private void HandleChunkDestroyed(T chunk)
+        {
+            chunk.OnLODChanged -= HandleChunkLODChanged;
+            chunk.OnCleanup -= HandleChunkDestroyed;
+
+            if (chunk.CurrentLOD >= 0)
+            {
+                _activeCellCountCache--;
+            }
         }
 
         #endregion

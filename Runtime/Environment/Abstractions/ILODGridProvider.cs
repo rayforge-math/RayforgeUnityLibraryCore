@@ -13,6 +13,11 @@ namespace Rayforge.Core.Environment.Abstractions
         /// <summary> The current LOD count. </summary>
         int LodCount { get; }
 
+        /// <summary> 
+        /// The number of cells currently active within the LOD range. 
+        /// </summary>
+        int ActiveCellCount { get; }
+
         /// <summary> The squared distance thresholds for each LOD level. </summary>
         ReadOnlySpan<float> LodSqrDistances { get; }
 

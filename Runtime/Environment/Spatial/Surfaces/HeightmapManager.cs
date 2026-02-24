@@ -7,7 +7,6 @@ using Rayforge.Core.Environment.Tracking;
 using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.Rendering.EditorStructures;
 using Rayforge.Core.Rendering.Helpers;
-using Rayforge.Core.Rendering.Textures;
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -27,6 +26,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         [Header("Floating Origin")]
         public OriginShiftRelay shiftRelay;
+        private OriginShiftRelay _activeShiftRelay = null;
 
         [Header("LOD & Culling Settings")]
         public Transform lodReference;
@@ -71,8 +71,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             RefreshEditor();
             EnsureSystemsReady(true);
 
-            if (shiftRelay != null)
-                shiftRelay.OnWorldShiftDetected += HandleOriginShift;
+            UpdateShiftRelaySubscription(shiftRelay);
         }
 
         private void OnValidate()
@@ -87,11 +86,17 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 }
                 catch { }
             }
+            else
+            {
+                UpdateShiftRelaySubscription(shiftRelay);
+            }
         }
 
         private void OnDestroy()
         {
             lodTable.OnTableChanged -= HandleLodTableChanged;
+
+            UpdateShiftRelaySubscription(null);
         }
 
         private void Update()
@@ -116,22 +121,54 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             */
         }
 
-        private void HandleLodTableChanged(UniversalLodTable<TextureLOD> lodTable)
-        {
-            //if(_bakeCoordinator.)
-        }
-
         public void RefreshEditor()
         {
-            LogDebug($"Refreshing Editor...");
+            LogDebug("Refreshing dependencies and sanitizing LOD table...");
             SetupDependencies();
             lodTable.Sanitize();
+            LogDebug("<color=green>Editor refresh completed.</color>");
+        }
+
+        public void SetupDependencies()
+        {
+            if (shiftRelay == null)
+            {
+                shiftRelay = GetComponentInParent<OriginShiftRelay>(true);
+                if (shiftRelay != null)
+                    LogDebug($"OriginShiftRelay linked from: {shiftRelay.gameObject.name}");
+            }
+
+            if (lodReference == null && Camera.main != null)
+            {
+                lodReference = Camera.main.transform;
+                LogDebug("LOD Reference: Auto-assigned Main Camera.");
+            }
+        }
+
+        private void UpdateShiftRelaySubscription(OriginShiftRelay targetRelay)
+        {
+            if (_activeShiftRelay == targetRelay) return;
+
+            if (_activeShiftRelay != null)
+            {
+                _activeShiftRelay.OnWorldShiftDetected -= HandleOriginShift;
+                LogDebug($"Unsubscribed from old OriginShiftRelay: {_activeShiftRelay.name}");
+            }
+
+            _activeShiftRelay = targetRelay;
+
+            if (_activeShiftRelay != null && Application.isPlaying)
+            {
+                _activeShiftRelay.OnWorldShiftDetected += HandleOriginShift;
+                LogDebug($"<color=green>Shift subscription updated: {_activeShiftRelay.name}</color>");
+            }
         }
 
         public void RebuildSurfaceRegistry()
         {
-            LogDebug($"Rebuilding Surface Registry...");
+            LogDebug("Rebuilding SurfaceRegistry...");
             surfaceTracker.RebuildRegistry(transform);
+            LogDebug($"<color=green>Registry Rebuilt: {surfaceTracker.TotalTrackedCount} surfaces live.</color>");
         }
 
         #endregion
@@ -148,11 +185,16 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
                 if (_textureCoordinator.IsInitialized)
                 {
+                    CreateAtlasTexture(_textureCoordinator, force);
+                }
+
+                if (_textureCoordinator.IsInitialized)
+                {
                     InitSurfaceRegistry(_textureCoordinator.LodGridProvider, force);
                 }
                 else
                 {
-                    LogDebug("SurfaceRegistry init skipped: Coordinator not initialized.");
+                    LogDebug("<color=orange>SurfaceRegistry skipped: Coordinator not initialized.</color>");
                 }
 
                 if (_surfaceRegistry.IsInitialized)
@@ -161,35 +203,15 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 }
                 else
                 {
-                    LogDebug("SurfaceTracker init skipped: Registry not initialized.");
+                    LogDebug("<color=orange>SurfaceTracker skipped: Registry not initialized.</color>");
                 }
 
-                if (_textureCoordinator.IsInitialized)
-                {
-                    CreateAtlasTexture(_textureCoordinator, force);
-                }
-
-                LogDebug("EnsureSystemsReady completed.");
+                LogDebug("<color=green><b>EnsureSystemsReady completed.</b></color>");
             }
             catch (Exception e)
             {
-                UnityEngine.Debug.LogError($"<b>[SurfaceSystem]</b> Critical initialization failure: {e.Message}");
+                UnityEngine.Debug.LogError($"<color=orange><b>Critical failure: {e.Message}</b></color>");
                 throw;
-            }
-        }
-
-        public void SetupDependencies()
-        {
-            if (shiftRelay == null)
-            {
-                shiftRelay = GetComponentInParent<OriginShiftRelay>(true);
-                if (shiftRelay != null) LogDebug("OriginShiftRelay found and assigned.");
-            }
-
-            if (lodReference == null && Camera.main != null)
-            {
-                lodReference = Camera.main.transform;
-                LogDebug("LOD Reference automatically assigned to Main Camera.");
             }
         }
 
@@ -213,52 +235,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 };
 
                 _textureCoordinator.Initialize(spatialSettings, lodTable.ValidEntries, batchSize, lodReference, transform);
-            }
-        }
-
-        private void InitSurfaceRegistry(ILODGridProvider<Vector3Int> gridProvider, bool force = false)
-        {
-            if (gridProvider == null)
-                throw new ArgumentNullException(nameof(gridProvider), "Cannot init SurfaceRegistry with a null GridProvider!");
-
-            if (!gridProvider.IsInitialized)
-            {
-                LogDebug("SurfaceRegistry waiting for GridProvider to be initialized...");
-                return;
-            }
-
-            if (!_surfaceRegistry.IsInitialized || force)
-            {
-                LogDebug("Initializing SurfaceRegistry...");
-                _surfaceRegistry.Reset();
-                _surfaceRegistry.Initialize(gridProvider);
-            }
-        }
-
-        private void InitSurfaceTracker(SpatialSurfaceRegistry registry, bool force = false)
-        {
-            if (registry == null)
-                throw new ArgumentNullException(nameof(registry), "Cannot init SurfaceTracker with a null Registry!");
-
-            if (!registry.IsInitialized)
-            {
-                LogDebug("SurfaceTracker waiting for Registry to be initialized...");
-                return;
-            }
-
-            if (surfaceTracker == null || !surfaceTracker.IsInitialized || force)
-            {
-                LogDebug("Initializing SurfaceTracker...");
-
-                if (surfaceTracker == null)
-                    surfaceTracker = new SurfaceTracker();
-                else
-                    surfaceTracker.ClearState();
-
-                surfaceTracker.Initialize(registry);
-                RebuildSurfaceRegistry();
-
-                LogDebug($"SurfaceTracker rebuild complete. Tracking {surfaceTracker.TotalTrackedCount} surfaces.");
+                LogDebug("<color=green>TextureCoordinator initialized.</color>");
             }
         }
 
@@ -275,7 +252,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 var sliceCount = coordinator.RequiredSliceCount;
                 var resolution = (int)coordinator.BaseResolution;
 
-                LogDebug($"Checking Atlas Texture (Slices: {sliceCount}, Res: {resolution})...");
+                LogDebug($"Checking Atlas Texture requirements (Slices: {sliceCount}, Res: {resolution})...");
 
                 var newDesc = DefaultDescriptors.HeightmapPrecision(resolution, resolution).ToAtlasArray(sliceCount);
 
@@ -285,16 +262,17 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 {
                     if (!_atlasArray.Descriptor.InternalDescriptor.IsCompatible(newDesc))
                     {
-                        LogDebug("Atlas descriptor mismatch. Recreating...");
                         shouldRecreate = true;
                     }
                 }
 
                 if (shouldRecreate)
                 {
+                    string reason = force ? "Forced" : (_atlasArray == null ? "Initial" : "Descriptor Mismatch");
+                    LogDebug($"<b>Atlas Rebuild:</b> {reason}. Slices: {sliceCount}, Res: {resolution}");
+
                     if (_atlasArray != null)
                     {
-                        LogDebug("Releasing old Atlas Texture.");
                         _atlasArray.Release();
                     }
 
@@ -302,80 +280,68 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                     _atlasArray = new ManagedRenderTexture(newWrapper);
                     _atlasArray.Create();
 
-                    LogDebug("New Atlas Texture Array created successfully.");
+                    LogDebug("<color=green>Atlas Texture Array created successfully.</color>");
                 }
             }
         }
 
-        #endregion
-
-        /*
-        #region Initialization & Dependencies
-
-        private void EnsureSystemsReady(bool force = false)
+        private void InitSurfaceRegistry(ILODGridProvider<Vector3Int> gridProvider, bool force = false)
         {
-            CreateChunkRegistry(force);
-            CreateLodAtlas(force);
-            ResetTrackingPosition();
-        }
+            if (gridProvider == null)
+                throw new ArgumentNullException(nameof(gridProvider), "Cannot init SurfaceRegistry with a null GridProvider!");
 
-        private void CreateChunkRegistry(bool force = false)
-        {
-            if (_chunkRegistry == null || force)
+            if (!gridProvider.IsInitialized)
             {
-                _chunkRegistry?.Dispose();
+                LogDebug("<color=orange>SurfaceRegistry waiting for GridProvider to be ready.</color>");
+                return;
+            }
 
-                _chunkRegistry = new LODChunkRegistry<AtlasLODChunk>(
-                    (GridSize)chunkSize,
-                    transform.position,
-                    lodTable.ValidDistances,
-                    true,
-                    lodReference,
-                    transform
-                );
-
-                surfaceTracker.Initialize(_chunkRegistry);
-                _atlasController?.Initialize(
-                    provider: _chunkRegistry,
-                    lodConfigs: lodTable.ValidEntries,
-                    batchSize: batchSize
-                );
-                LogDebug($"Chunk Registry created. GridSize: {(int)chunkSize}");
+            if (!_surfaceRegistry.IsInitialized || force)
+            {
+                LogDebug("Initializing SurfaceRegistry...");
+                _surfaceRegistry.Reset();
+                _surfaceRegistry.Initialize(gridProvider);
+                LogDebug("<color=green>SurfaceRegistry initialized.</color>");
             }
         }
 
-        private void CreateLodAtlas(bool force = false)
+        private void InitSurfaceTracker(SpatialSurfaceRegistry registry, bool force = false)
         {
-            if (_atlasController == null || force)
+            if (registry == null)
+                throw new ArgumentNullException(nameof(registry), "Cannot init SurfaceTracker with a null Registry!");
+
+            if (!registry.IsInitialized)
             {
-                var validLodLevels = lodTable.ValidEntries;
+                LogDebug("<color=orange>SurfaceTracker waiting for Registry to be ready.</color>");
+                return;
+            }
 
-                _atlasController = new LodAtlasController<Vector3Int>();
-                _atlasController.Initialize(
-                    provider: _chunkRegistry,
-                    lodConfigs: validLodLevels,
-                    batchSize: batchSize
-                );
+            if (surfaceTracker == null || !surfaceTracker.IsInitialized || force)
+            {
+                LogDebug(force ? "Forcing SurfaceTracker re-initialization..." : "Initializing SurfaceTracker...");
 
-                int totalSlices = _atlasController.RequiredSliceCount;
-                int baseRes = (int)validLodLevels[0].mapResolution;
+                if (surfaceTracker == null)
+                {
+                    surfaceTracker = new SurfaceTracker();
+                }
+                else
+                {
+                    LogDebug("Cleaning up SurfaceTracker state.");
+                    surfaceTracker.OnRegistryChanged -= HandleSurfacesChanged;
+                    surfaceTracker.ClearState();
+                }
 
-                _atlasArray?.Dispose();
+                surfaceTracker.Initialize(registry);
+                RebuildSurfaceRegistry();
 
-                var desc = DefaultDescriptors.HeightmapPrecision(baseRes, baseRes);
-                desc.dimension = UnityEngine.Rendering.TextureDimension.Tex2DArray;
-                desc.volumeDepth = totalSlices;
-                var wrapper = new RenderTextureDescriptorWrapper { Descriptor = desc };
+                surfaceTracker.OnRegistryChanged += HandleSurfacesChanged;
+                LogDebug($"<color=green>SurfaceTracker initialized and synced.</color>");
 
-                _atlasArray = new ManagedRenderTexture(wrapper);
-                _atlasArray.Create();
-
-                LogDebug($"Atlas System ready. Slices allocated: {totalSlices}");
+                HandleSurfacesChanged(surfaceTracker);
             }
         }
 
         #endregion
-        */
 
         #region Configuration & Validation
         /*
@@ -436,6 +402,25 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         {
             _textureCoordinator?.NotifyOriginShift(delta);
             _lastUpdatePos += delta;
+        }
+
+        private void HandleSurfacesChanged(SurfaceTracker sender)
+        {
+            if (sender == null || _textureCoordinator == null || !_textureCoordinator.IsInitialized)
+            {
+                return;
+            }
+
+            LogDebug("SurfaceTracker reported changes. Syncing topology with TextureCoordinator...");
+
+            _textureCoordinator.UpdateTopology(sender.Registry);
+
+            LogDebug($"<color=green>Topology sync completed.</color> Coordinator is now managing {_textureCoordinator.LodGridProvider.ActiveCellCount} chunk(s).");
+        }
+
+        private void HandleLodTableChanged(UniversalLodTable<TextureLOD> lodTable)
+        {
+            //if(_bakeCoordinator.)
         }
 
         public void ResetTrackingPosition() => _lastUpdatePos = lodReference ? lodReference.position : Vector3.zero;

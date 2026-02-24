@@ -75,6 +75,11 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         }
         private Vector3 _anchor;
 
+        /// <summary> 
+        /// The total number of tracked cells. 
+        /// </summary>
+        public int TotalCellCount => Count;
+
         /// <summary>
         /// Updates the grid resolution and destroys all existing chunks
         /// as their spatial keys are no longer valid for the new size.

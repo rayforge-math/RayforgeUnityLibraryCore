@@ -35,6 +35,11 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary> Provides read-only access to all currently registered entries. </summary>
         public Dictionary<TKey, TValue>.ValueCollection AllEntries => _storage.Values;
 
+        /// <summary> 
+        /// The number of entries currently held in the registry.
+        /// </summary>
+        public int Count => _storage.Count;
+
         /// <summary>
         /// Returns true if Initialize has been called and the container exists.
         /// </summary>

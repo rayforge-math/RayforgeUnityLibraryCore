@@ -1,7 +1,6 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Abstractions
@@ -17,6 +16,11 @@ namespace Rayforge.Core.Environment.Abstractions
 
         /// <summary> Checks whether the underlying system is ready. </summary>
         bool IsInitialized { get; }
+
+        /// <summary> 
+        /// The total number of cells currently tracked or present in the spatial index. 
+        /// </summary>
+        int TotalCellCount { get; }
 
         /// <summary>
         /// Triggered when the grid's scale or fundamental structure changes.
