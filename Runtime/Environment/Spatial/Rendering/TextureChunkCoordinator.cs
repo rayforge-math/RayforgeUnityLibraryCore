@@ -5,7 +5,6 @@ using Rayforge.Core.Environment.Spatial.Rendering;
 using Rayforge.Core.Rendering.EditorStructures;
 using Rayforge.Core.Rendering.Textures;
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Surfaces
@@ -20,9 +19,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         private readonly LodAtlasMapper<Vector3Int> _mapper = new();
         private readonly LODChunkRegistry<TextureLodChunk> _chunkRegistry = new();
-
-        private readonly HashSet<Vector3Int> _toAssign = new();
-        private readonly HashSet<Vector3Int> _toRelease = new();
 
         #region GPU Buffer Metadata Access
 
@@ -112,7 +108,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 ExtractLodConfiguration(lodConfigs, deactivateOnCulled, out var lodSettings, out var resolutions);
 
                 _chunkRegistry.Initialize(spatialSettings, lodSettings, viewer, container);
-                _mapper.Initialize(_chunkRegistry, resolutions, batchSize);
+                _mapper.Configure(_chunkRegistry, resolutions, batchSize);
             }
             catch (Exception e)
             {
@@ -127,11 +123,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public void Clear()
         {
             _chunkRegistry?.Clear();
-
             _mapper?.Clear();
-
-            _toAssign.Clear();
-            _toRelease.Clear();
         }
 
         /// <summary>
@@ -205,12 +197,30 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 UpdateLODs();
             }
 
-            _mapper.Initialize(_chunkRegistry, resolutions, _mapper.Registry.BatchSize);
+            _mapper.Configure(_chunkRegistry, resolutions, _mapper.Registry.BatchSize);
+            ForceRequeueAll();
         }
 
         #endregion
 
         #region Rendering Pipeline
+
+        /// <summary>
+        /// Iterates through all registered chunks and forces them into the mapper's update queue.
+        /// Essential after origin shifts or LOD configuration changes to refresh the "World View".
+        /// </summary>
+        public void ForceRequeueAll()
+        {
+            if (!IsInitialized) return;
+
+            foreach (var chunk in _chunkRegistry.AllEntries)
+            {
+                if (chunk.IsVisible)
+                {
+                    RequestChunkTile(chunk);
+                }
+            }
+        }
 
         /// <summary>
         /// Phase 1: Update Mapping State.
@@ -227,24 +237,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                     _chunkRegistry,
                     onCreate: chunk => {
                         SetupChunk(chunk);
-                        if (chunk.IsVisible) _toAssign.Add(chunk.GridKey);
+                        if (chunk.IsVisible) RequestChunkTile(chunk);
                     },
                     onDataChanged: chunk => {
-                        if (chunk.IsVisible) _toAssign.Add(chunk.GridKey);
+                        if (chunk.IsVisible) RequestChunkTile(chunk);
                     }
                 );
-
-                foreach (var key in _toRelease) _mapper.RemoveTile(key);
-                _toRelease.Clear();
-
-                foreach (var key in _toAssign)
-                {
-                    if (_chunkRegistry.TryGetEntry(key, out var chunk) && chunk.IsVisible)
-                    {
-                        _mapper.SetTile(key, chunk.CurrentLOD, chunk.WorldPosition, chunk.localExtent.x);
-                    }
-                }
-                _toAssign.Clear();
 
                 _mapper.UpdateMappings();
             }
@@ -310,12 +308,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             if (oldLod >= 0)
             {
-                _toRelease.Add(chunk.GridKey);
+                RemoveChunkTile(chunk as TextureLodChunk);
             }
 
             if (newLod >= 0)
             {
-                _toAssign.Add(chunk.GridKey);
+                RequestChunkTile(chunk as TextureLodChunk);
             }
         }
 
@@ -326,10 +324,29 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <param name="chunk">The chunk being cleaned up.</param>
         private void HandleChunkCleanup(TextureLodChunk chunk)
         {
-            _toRelease.Add(chunk.GridKey);
+            RemoveChunkTile(chunk);
 
             chunk.OnLODChanged -= HandleLodChanged;
             chunk.OnCleanup -= HandleChunkCleanup;
+        }
+
+        /// <summary>
+        /// Helper to avoid repeating the SetTile calls.
+        /// </summary>
+        private void RequestChunkTile(TextureLodChunk chunk)
+        {
+            if (chunk != null && chunk.CurrentLOD >= 0)
+            {
+                _mapper.SetTile(chunk.GridKey, chunk.CurrentLOD, chunk.WorldPosition, chunk.localExtent.x);
+            }
+        }
+
+        /// <summary>
+        /// Helper to avoid repeating the RemoveTile calls.
+        /// </summary>
+        private void RemoveChunkTile(TextureLodChunk chunk)
+        {
+            _mapper.RemoveTile(chunk.GridKey);
         }
 
         #endregion

@@ -135,22 +135,34 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         #region Initialization & Cleanup
 
         /// <summary>
-        /// Initializes the atlas using a centralized LOD provider.
-        /// The provider dictates exactly how many slices are needed for each LOD ring.
+        /// Configures or reconfigures the atlas layout based on the provided LOD settings.
+        /// This method checks if the structural configuration (resolutions, capacities, or batching) 
+        /// has changed before triggering a heavy rebuild of the internal slot management.
         /// </summary>
-        /// <param name="provider">The source of truth for spatial and LOD logic.</param>
-        /// <param name="lodResolutions">Resolution settings for each LOD level.</param>
-        /// <param name="batchSize">GPU sync batch size.</param>
-        public void Initialize(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
+        /// <param name="provider">The source of truth for spatial logic and maximum tile capacities per LOD level.</param>
+        /// <param name="lodResolutions">A span of resolutions for each LOD level. Index 0 defines the BaseResolution.</param>
+        /// <param name="batchSize">The number of entries per dirty-tracking batch for GPU synchronization.</param>
+        /// <returns>
+        /// True if the configuration changed and a full layout rebuild was performed (invalidating current mappings). 
+        /// False if the configuration was identical to the current state, resulting in no changes.
+        /// </returns>
+        public bool Configure(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
         {
             try
             {
+                if (IsInitialized && !HasConfigurationChanged(provider, lodResolutions, batchSize))
+                {
+                    return false;
+                }
+
                 RebuildLayout(provider, lodResolutions, batchSize);
             }
             catch (Exception e)
             {
                 throw new Exception($"{Tag} Setup failed: {e.Message}", e);
             }
+
+            return true;
         }
 
         /// <summary>
@@ -183,11 +195,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 throw new ArgumentOutOfRangeException(nameof(batchSize), $"Batch size must be at least 1.");
 
             Clear();
-
-            if (IsInitialized && !HasConfigurationChanged(provider, lodResolutions, batchSize))
-            {
-                return;
-            }
 
             BaseResolution = lodResolutions[0];
             int lodCount = lodResolutions.Length;
