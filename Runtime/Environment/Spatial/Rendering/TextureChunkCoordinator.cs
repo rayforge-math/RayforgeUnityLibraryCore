@@ -220,7 +220,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                     RequestChunkTile(chunk);
                 }
             }
-            _mapper.UpdateMappings();
+            _mapper.FlushTileRequests();
         }
 
         /// <summary>
@@ -245,7 +245,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                     }
                 );
 
-                _mapper.UpdateMappings();
+                _mapper.FlushTileRequests();
             }
             catch (Exception e)
             {
@@ -338,7 +338,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             if (chunk != null && chunk.CurrentLOD >= 0)
             {
-                _mapper.SetTile(chunk.GridKey, chunk.CurrentLOD, chunk.WorldPosition, chunk.localExtent.x);
+                _mapper.RequestTile(chunk.GridKey, chunk.CurrentLOD, chunk.WorldPosition, chunk.localExtent.x);
             }
         }
 
@@ -347,7 +347,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         private void RemoveChunkTile(TextureLodChunk chunk)
         {
-            _mapper.RemoveTile(chunk.GridKey);
+            _mapper.ReleaseTile(chunk.GridKey);
         }
 
         #endregion

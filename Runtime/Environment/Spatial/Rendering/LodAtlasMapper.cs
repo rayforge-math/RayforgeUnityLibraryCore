@@ -293,7 +293,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// If the tile was previously queued for removal in the same frame, the removal is cancelled.
         /// If multiple updates are queued for the same key, only the last one is preserved.
         /// </remarks>
-        public void SetTile(TKey key, int lodIndex, Vector3 worldPos, float radius)
+        public void RequestTile(TKey key, int lodIndex, Vector3 worldPos, float radius)
         {
             if (lodIndex < 0 || lodIndex >= m_LodLevels.Length)
                 return;
@@ -316,7 +316,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// If an update for this tile was already queued in the same frame, it will be discarded.
         /// The actual slot release happens during <see cref="ApplyChanges"/>.
         /// </remarks>
-        public void RemoveTile(TKey key)
+        public void ReleaseTile(TKey key)
         {
             m_PendingUpdates.Remove(key);
             m_PendingRemovals.Add(key);
@@ -327,13 +327,14 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         #region Execute Queue
 
         /// <summary>
-        /// Executes all queued removals and then all queued updates in a single batch.
+        /// Executes all queued removals and then all queued updates in a single batch and
+        /// adds mapping updates to the broadcast queue.
         /// </summary>
         /// <remarks>
         /// Removals are processed first to ensure that released indices are immediately 
         /// available for new tile allocations, keeping the GPU buffer footprint minimal.
         /// </remarks>
-        public void UpdateMappings()
+        public void FlushTileRequests()
         {
             m_FrameResultsCache.Clear();
 
