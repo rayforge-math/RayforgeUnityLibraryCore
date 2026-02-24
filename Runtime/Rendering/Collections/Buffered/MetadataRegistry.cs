@@ -1,6 +1,7 @@
 using Rayforge.Core.Rendering.Abstractions;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Rayforge.Core.Rendering.Collections.Buffered
 {
@@ -12,11 +13,13 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
     public class MetadataRegistry<TKey> : IMetadataRegistry
         where TKey : struct, IEquatable<TKey>
     {
-        private readonly KeyedSlotMapper<TKey> m_Mapper;
+        private const string Tag = "[MetadataRegistry]";
+
+        private readonly KeyedSlotMapper<TKey> m_Mapper = new();
         private readonly Dictionary<Type, IMetadataStore> m_Stores = new();
 
-        private readonly int m_Capacity;
-        private readonly int m_BatchSize;
+        private int m_Capacity;
+        private int m_BatchSize;
 
         /// <summary>
         /// Gets the total capacity shared across all stores.
@@ -43,9 +46,34 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// </summary>
         public MetadataRegistry(int capacity, int batchSize)
         {
-            m_Capacity = capacity;
-            m_BatchSize = batchSize;
-            m_Mapper = new KeyedSlotMapper<TKey>(capacity);
+            Reconfigure(capacity, batchSize);
+        }
+
+        /// <summary>
+        /// (Re)Initializes the registry with a fixed capacity and batch size.
+        /// English: Clears all existing stores and creates a fresh mapper. 
+        /// Any previous store references held externally will become invalid.
+        /// </summary>
+        public void Reconfigure(int capacity, int batchSize)
+        {
+            try
+            {
+                if (capacity <= 0)
+                    throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be greater than zero.");
+
+                if (batchSize <= 0)
+                    throw new ArgumentOutOfRangeException(nameof(batchSize), "BatchSize must be at least 1.");
+
+                m_Capacity = capacity;
+                m_BatchSize = batchSize;
+
+                m_Stores.Clear();
+                m_Mapper.Initialize(capacity);
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
+            }
         }
 
         /// <summary>
@@ -77,6 +105,18 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
                     store.ProcessDirtyBatches((data, start, count) =>
                         uploadAction(data, start, count, entry.Key));
                 }
+            }
+        }
+
+        /// <summary>
+        /// Resets the dirty tracking state for all registered stores.
+        /// Call this after a successful SyncAllStores to acknowledge processed data.
+        /// </summary>
+        public void ClearDirtyState()
+        {
+            foreach (var store in m_Stores.Values)
+            {
+                store.ClearDirty();
             }
         }
 

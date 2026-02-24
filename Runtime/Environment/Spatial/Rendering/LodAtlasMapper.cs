@@ -1,7 +1,6 @@
 using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Environment.Abstractions;
-using Rayforge.Core.Rendering.EditorStructures;
 using Rayforge.Core.Rendering.Textures;
 using System;
 using System.Collections.Generic;
@@ -102,6 +101,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #region Configuration & State
 
+        private const string Tag = "[AtlasMapper]";
+
         private SphereMetadataRegistry<TKey, TextureMappingData> m_Registry;
         private LodLevelManager[] m_LodLevels;
         private readonly Dictionary<TKey, (int lodIndex, int slotIndex)> m_ActiveMappings = new();
@@ -142,41 +143,63 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <param name="batchSize">GPU sync batch size.</param>
         public void Initialize(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
         {
-            if (lodResolutions.Length == 0) throw new ArgumentException("At least one LOD resolution must be provided.");
-
-            ClearAll();
-
-            int lodCount = provider.LodCount;
-            m_LodLevels = new LodLevelManager[lodCount];
-
-            int currentSliceOffset = 0;
-            int totalAllocatedSlots = 0;
-
-            for (int i = 0; i < lodCount; i++)
+            try
             {
-                int tilesInRing = provider.GetMaxCapacityForLODLevel(i);
-                int slotsPerDim = lodResolutions[i].ToSlotCountPerDim(lodResolutions[0]);
-                int slotsPerSlice = slotsPerDim * slotsPerDim;
+                if (provider == null)
+                    throw new ArgumentNullException(nameof(provider), $"Provider is null. Initialization aborted.");
 
-                int reqSlices = 0;
-                if (tilesInRing > 0)
-                    reqSlices = Mathf.CeilToInt((float)tilesInRing / slotsPerSlice);
+                if (lodResolutions.Length == 0)
+                    throw new ArgumentException($"lodResolutions array is empty.", nameof(lodResolutions));
 
-                int levelCapacity = reqSlices * slotsPerSlice;
+                if (provider.LodCount != lodResolutions.Length)
+                    throw new InvalidOperationException($"LOD Count mismatch: Provider expects {provider.LodCount}, but received {lodResolutions.Length} configurations.");
 
-                m_LodLevels[i] = new LodLevelManager
+                if (batchSize <= 0)
+                    throw new ArgumentOutOfRangeException(nameof(batchSize), $"Batch size must be at least 1.");
+
+                ClearAll();
+
+                BaseResolution = lodResolutions[0];
+
+                int lodCount = provider.LodCount;
+                m_LodLevels = new LodLevelManager[lodCount];
+
+                int currentSliceOffset = 0;
+                int totalAllocatedSlots = 0;
+
+                for (int i = 0; i < lodCount; i++)
                 {
-                    StartSlice = currentSliceOffset,
-                    SlotsPerDim = slotsPerDim,
-                    TotalCapacity = levelCapacity
-                };
+                    int tilesInRing = provider.GetMaxCapacityForLODLevel(i);
+                    int slotsPerDim = lodResolutions[i].ToSlotCountPerDim(lodResolutions[0]);
+                    int slotsPerSlice = slotsPerDim * slotsPerDim;
 
-                totalAllocatedSlots += levelCapacity;
-                currentSliceOffset += reqSlices;
+                    if (slotsPerDim <= 0)
+                        throw new InvalidOperationException($"Resolution for LOD {i} is too large for BaseResolution {BaseResolution}.");
+
+                    int reqSlices = 0;
+                    if (tilesInRing > 0)
+                        reqSlices = Mathf.CeilToInt((float)tilesInRing / slotsPerSlice);
+
+                    int levelCapacity = reqSlices * slotsPerSlice;
+
+                    m_LodLevels[i] = new LodLevelManager
+                    {
+                        StartSlice = currentSliceOffset,
+                        SlotsPerDim = slotsPerDim,
+                        TotalCapacity = levelCapacity
+                    };
+
+                    totalAllocatedSlots += levelCapacity;
+                    currentSliceOffset += reqSlices;
+                }
+
+                m_Registry = new SphereMetadataRegistry<TKey, TextureMappingData>(totalAllocatedSlots, batchSize);
+                RequiredSliceCount = currentSliceOffset;
             }
-
-            m_Registry = new SphereMetadataRegistry<TKey, TextureMappingData>(totalAllocatedSlots, batchSize);
-            RequiredSliceCount = currentSliceOffset;
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} Unexpected error during internal setup: {e.Message}", e);
+            }
         }
 
         /// <summary>
@@ -212,6 +235,9 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </remarks>
         public void SetTile(TKey key, int lodIndex, Vector3 worldPos, float radius)
         {
+            if (lodIndex < 0 || lodIndex >= m_LodLevels.Length)
+                return;
+
             m_PendingRemovals.Remove(key);
             m_PendingUpdates[key] = new TileUpdateRequest
             {
@@ -281,6 +307,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <param name="onBakeAction">The atlas-specific bake logic (e.g., Draw Heightmap).</param>
         public void BroadcastMappings(Action<TKey, TextureMappingData> onBakeAction)
         {
+            if (!IsInitialized) return;
             for (int i = 0; i < m_FrameResultsCache.Count; i++)
             {
                 var meta = m_FrameResultsCache[i];
@@ -304,7 +331,17 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <param name="onVisualChanged">Callback for visual buffer updates: (sourceArray, startElement, elementCount).</param>
         public void SyncMetadata(Action<Array, int, int> onSpatialChanged, Action<Array, int, int> onVisualChanged)
         {
+            if (!IsInitialized) return;
             m_Registry?.ExtractChanges(onSpatialChanged, onVisualChanged);
+        }
+
+        /// <summary>
+        /// Acknowledges the successful synchronization of metadata by clearing all dirty flags.
+        /// Call this after SyncMetadata has successfully uploaded the data to the GPU.
+        /// </summary>
+        public void ClearDirtyMetadata()
+        {
+            m_Registry?.ClearDirtyState();
         }
 
         #endregion

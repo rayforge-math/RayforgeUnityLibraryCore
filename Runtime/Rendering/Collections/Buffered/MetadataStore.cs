@@ -123,8 +123,6 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
 
                 uploadCallback?.Invoke(m_CpuData, start, count);
             }
-
-            ClearDirty();
         }
 
         /// <summary>

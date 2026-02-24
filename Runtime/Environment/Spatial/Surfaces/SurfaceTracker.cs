@@ -1,3 +1,5 @@
+using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Collections.Iterator.Helpers;
 using Rayforge.Core.Environment.Abstractions;
 using System;
 using System.Collections.Generic;
@@ -24,38 +26,68 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         #endregion
 
+        #region Public Members
+
+        /// <summary> Event triggered on registry changes. </summary>
+        public event Action<SurfaceTracker> OnRegistryChanged;
+
+        /// <summary>
+        /// Provides read-only access to the underlying spatial database.
+        /// This allows external systems to perform spatial queries (e.g., Raycasts, Bounds checks)
+        /// without needing to know about internal sub-registries.
+        /// </summary>
+        public ISpatialCollection<Vector3Int> Registry => _objectRegistry;
+
+        /// <summary>
+        /// The number of surfaces in the persistent wishlist.
+        /// </summary>
+        public int WishlistCount => _surfaces.Count;
+
+        /// <summary>
+        /// The total number of currently tracked surfaces (Manual + Dynamic).
+        /// </summary>
+        public int TotalTrackedCount => _trackedSurfaces.Count;
+
+        /// <summary>
+        /// Returns a read-only view of the currently tracked surfaces managed by this tracker.
+        /// </summary>
+        public IIterator<GameObject> TrackedSurfaces => _surfaces.GetEnumerator().ToIterator();
+
+        /// <summary> 
+        /// True if the tracker is connected to a valid and initialized registry. 
+        /// </summary>
+        public bool IsInitialized => _objectRegistry != null && _objectRegistry.IsInitialized;
+
+        #endregion
+
         #region Private Runtime State
 
         /// <summary> The shared spatial database where validated surfaces are stored. </summary>
         private SpatialSurfaceRegistry _objectRegistry;
 
-        /// <summary> Cache of InstanceIDs currently owned by this specific tracker. </summary>
-        private readonly HashSet<int> _surfaceIds = new HashSet<int>();
-
-        /// <summary>
-        /// Provides public access to the internal settings.
+        /// <summary> 
+        /// Key: InstanceID, Value: IsManual (true if the surface is part of the persistent _surfaces list). 
         /// </summary>
-        public SurfaceTrackerSettings Settings
-        {
-            get => _settings;
-            set => _settings = value;
-        }
-
-        /// <summary>
-        /// Returns a read-only view of the currently tracked surfaces managed by this tracker.
-        /// </summary>
-        public IReadOnlyList<GameObject> TrackedSurfaces => _surfaces;
-
-        /// <summary>
-        /// True if the tracker's list or registry entries have changed since the last clear.
-        /// </summary>
-        public bool IsDirty { get; private set; }
+        private readonly Dictionary<int, bool> _trackedSurfaces = new Dictionary<int, bool>();
 
         /// <summary> 
-        /// True if the tracker is connected to a valid and initialized registry. 
-        /// Ensures we don't scan or register if the backend is missing.
+        /// Internal flag to track changes within a transaction. 
+        /// Only set to true when the underlying registry/spatial data actually changes.
         /// </summary>
-        public bool IsInitialized => _objectRegistry != null && _objectRegistry.IsInitialized;
+        private bool _isDirty;
+
+        /// <summary>
+        /// Broadcasts changes to listeners and resets the dirty state.
+        /// This ensures that even complex batch operations only trigger a single update.
+        /// </summary>
+        private void TryNotifyOnRegistryChanged()
+        {
+            if (_isDirty)
+            {
+                _isDirty = false;
+                OnRegistryChanged?.Invoke(this);
+            }
+        }
 
         #endregion
 
@@ -67,23 +99,17 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <param name="externalRegistry">The shared spatial database to populate.</param>
         public void Initialize(SpatialSurfaceRegistry externalRegistry)
         {
-            ClearState();
+            ClearStateInternal();
 
             _objectRegistry = externalRegistry;
-            _surfaceIds.Clear();
 
-            if (_objectRegistry == null || !_objectRegistry.IsInitialized) return;
-
-            for (int i = _surfaces.Count - 1; i >= 0; i--)
+            if (IsInitialized)
             {
-                GameObject obj = _surfaces[i];
-
-                if (obj == null || !IsValidCandidate(obj.transform) || !TryRegisterInternal(obj))
-                {
-                    _surfaces.RemoveAt(i);
-                    IsDirty = true;
-                }
+                SyncListToTrackingInternal();
+                _isDirty = true;
             }
+
+            TryNotifyOnRegistryChanged();
         }
 
         /// <summary>
@@ -92,105 +118,242 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <param name="root">The root transform to start the hierarchy scan from.</param>
         public void RebuildRegistry(Transform root)
         {
-            if (_objectRegistry == null) return;
+            if (!IsInitialized) return;
 
-            SyncFromList();
+            SyncListToTracking();
 
             if (_settings.scanHierarchy && root != null)
             {
-                ScanHierarchyRecursive(root);
+                ScanHierarchyInternal(root, persist: false);
             }
+            TryNotifyOnRegistryChanged();
+        }
+
+        /// <summary>
+        /// Scans a transform hierarchy for valid surface candidates.
+        /// Found objects are registered as dynamic entries and are not added to the persistent wishlist.
+        /// Triggers a single notification if any new surfaces were discovered.
+        /// </summary>
+        /// <param name="root">The root transform to start the recursive scan from.</param>
+        public void ScanHierarchy(Transform root)
+        {
+            if (root == null || !IsInitialized) return;
+            ScanHierarchyInternal(root, persist: false);
+            TryNotifyOnRegistryChanged();
+        }
+
+        /// <summary>
+        /// Attempts to register a GameObject as a dynamic surface.
+        /// Validation is performed based on the current tracker settings.
+        /// Fires the OnChanged event if the object was successfully registered.
+        /// </summary>
+        /// <param name="obj">The GameObject candidate to track.</param>
+        /// <returns>True if the object passed validation and was added to the registry.</returns>
+        public bool TryAddSurface(GameObject obj)
+        {
+            bool added = TryAddSurfaceInternal(obj, isManual: false);
+            TryNotifyOnRegistryChanged();
+            return added;
+        }
+
+        /// <summary>
+        /// Removes a surface from tracking using its InstanceID.
+        /// This unregisters the object from the spatial database and stops local tracking.
+        /// Triggers a notification if the ID was found and removed.
+        /// </summary>
+        /// <param name="id">The unique InstanceID of the GameObject to remove.</param>
+        /// <returns>True if the surface was tracked and successfully removed.</returns>
+        public bool RemoveSurface(int id)
+        {
+            bool removed = RemoveSurfaceInternal(id);
+            TryNotifyOnRegistryChanged();
+            return removed;
         }
 
         #endregion
 
-        #region Registry Synchronization
+        #region Editor & Persistence Tooling
 
         /// <summary>
-        /// Synchronizes the internal surface list with the external registry. 
-        /// Removes invalid or null entries.
+        /// Forces a hierarchy scan that populates the persistent wishlist (_surfaces).
+        /// WARNING: This modifies the serialized user list. Should only be called via Editor buttons.
         /// </summary>
-        private void SyncFromList()
+        public void ForceScanToWishlist(Transform root)
+        {
+            if (root == null || !IsInitialized) return;
+
+            ScanHierarchyInternal(root, persist: true);
+            TryNotifyOnRegistryChanged();
+        }
+
+        /// <summary>
+        /// Clears the current runtime tracking state and the spatial registry.
+        /// Does NOT touch the persistent wishlist (_surfaces).
+        /// Resets live data while keeping the user's manual configuration intact.
+        /// </summary>
+        public void ClearState()
+        {
+            ClearStateInternal();
+            TryNotifyOnRegistryChanged();
+        }
+
+        /// <summary>
+        /// Wipes ALL data, including the persistent wishlist (_surfaces) and the registry.
+        /// WARNING: This permanently clears the user's manual configuration.
+        /// </summary>
+        public void ClearAll()
+        {
+            ClearStateInternal();
+            _surfaces?.Clear();
+            TryNotifyOnRegistryChanged();
+        }
+
+        /// <summary>
+        /// Resets the tracker completely, clearing both local lists and registry entries,
+        /// and disconnecting the registry reference.
+        /// WARNING: This permanently clears all data and disables the tracker until Re-Initialize.
+        /// </summary>
+        public void Reset()
+        {
+            ClearStateInternal();
+            _surfaces?.Clear();
+            _objectRegistry = null;
+            TryNotifyOnRegistryChanged();
+        }
+
+        /// <summary>
+        /// Optional: Removes only the 'null' entries from the wishlist.
+        /// Useful for cleaning up the Inspector without losing valid references.
+        /// </summary>
+        public void CleanupWishlistNulls()
+        {
+            int removed = _surfaces.RemoveAll(s => s == null);
+            if (removed > 0) _isDirty = true;
+        }
+
+        #endregion
+
+        #region Synchronization API
+
+        /// <summary>
+        /// Synchronizes the serialized wishlist with the runtime tracking.
+        /// Call this in OnValidate or at Start to handle UI changes.
+        /// </summary>
+        public void SyncListToTracking()
+        {
+            if (!IsInitialized) return;
+
+            SyncListToTrackingInternal();
+            TryNotifyOnRegistryChanged();
+        }
+
+        /// <summary>
+        /// Internal logic for synchronization without triggering events.
+        /// </summary>
+        private void SyncListToTrackingInternal()
+        {
+            CleanupLogicalOrphansInternal();
+            SyncNewListEntriesInternal();
+        }
+
+        #endregion
+
+        #region Internal UI List Logic
+
+        /// <summary>
+        /// Removes manual entries from tracking that are no longer in the list.
+        /// </summary>
+        private void CleanupLogicalOrphansInternal()
         {
             if (_objectRegistry == null) return;
 
-            _surfaceIds.Clear();
+            List<int> toRemove = new List<int>();
 
-            for (int i = _surfaces.Count - 1; i >= 0; i--)
+            var it = _trackedSurfaces.GetEnumerator().ToIterator();
+            while (it.MoveNext())
             {
-                GameObject obj = _surfaces[i];
-                if (obj == null)
+                var entry = it.Current;
+                if (entry.Value && !IsIdInList(entry.Key))
                 {
-                    _surfaces.RemoveAt(i);
-                    IsDirty = true;
-                    continue;
+                    toRemove.Add(entry.Key);
                 }
+            }
 
-                if (!IsValidCandidate(obj.transform))
-                {
-                    RemoveSurface(obj.GetInstanceID());
-                    continue;
-                }
-
-                TryRegisterInternal(obj);
+            for (int i = 0; i < toRemove.Count; i++)
+            {
+                RemoveSurfaceInternal(toRemove[i]);
             }
         }
 
         /// <summary>
-        /// Recursively scans a transform hierarchy to find and register new surface candidates.
+        /// Synchronizes the internal wishlist with the registry, adding new entries.
         /// </summary>
-        /// <param name="parent">The starting transform for the recursion.</param>
-        private void ScanHierarchyRecursive(Transform parent)
+        private void SyncNewListEntriesInternal()
         {
-            foreach (Transform child in parent)
+            for (int i = _surfaces.Count - 1; i >= 0; i--)
             {
-                int id = child.gameObject.GetInstanceID();
+                GameObject obj = _surfaces[i];
+                if (obj == null) continue;
 
-                if (!_surfaceIds.Contains(id) && IsValidCandidate(child))
-                {
-                    TryAddSurface(child.gameObject);
-                }
+                int id = obj.GetInstanceID();
 
-                if (child.childCount > 0)
+                if (!_trackedSurfaces.TryGetValue(id, out bool isManual) || !isManual)
                 {
-                    ScanHierarchyRecursive(child);
+                    TryAddSurfaceInternal(obj, isManual: true);
                 }
             }
         }
 
         #endregion
 
-        #region Public API (Add / Remove)
+        #region Private Registry Access
 
         /// <summary>
-        /// Validates and attempts to add a GameObject to the shared registry.
+        /// Resets the internal tracking state and unregisters all surfaces from the shared database.
+        /// Does not modify the persistent serialized wishlist (_surfaces).
+        /// Clears the dictionary and registry entries while setting the dirty flag, 
+        /// but avoids triggering events.
         /// </summary>
-        /// <param name="obj">The GameObject candidate.</param>
-        /// <returns>True if the object passed validation and was registered.</returns>
-        public bool TryAddSurface(GameObject obj)
+        private void ClearStateInternal()
         {
-            if (obj == null || _objectRegistry == null) return false;
-            if (!IsValidCandidate(obj.transform)) return false;
+            List<int> ids = new List<int>(_trackedSurfaces.Keys);
+            for (int i = 0; i < ids.Count; i++)
+            {
+                RemoveSurfaceInternal(ids[i]);
+            }
 
-            return TryRegisterInternal(obj);
+            _trackedSurfaces.Clear();
+            _isDirty = true;
         }
 
         /// <summary>
-        /// Registers an object in the external database and updates local tracking state.
+        /// Validates and attempts to add a GameObject to the shared registry.
+        /// Updates the tracking dictionary status. Does not modify the serialized list.
         /// </summary>
-        /// <param name="obj">The validated GameObject to register.</param>
-        /// <returns>True if registration in the external registry was successful.</returns>
-        private bool TryRegisterInternal(GameObject obj)
+        /// <param name="obj">The GameObject candidate.</param>
+        /// <param name="isManual">True if the object should be tracked as a persistent/manual surface.</param>
+        /// <returns>True if the object passed validation and is now registered.</returns>
+        private bool TryAddSurfaceInternal(GameObject obj, bool isManual)
         {
+            if (obj == null || _objectRegistry == null) return false;
             int id = obj.GetInstanceID();
-            bool alreadyTracked = _surfaceIds.Contains(id);
+
+            if (_trackedSurfaces.TryGetValue(id, out bool currentlyManual))
+            {
+                if (isManual && !currentlyManual)
+                {
+                    _trackedSurfaces[id] = true;
+                    _isDirty = true;
+                }
+                return true;
+            }
+
+            if (!IsValidCandidate(obj.transform)) return false;
 
             if (_objectRegistry.TryRegister(obj))
             {
-                if (!alreadyTracked) _surfaceIds.Add(id);
-                if (!_surfaces.Contains(obj)) _surfaces.Add(obj);
-
-                IsDirty = true;
+                _trackedSurfaces[id] = isManual;
+                _isDirty = true;
                 return true;
             }
             return false;
@@ -201,69 +364,68 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         /// <param name="id">The InstanceID of the GameObject to remove.</param>
         /// <returns>True if the object was found and successfully removed from the registry.</returns>
-        public bool RemoveSurface(int id)
+        private bool RemoveSurfaceInternal(int id)
         {
-            if (_objectRegistry == null) return false;
+            if (!_trackedSurfaces.Remove(id)) return false;
 
-            if (_objectRegistry.Unregister(id))
-            {
-                _surfaceIds.Remove(id);
-                _surfaces.RemoveAll(s => s == null || s.GetInstanceID() == id);
-
-                IsDirty = true;
-                return true;
-            }
-
-            return false;
-        }
-
-        #endregion
-
-        #region State Management
-
-        /// <summary>
-        /// Clears the tracker's ID cache and removes its surfaces from the registry, 
-        /// but keeps the internal serialized list.
-        /// </summary>
-        public void ClearState()
-        {
+            _isDirty = true;
             if (_objectRegistry != null)
             {
-                foreach (int id in _surfaceIds)
-                    _objectRegistry.Unregister(id);
+                _objectRegistry.Unregister(id);
             }
-            _surfaceIds?.Clear();
-            IsDirty = true;
+            return true;
         }
 
         /// <summary>
-        /// Wipes all local surface data and removes them from the external registry.
+        /// Recursively scans the hierarchy to identify and register surfaces.
+        /// Efficiently batches changes by setting _isDirty and only adding to 
+        /// the serialized list if 'persist' is true.
         /// </summary>
-        public void ClearAll()
+        /// <param name="parent">The starting transform for the recursion.</param>
+        /// <param name="persist">If true, found candidates are added to the serialized _surfaces list.</param>
+        private void ScanHierarchyInternal(Transform parent, bool persist)
         {
-            ClearState();
-            _surfaces?.Clear();
-            IsDirty = true;
-        }
+            foreach (Transform child in parent)
+            {
+                int id = child.gameObject.GetInstanceID();
+                bool isAlreadyTracked = _trackedSurfaces.TryGetValue(id, out bool isManual);
 
-        /// <summary>
-        /// Resets the dirty flag after an external system has processed the changes.
-        /// </summary>
-        public void ClearDirty() => IsDirty = false;
+                if ((!isAlreadyTracked || (persist && !isManual)) &&
+                    IsValidCandidate(child))
+                {
+                    if (TryAddSurfaceInternal(child.gameObject, persist))
+                    {
+                        if (persist && !IsIdInList(id))
+                        {
+                            _surfaces.Add(child.gameObject);
+                            _isDirty = true;
+                        }
+                    }
+                }
 
-        /// <summary>
-        /// Resets the tracker completely, clearing both local lists and registry entries.
-        /// </summary>
-        public void Reset()
-        {
-            ClearAll();
-            _objectRegistry = null;
-            IsDirty = true;
+                if (child.childCount > 0) ScanHierarchyInternal(child, persist);
+            }
         }
 
         #endregion
 
-        #region Validation Logic
+        #region Helper & Validation Logic
+
+        /// <summary>
+        /// Checks if a specific InstanceID is present in the serialized wishlist.
+        /// Simple linear search, safe for editor-time sync.
+        /// </summary>
+        private bool IsIdInList(int id)
+        {
+            for (int i = 0; i < _surfaces.Count; i++)
+            {
+                if (_surfaces[i] != null && _surfaces[i].GetInstanceID() == id)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         /// <summary>
         /// Evaluates a transform against the internal SurfaceTrackerSettings (Name filter, Area threshold).

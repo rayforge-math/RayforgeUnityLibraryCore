@@ -55,7 +55,10 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private Vector3 _lastUpdatePos;
 
-        private bool IsReady => lodReference != null && _textureCoordinator != null && _atlasArray != null;
+        private bool IsReady =>
+            _textureCoordinator != null && _textureCoordinator.IsInitialized &&
+            _surfaceRegistry != null && _surfaceRegistry.IsInitialized &&
+            surfaceTracker != null && surfaceTracker.IsInitialized;
 
         #endregion
 
@@ -65,7 +68,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         {
             lodTable.OnTableChanged += HandleLodTableChanged;
 
-            SetupDependencies();
+            RefreshEditor();
             EnsureSystemsReady(true);
 
             if (shiftRelay != null)
@@ -74,7 +77,16 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void OnValidate()
         {
-            lodTable.Sanitize();
+            RefreshEditor();
+
+            if (!Application.isPlaying)
+            {
+                try
+                {
+                    EnsureSystemsReady(false);
+                }
+                catch { }
+            }
         }
 
         private void OnDestroy()
@@ -109,24 +121,17 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             //if(_bakeCoordinator.)
         }
 
-        private void RefreshEditor()
+        public void RefreshEditor()
         {
+            LogDebug($"Refreshing Editor...");
             SetupDependencies();
             lodTable.Sanitize();
         }
 
-        #endregion
-
-        #region Execution Logic
-
-        private void PerformGpuBake(Vector3Int key, TextureMappingData mapping)
+        public void RebuildSurfaceRegistry()
         {
-            //if (!_chunkRegistry.TryGetEntry(key, out var chunk)) return;
-
-            // English: Your specific Heightmap baking logic using the mapping data.
-            // mapping.SliceIndex and mapping.RelativeOffset/Scale tell the shader where to draw.
-
-            // LogDebug($"Baking Chunk {key} into Slice {mapping.SliceIndex}");
+            LogDebug($"Rebuilding Surface Registry...");
+            surfaceTracker.RebuildRegistry(transform);
         }
 
         #endregion
@@ -135,37 +140,70 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void EnsureSystemsReady(bool force = false)
         {
-            InitCoordinator(force);
-
-            if (_textureCoordinator.IsInitialized)
+            try
             {
-                InitSurfaceRegistry(_textureCoordinator.LodGridProvider, force);
+                LogDebug($"Ensuring systems are ready (force: {force})...");
+
+                InitCoordinator(force);
+
+                if (_textureCoordinator.IsInitialized)
+                {
+                    InitSurfaceRegistry(_textureCoordinator.LodGridProvider, force);
+                }
+                else
+                {
+                    LogDebug("SurfaceRegistry init skipped: Coordinator not initialized.");
+                }
+
+                if (_surfaceRegistry.IsInitialized)
+                {
+                    InitSurfaceTracker(_surfaceRegistry, force);
+                }
+                else
+                {
+                    LogDebug("SurfaceTracker init skipped: Registry not initialized.");
+                }
+
+                if (_textureCoordinator.IsInitialized)
+                {
+                    CreateAtlasTexture(_textureCoordinator, force);
+                }
+
+                LogDebug("EnsureSystemsReady completed.");
             }
-
-            if (_surfaceRegistry.IsInitialized)
+            catch (Exception e)
             {
-                InitSurfaceTracker(_surfaceRegistry, force);
-            }
-
-            if (_textureCoordinator.IsInitialized)
-            {
-                CreateAtlasTexture(_textureCoordinator, force);
+                UnityEngine.Debug.LogError($"<b>[SurfaceSystem]</b> Critical initialization failure: {e.Message}");
+                throw;
             }
         }
 
         public void SetupDependencies()
         {
             if (shiftRelay == null)
+            {
                 shiftRelay = GetComponentInParent<OriginShiftRelay>(true);
+                if (shiftRelay != null) LogDebug("OriginShiftRelay found and assigned.");
+            }
 
             if (lodReference == null && Camera.main != null)
+            {
                 lodReference = Camera.main.transform;
+                LogDebug("LOD Reference automatically assigned to Main Camera.");
+            }
         }
 
         private void InitCoordinator(bool force = false)
         {
+            if (lodTable == null)
+                throw new NullReferenceException($"{nameof(lodTable)} is missing on {gameObject.name}!");
+
+            if (lodReference == null)
+                throw new InvalidOperationException("Cannot initialize Coordinator without a LOD Reference (Viewer)!");
+
             if (!_textureCoordinator.IsInitialized || force)
             {
+                LogDebug("Initializing TextureCoordinator...");
                 _textureCoordinator.Reset();
 
                 SpatialSettings spatialSettings = new SpatialSettings
@@ -173,46 +211,71 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                     GridSize = (GridSize)chunkSize,
                     Anchor = transform.position
                 };
+
                 _textureCoordinator.Initialize(spatialSettings, lodTable.ValidEntries, batchSize, lodReference, transform);
             }
         }
 
         private void InitSurfaceRegistry(ILODGridProvider<Vector3Int> gridProvider, bool force = false)
         {
-            if (gridProvider == null || !gridProvider.IsInitialized) return;
+            if (gridProvider == null)
+                throw new ArgumentNullException(nameof(gridProvider), "Cannot init SurfaceRegistry with a null GridProvider!");
+
+            if (!gridProvider.IsInitialized)
+            {
+                LogDebug("SurfaceRegistry waiting for GridProvider to be initialized...");
+                return;
+            }
 
             if (!_surfaceRegistry.IsInitialized || force)
             {
+                LogDebug("Initializing SurfaceRegistry...");
                 _surfaceRegistry.Reset();
-
                 _surfaceRegistry.Initialize(gridProvider);
             }
         }
 
         private void InitSurfaceTracker(SpatialSurfaceRegistry registry, bool force = false)
         {
-            if (registry == null || !registry.IsInitialized) return;
+            if (registry == null)
+                throw new ArgumentNullException(nameof(registry), "Cannot init SurfaceTracker with a null Registry!");
+
+            if (!registry.IsInitialized)
+            {
+                LogDebug("SurfaceTracker waiting for Registry to be initialized...");
+                return;
+            }
 
             if (surfaceTracker == null || !surfaceTracker.IsInitialized || force)
             {
+                LogDebug("Initializing SurfaceTracker...");
+
                 if (surfaceTracker == null)
                     surfaceTracker = new SurfaceTracker();
                 else
                     surfaceTracker.ClearState();
 
                 surfaceTracker.Initialize(registry);
-                surfaceTracker.RebuildRegistry(transform);
+                RebuildSurfaceRegistry();
+
+                LogDebug($"SurfaceTracker rebuild complete. Tracking {surfaceTracker.TotalTrackedCount} surfaces.");
             }
         }
 
         private void CreateAtlasTexture(TextureChunkCoordinator coordinator, bool force)
         {
-            if (coordinator == null || ! coordinator.IsInitialized) return;
+            if (coordinator == null || !coordinator.IsInitialized)
+            {
+                LogDebug("Atlas creation deferred: Coordinator not ready.");
+                return;
+            }
 
             if (_atlasArray == null || force)
             {
                 var sliceCount = coordinator.RequiredSliceCount;
                 var resolution = (int)coordinator.BaseResolution;
+
+                LogDebug($"Checking Atlas Texture (Slices: {sliceCount}, Res: {resolution})...");
 
                 var newDesc = DefaultDescriptors.HeightmapPrecision(resolution, resolution).ToAtlasArray(sliceCount);
 
@@ -222,6 +285,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 {
                     if (!_atlasArray.Descriptor.InternalDescriptor.IsCompatible(newDesc))
                     {
+                        LogDebug("Atlas descriptor mismatch. Recreating...");
                         shouldRecreate = true;
                     }
                 }
@@ -230,12 +294,15 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 {
                     if (_atlasArray != null)
                     {
+                        LogDebug("Releasing old Atlas Texture.");
                         _atlasArray.Release();
                     }
 
                     var newWrapper = new RenderTextureDescriptorWrapper { InternalDescriptor = newDesc };
                     _atlasArray = new ManagedRenderTexture(newWrapper);
                     _atlasArray.Create();
+
+                    LogDebug("New Atlas Texture Array created successfully.");
                 }
             }
         }
@@ -411,7 +478,11 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #region Debug Helper
         [Conditional("UNITY_EDITOR")]
-        private void LogDebug(string msg, [CallerLineNumber] int line = 0) { DebugOutput.Log(msg, showDebugLogs, lineNumber: line); }
+        private void LogDebug(string msg, [CallerLineNumber] int line = 0)
+        {
+            string formattedMsg = $"<b>[SurfaceSystem]</b> {msg}";
+            DebugOutput.Log(formattedMsg, showDebugLogs, lineNumber: line);
+        }
         #endregion
     }
 
@@ -431,7 +502,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             GUILayout.Space(10);
             if (GUILayout.Button("Refresh Surfaces", GUILayout.Height(30)))
             {
-                //script.RebuildRegistry();
+                script.RebuildSurfaceRegistry();
             }
 
             GUILayout.Space(10);

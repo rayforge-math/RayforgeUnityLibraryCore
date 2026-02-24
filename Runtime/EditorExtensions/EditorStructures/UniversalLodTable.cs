@@ -70,6 +70,14 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
         /// <param name="minStep">Minimum distance increase between consecutive levels.</param>
         public void Sanitize(float minFirstDistance = 50f, float minStep = 10f)
         {
+            if (_entries == null || _entries.Length == 0)
+            {
+                _entries = new TEntry[1];
+                TEntry defaultEntry = default;
+                defaultEntry.DistanceThreshold = minFirstDistance;
+                _entries[0] = defaultEntry;
+            }
+
             TEntry prev = default;
 
             for (int i = 0; i < _entries.Length; i++)

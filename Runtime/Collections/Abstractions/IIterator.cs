@@ -27,5 +27,11 @@ namespace Rayforge.Core.Collections.Abstractions
         /// </summary>
         /// <returns>The current iterator instance.</returns>
         IIterator<TType> GetEnumerator();
+
+        /// <summary>
+        /// Provides a zero-allocation empty iterator for the specified type.
+        /// This allows syntax like: IIterator<int>.Empty
+        /// </summary>
+        public static IIterator<TType> Empty => EmptyState<TType>.Self;
     }
 }

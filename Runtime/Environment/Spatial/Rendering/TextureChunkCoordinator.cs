@@ -7,7 +7,6 @@ using Rayforge.Core.Rendering.Textures;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using static UnityEngine.Rendering.STP;
 
 namespace Rayforge.Core.Environment.Spatial.Surfaces
 {
@@ -17,6 +16,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// </summary>
     public class TextureChunkCoordinator
     {
+        private const string Tag = "[TextureCoordinator]";
+
         private readonly LodAtlasMapper<Vector3Int> _mapper = new();
         private readonly LODChunkRegistry<TextureLodChunk> _chunkRegistry = new();
 
@@ -98,29 +99,39 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             Transform container,
             bool deactivateOnCulled = true)
         {
-            Reset();
-
-            Span<float> distances = stackalloc float[lodConfigs.Length];
-            Span<PowerOfTwoResolution> resolutions = stackalloc PowerOfTwoResolution[lodConfigs.Length];
-
-            for (int i = 0; i < lodConfigs.Length; i++)
+            try
             {
-                distances[i] = lodConfigs[i].distanceThreshold;
-                resolutions[i] = lodConfigs[i].mapResolution;
+                Reset();
+
+                if (lodConfigs.Length == 0)
+                    throw new ArgumentException("LOD configurations cannot be empty.");
+
+                Span<float> distances = stackalloc float[lodConfigs.Length];
+                Span<PowerOfTwoResolution> resolutions = stackalloc PowerOfTwoResolution[lodConfigs.Length];
+
+                for (int i = 0; i < lodConfigs.Length; i++)
+                {
+                    distances[i] = lodConfigs[i].distanceThreshold;
+                    resolutions[i] = lodConfigs[i].mapResolution;
+                }
+
+                var lodSettings = new LodSettings
+                {
+                    LodDistances = distances,
+                    DeactivateOnCulled = deactivateOnCulled
+                };
+
+                _chunkRegistry.Initialize(spatialSettings, lodSettings, viewer, container);
+                _mapper.Initialize(_chunkRegistry, resolutions, batchSize);
+
+                foreach (var chunk in _chunkRegistry.AllEntries)
+                {
+                    SetupChunk(chunk);
+                }
             }
-
-            var lodSettings = new LodSettings
+            catch (Exception e)
             {
-                LodDistances = distances,
-                DeactivateOnCulled = deactivateOnCulled
-            };
-
-            _chunkRegistry.Initialize(spatialSettings, lodSettings, viewer, container);
-            _mapper.Initialize(_chunkRegistry, resolutions, batchSize);
-
-            foreach (var chunk in _chunkRegistry.AllEntries)
-            {
-                SetupChunk(chunk);
+                throw new Exception($"{Tag} Initialization failed. Check your LOD settings and spatial configuration: {e.Message}", e);
             }
         }
 
@@ -191,31 +202,38 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             if (!IsInitialized) return;
 
-            ChunkSyncUtility.Synchronize(
-                masterSource,
-                _chunkRegistry,
-                onCreate: chunk => {
-                    SetupChunk(chunk);
-                    if (chunk.IsVisible) _toAssign.Add(chunk.GridKey);
-                },
-                onDataChanged: chunk => {
-                    if (chunk.IsVisible) _toAssign.Add(chunk.GridKey);
-                }
-            );
-
-            foreach (var key in _toRelease) _mapper.RemoveTile(key);
-            _toRelease.Clear();
-
-            foreach (var key in _toAssign)
+            try
             {
-                if (_chunkRegistry.TryGetEntry(key, out var chunk) && chunk.IsVisible)
-                {
-                    _mapper.SetTile(key, chunk.CurrentLOD, chunk.WorldPosition, chunk.localExtent.x);
-                }
-            }
-            _toAssign.Clear();
+                ChunkSyncUtility.Synchronize(
+                    masterSource,
+                    _chunkRegistry,
+                    onCreate: chunk => {
+                        SetupChunk(chunk);
+                        if (chunk.IsVisible) _toAssign.Add(chunk.GridKey);
+                    },
+                    onDataChanged: chunk => {
+                        if (chunk.IsVisible) _toAssign.Add(chunk.GridKey);
+                    }
+                );
 
-            _mapper.UpdateMappings();
+                foreach (var key in _toRelease) _mapper.RemoveTile(key);
+                _toRelease.Clear();
+
+                foreach (var key in _toAssign)
+                {
+                    if (_chunkRegistry.TryGetEntry(key, out var chunk) && chunk.IsVisible)
+                    {
+                        _mapper.SetTile(key, chunk.CurrentLOD, chunk.WorldPosition, chunk.localExtent.x);
+                    }
+                }
+                _toAssign.Clear();
+
+                _mapper.UpdateMappings();
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} Topology update failed: {e.Message}", e);
+            }
         }
 
         #endregion
@@ -226,17 +244,28 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         public void ExecuteBake(Action<Vector3Int, TextureMappingData> onBakeTile)
         {
-            _mapper.BroadcastMappings((key, mapping) =>
+            if (!IsInitialized) return;
+
+            try
             {
-                if (_chunkRegistry.TryGetEntry(key, out var chunk))
+                _mapper.BroadcastMappings((key, mapping) =>
                 {
-                    chunk.SetTextureMapping(mapping);
-                }
+                    if (_chunkRegistry.TryGetEntry(key, out var chunk))
+                    {
+                        chunk.SetTextureMapping(mapping);
+                    }
 
-                onBakeTile?.Invoke(key, mapping);
-            });
-
-            _mapper.ClearMappingUpdates();
+                    onBakeTile?.Invoke(key, mapping);
+                });
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} Bake execution failed: {e.Message}", e);
+            }
+            finally
+            {
+                _mapper.ClearMappingUpdates();
+            }
         }
 
         /// <summary>

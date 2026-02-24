@@ -1,5 +1,6 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Iterator;
+using Rayforge.Core.Collections.Iterator.Helpers;
 using Rayforge.Core.Environment.Abstractions;
 using System;
 using System.Collections.Generic;
@@ -19,6 +20,8 @@ namespace Rayforge.Core.Environment.Spatial
     {
         #region Fields
 
+        private string Tag => $"[ObjectRegistry<{typeof(TType).Name}>]";
+
         /// <summary> Primary storage: InstanceID -> State. </summary>
         private readonly Dictionary<int, SpatialState<TType>> _registry = new();
 
@@ -37,7 +40,7 @@ namespace Rayforge.Core.Environment.Spatial
         public int RegisteredCount => _registry.Count;
 
         /// <summary> Gets all registered instance IDs. </summary>
-        public ICollection<int> AllIds => _registry.Keys;
+        public IIterator<int> AllIds => _registry.Keys.GetEnumerator().ToIterator();
 
         /// <summary>
         /// Checks if the registry is fully operational.
@@ -56,14 +59,18 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="externalDirtyTracker">Optional shared HashSet to track modified cells across multiple registries.</param>
         public void Initialize(ISpatialGridProvider<TKey> gridProvider, HashSet<TKey> externalDirtyTracker = null)
         {
-            Reset();
-
-            _gridProvider = gridProvider;
-            _dirtyBuckets = externalDirtyTracker ?? new HashSet<TKey>();
-
-            if (_gridProvider != null)
+            try
             {
+                Reset();
+
+                _gridProvider = gridProvider ?? throw new ArgumentNullException(nameof(gridProvider));
+                _dirtyBuckets = externalDirtyTracker ?? new HashSet<TKey>();
+
                 FullRemap();
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
             }
         }
 
@@ -74,12 +81,19 @@ namespace Rayforge.Core.Environment.Spatial
         {
             if (!IsInitialized) return;
 
-            _buckets.Clear();
-            _dirtyBuckets.Clear();
-
-            foreach (var entry in _registry)
+            try
             {
-                UpdateBuckets(entry.Key, entry.Value.anchorBounds, true);
+                _buckets.Clear();
+                _dirtyBuckets.Clear();
+
+                foreach (var entry in _registry)
+                {
+                    UpdateBuckets(entry.Key, entry.Value.anchorBounds, true);
+                }
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} FullRemap failed: {e.Message}", e);
             }
         }
 
@@ -120,12 +134,12 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="newState">The new spatial state including bounds and component reference.</param>
         public bool TryRegister(int id, SpatialState<TType> newState)
         {
-            if (!IsInitialized) return false;
+            if (!IsInitialized)
+                throw new InvalidOperationException($"{Tag} Not initialized!");
 
             if (_registry.TryGetValue(id, out var oldState))
             {
                 if (oldState.Equals(newState)) return false;
-
                 UpdateBuckets(id, oldState.anchorBounds, false);
             }
 
@@ -183,9 +197,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary> Returns an iterator over all cells that have been modified since the last clear. </summary>
         public IIterator<TKey> GetDirtyCells()
         {
-            var enumerator = _dirtyBuckets.GetEnumerator();
-            var state = new EnumeratorState<TKey, HashSet<TKey>.Enumerator>(enumerator);
-            return new Iterator<TKey, EnumeratorState<TKey, HashSet<TKey>.Enumerator>>(state);
+            return _dirtyBuckets.GetEnumerator().ToIterator();
         }
 
         #endregion
@@ -197,9 +209,9 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         private void UpdateBuckets(int id, Bounds bounds, bool add)
         {
-            if (!IsInitialized) return;
+            var keys = _gridProvider.GetKeysInRelativeBounds(bounds);
 
-            foreach (TKey key in _gridProvider.GetKeysInRelativeBounds(bounds))
+            foreach (TKey key in keys)
             {
                 _dirtyBuckets.Add(key);
 
@@ -207,13 +219,11 @@ namespace Rayforge.Core.Environment.Spatial
                 {
                     if (!_buckets.TryGetValue(key, out var bucket))
                         _buckets[key] = bucket = new HashSet<int>();
-
                     bucket.Add(id);
                 }
                 else if (_buckets.TryGetValue(key, out var bucket))
                 {
                     bucket.Remove(id);
-
                     if (bucket.Count == 0) _buckets.Remove(key);
                 }
             }

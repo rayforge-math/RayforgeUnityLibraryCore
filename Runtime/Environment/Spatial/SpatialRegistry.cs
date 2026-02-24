@@ -14,6 +14,8 @@ namespace Rayforge.Core.Environment.Spatial
     public abstract class SpatialRegistry<TKey, TValue> : IDisposable
         where TValue : ISpatialEntry, IDisposable
     {
+        protected virtual string Tag => $"[{GetType().Name}]";
+
         #region Data Structures
 
         /// <summary> Internal storage for spatial objects. Encapsulated to ensure dirty-flag integrity. </summary>
@@ -48,13 +50,19 @@ namespace Rayforge.Core.Environment.Spatial
             get => _registryName;
             protected set
             {
-                int id = (_container != null) ? _container.gameObject.GetInstanceID() : 0;
-
-                _registryName = $"{value}_{id}";
-
-                if (_container != null)
+                try
                 {
-                    _container.name = _registryName;
+                    int id = (_container != null) ? _container.gameObject.GetInstanceID() : 0;
+                    _registryName = $"{value}_{id}";
+
+                    if (_container != null)
+                    {
+                        _container.name = _registryName;
+                    }
+                }
+                catch (Exception e)
+                {
+                    throw new Exception($"{Tag} Failed to set RegistryName: {e.Message}", e);
                 }
             }
         }
@@ -77,26 +85,33 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="defaultName">The name for the auto-generated container.</param>
         public virtual void Initialize(Transform parent = null, string defaultName = "SpatialRegistry_Container")
         {
-            if (IsInitialized) Clear();
-
-            GameObject go = new GameObject(defaultName);
-            _container = go.transform;
-
-            RegistryName = defaultName;
-
-            if (parent != null)
+            try
             {
-                _container.SetParent(parent, false);
-                _container.localPosition = Vector3.zero;
-                _container.localRotation = Quaternion.identity;
-                _containerLinkedToAnchor = true;
-            }
-            else
-            {
-                _containerLinkedToAnchor = false;
-            }
+                if (IsInitialized) Clear();
 
-            _isInitialized = true;
+                GameObject go = new GameObject(defaultName);
+                _container = go.transform;
+
+                RegistryName = defaultName;
+
+                if (parent != null)
+                {
+                    _container.SetParent(parent, false);
+                    _container.localPosition = Vector3.zero;
+                    _container.localRotation = Quaternion.identity;
+                    _containerLinkedToAnchor = true;
+                }
+                else
+                {
+                    _containerLinkedToAnchor = false;
+                }
+
+                _isInitialized = true;
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
+            }
         }
 
         #endregion
@@ -113,30 +128,40 @@ namespace Rayforge.Core.Environment.Spatial
         /// <returns>The existing or newly created entry.</returns>
         protected bool GetOrCreate(TKey key, string name, Vector3 position, Func<GameObject, TKey, TValue> factory, out TValue result)
         {
-            if (!IsInitialized)
+            try
             {
-                throw new InvalidOperationException($"Registry {GetType().Name} is not initialized. Call Initialize() first.");
-            }
-
-            if (_storage.TryGetValue(key, out result))
-            {
-                if (result != null && result.gameObject != null)
+                if (!IsInitialized)
                 {
-                    return false;
+                    throw new InvalidOperationException("Registry is not initialized. Call Initialize() first.");
                 }
-                _storage.Remove(key);
+
+                if (_storage.TryGetValue(key, out result))
+                {
+                    if (result != null && result.gameObject != null)
+                    {
+                        return false;
+                    }
+                    _storage.Remove(key);
+                }
+
+                GameObject go = new GameObject(name);
+                if (_container != null) go.transform.SetParent(_container);
+                go.transform.position = position;
+
+                result = factory.Invoke(go, key);
+
+                if (result == null)
+                    throw new NullReferenceException($"Factory for {name} returned null.");
+
+                _storage[key] = result;
+                _globalDirty = true;
+
+                return true;
             }
-
-            GameObject go = new GameObject(name);
-            if (_container != null) go.transform.SetParent(_container);
-            go.transform.position = position;
-
-            result = factory.Invoke(go, key);
-
-            _storage[key] = result;
-            _globalDirty = true;
-
-            return true;
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} GetOrCreate failed for key {key}: {e.Message}", e);
+            }
         }
 
         /// <summary>
@@ -154,14 +179,20 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public virtual void RemoveAndDestroy(TKey key)
         {
-            if (_storage.Remove(key, out TValue value))
+            try
             {
-                if (value != null && value.gameObject != null)
+                if (_storage.Remove(key, out TValue value))
                 {
-                    DestroyEntry(value);
+                    if (value != null && value.gameObject != null)
+                    {
+                        DestroyEntry(value);
+                    }
+                    _globalDirty = true;
                 }
-
-                _globalDirty = true;
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} RemoveAndDestroy failed for key {key}: {e.Message}", e);
             }
         }
 

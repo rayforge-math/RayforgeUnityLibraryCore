@@ -1,6 +1,7 @@
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Collections.Iterator;
+using Rayforge.Core.Collections.Iterator.Helpers;
 using Rayforge.Core.Environment.Abstractions;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -13,6 +14,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// </summary>
     public class SpatialSurfaceRegistry : ISpatialCollection<Vector3Int>
     {
+        private const string Tag = "[SurfaceRegistry]";
+
         #region Fields
 
         /// <summary> Specialized registry for MeshRenderers. </summary>
@@ -46,12 +49,14 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <param name="gridProvider">The provider for coordinate mapping.</param>
         public void Initialize(ISpatialGridProvider<Vector3Int> gridProvider)
         {
-            Reset();
-
-            _gridProvider = gridProvider;
-
-            if (_gridProvider != null)
+            try
             {
+                Reset();
+
+                if (gridProvider == null)
+                    throw new ArgumentNullException(nameof(gridProvider), "Cannot initialize SurfaceRegistry with a null grid provider.");
+
+                _gridProvider = gridProvider;
                 _gridProvider.OnGridStructureChanged += HandleGridStructureChanged;
 
                 _meshRegistry = new SpatialObjectRegistry<Vector3Int, MeshRenderer>();
@@ -59,6 +64,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
                 _meshRegistry.Initialize(gridProvider, _sharedDirtyBuckets);
                 _terrainRegistry.Initialize(gridProvider, _sharedDirtyBuckets);
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
             }
         }
 
@@ -121,7 +130,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <returns>True if any registration resulted in a spatial change.</returns>
         public bool TryRegister(GameObject obj)
         {
-            if (obj == null || !IsInitialized) return false;
+            if (obj == null) return false;
+
+            if (!IsInitialized)
+                throw new InvalidOperationException($"{Tag} Registry not initialized!");
 
             int id = obj.GetInstanceID();
             bool changed = false;
@@ -131,16 +143,14 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 if (obj.TryGetComponent<MeshFilter>(out var filter) && filter.sharedMesh != null)
                 {
                     var newState = SpatialState<MeshRenderer>.Create(_gridProvider.Anchor, renderer);
-                    if (_meshRegistry.TryRegister(id, newState))
-                        changed = true;
+                    if (_meshRegistry.TryRegister(id, newState)) changed = true;
                 }
             }
 
             if (obj.TryGetComponent<Terrain>(out var terrain) && terrain.terrainData != null)
             {
                 var newState = SpatialState<Terrain>.Create(_gridProvider.Anchor, terrain);
-                if (_terrainRegistry.TryRegister(id, newState))
-                    changed = true;
+                if (_terrainRegistry.TryRegister(id, newState)) changed = true;
             }
 
             return changed;
@@ -214,23 +224,22 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <returns>An iterator of modified spatial keys.</returns>
         public IIterator<Vector3Int> GetDirtyCells()
         {
-            var enumerator = _sharedDirtyBuckets.GetEnumerator();
-            var state = new EnumeratorState<Vector3Int, HashSet<Vector3Int>.Enumerator>(enumerator);
-            return new Iterator<Vector3Int, EnumeratorState<Vector3Int, HashSet<Vector3Int>.Enumerator>>(state);
+            return _sharedDirtyBuckets.GetEnumerator().ToIterator();
         }
 
         /// <summary>
         /// Collects all registered IDs from all sub-registries.
         /// </summary>
         /// <returns>A collection of all unique InstanceIDs currently managed.</returns>
-        public ICollection<int> GetAllIds()
+        public IIterator<int> GetAllIds()
         {
-            if (!IsInitialized) return new List<int>();
+            if (!IsInitialized)
+                return IIterator<int>.Empty;
 
-            var ids = new List<int>(_meshRegistry.RegisteredCount + _terrainRegistry.RegisteredCount);
-            ids.AddRange(_meshRegistry.AllIds);
-            ids.AddRange(_terrainRegistry.AllIds);
-            return ids;
+            return IteratorExtensions.Combine(
+                _meshRegistry.AllIds,
+                _terrainRegistry.AllIds
+            );
         }
 
         #endregion

@@ -17,6 +17,8 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     {
         #region Fields & Config
 
+        private const string Tag = "[LODRegistry]";
+
         private float[] _lodSqrDistances;
         private float[] _lodDistances;
         private bool _deactivateOnCulled;
@@ -59,12 +61,22 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         public void Initialize(SpatialSettings spatialSettings, LodSettings lodSettings, Transform viewer = null, Transform container = null)
         {
-            base.Initialize(spatialSettings, container, "LODChunkRegistry");
+            try
+            {
+                base.Initialize(spatialSettings, container, "LODChunkRegistry");
 
-            _deactivateOnCulled = lodSettings.DeactivateOnCulled;
-            Viewer = viewer;
+                if (lodSettings.LodDistances == null || lodSettings.LodDistances.Length == 0)
+                    throw new ArgumentException("LOD distances are missing in configuration.");
 
-            ApplyLodConfiguration(lodSettings.LodDistances, false);
+                _deactivateOnCulled = lodSettings.DeactivateOnCulled;
+                Viewer = viewer;
+
+                ApplyLodConfiguration(lodSettings.LodDistances, false);
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
+            }
         }
 
         /// <summary>
@@ -91,36 +103,47 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         private bool ApplyLodConfiguration(ReadOnlySpan<float> newDistances, bool notify)
         {
-            if (newDistances == null || newDistances.Length == 0) return false;
-
-            if (_lodDistances != null && _lodDistances.Length == newDistances.Length)
+            try
             {
-                bool changed = false;
-                for (int i = 0; i < newDistances.Length; i++)
+                if (newDistances.Length == 0)
+                    throw new ArgumentException("Cannot apply an empty LOD configuration.");
+
+                if (_lodDistances != null && _lodDistances.Length == newDistances.Length)
                 {
-                    if (!Mathf.Approximately(_lodDistances[i], newDistances[i]))
+                    bool changed = false;
+                    for (int i = 0; i < newDistances.Length; i++)
                     {
-                        changed = true;
-                        break;
+                        if (!Mathf.Approximately(_lodDistances[i], newDistances[i]))
+                        {
+                            changed = true;
+                            break;
+                        }
                     }
+                    if (!changed) return false;
                 }
-                if (!changed) return false;
+
+                int count = newDistances.Length;
+                _lodDistances = new float[count];
+                _lodSqrDistances = new float[count];
+
+                for (int i = 0; i < count; i++)
+                {
+                    float d = newDistances[i];
+                    if (i > 0 && d <= _lodDistances[i - 1])
+                        throw new InvalidOperationException($"LOD Distance at index {i} ({d}) must be greater than index {i - 1} ({_lodDistances[i - 1]}).");
+
+                    _lodDistances[i] = d;
+                    _lodSqrDistances[i] = d * d;
+                }
+
+                if (notify) OnLODSettingsChanged?.Invoke(this);
+
+                return true;
             }
-
-            int count = newDistances.Length;
-            _lodDistances = new float[count];
-            _lodSqrDistances = new float[count];
-
-            for (int i = 0; i < count; i++)
+            catch (Exception e)
             {
-                float d = newDistances[i];
-                _lodDistances[i] = d;
-                _lodSqrDistances[i] = d * d;
+                throw new Exception($"{Tag} Failed to apply LOD configuration: {e.Message}", e);
             }
-
-            if (notify) OnLODSettingsChanged?.Invoke(this);
-
-            return true;
         }
 
         #endregion
@@ -166,7 +189,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public IIterator<Vector3Int> GetKeysInLODLevel(int lodIndex, Vector3 center)
         {
             if (lodIndex < 0 || lodIndex >= LodCount)
-                return Iterator<Vector3Int, GridLodLevelState>.Empty();
+                return Iterator<Vector3Int, GridLodLevelState>.Empty;
 
             float outerRadius = LodDistances[lodIndex];
 
@@ -208,7 +231,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public IIterator<Vector3Int> GetKeysInFullRange(Vector3 center)
         {
             if (LodCount == 0)
-                return Iterator<Vector3Int, GridRadiusState>.Empty();
+                return Iterator<Vector3Int, GridRadiusState>.Empty;
 
             float maxRadius = LodDistances[LodCount - 1];
             return GetKeysInRadius(center, maxRadius, useEdgeDistance: true);

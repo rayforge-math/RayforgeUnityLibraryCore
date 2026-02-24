@@ -17,6 +17,8 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     {
         #region Fields
 
+        private const string Tag = "[ChunkRegistry]";
+
         /// <summary> The physical size of one side of a chunk cell. </summary>
         public GridSize GridSize
         {
@@ -24,12 +26,10 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             private set
             {
                 if (_gridSize == value) return;
+                if ((int)value <= 0) throw new ArgumentException($"{Tag} GridSize must be positive.");
 
                 _gridSize = value;
                 ClearChunks();
-                if (IsInitialized) RegistryName = _baseName;
-
-                OnGridStructureChanged?.Invoke(this);  
             }
         }
         private GridSize _gridSize;
@@ -60,6 +60,9 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             protected set
             {
                 if (_anchor == value) return;
+
+                if (float.IsNaN(value.x) || float.IsNaN(value.y) || float.IsNaN(value.z))
+                    throw new ArgumentException($"{Tag} Anchor cannot contain NaN values.");
 
                 Vector3 delta = value - _anchor;
                 _anchor = value;
@@ -148,15 +151,30 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <param name="name">Base name for the container GameObject.</param>
         public virtual void Initialize(SpatialSettings settings, Transform parent = null, string name = "ChunkRegistry")
         {
-            base.Initialize(parent, name);
+            try
+            {
+                base.Initialize(parent, name);
 
-            _axes = Chunk<T>.ActiveAxes;
-            _baseName = name;
+                _axes = Chunk<T>.ActiveAxes;
+                if (_axes == 0)
+                {
+                    throw new InvalidOperationException($"No active axes defined for chunk type {typeof(T).Name}. Check the static constructor of your chunk class.");
+                }
 
-            _gridSize = settings.GridSize;
-            _anchor = settings.Anchor;
+                _baseName = name;
 
-            RegistryName = _baseName;
+                if ((int)settings.GridSize <= 0)
+                    throw new ArgumentException($"Invalid GridSize: {settings.GridSize}. Size must be a positive power of two.");
+
+                _gridSize = settings.GridSize;
+                _anchor = settings.Anchor;
+
+                RegistryName = _baseName;
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
+            }
         }
 
         #endregion
@@ -215,6 +233,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 InitializeChunk,
                 out chunk
             );
+
             onConfigure?.Invoke(chunk);
             return isNew;
         }
@@ -459,6 +478,8 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         private Vector3Int MaskKey(Vector3Int key)
         {
+            if (_axes == 0) return key;
+
             return new Vector3Int(
                 IsXActive ? key.x : 0,
                 IsYActive ? key.y : 0,

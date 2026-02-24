@@ -8,11 +8,11 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
     /// Maps unique keys to stable indices and tracks modified segments (batches) for optimized GPU buffer uploads.
     /// </summary>
     /// <typeparam name="TKey">The type of the unique identifier (must be a struct and equatable).</typeparam>
-    public struct KeyedSlotMapper<TKey> where TKey : struct, IEquatable<TKey>
+    public class KeyedSlotMapper<TKey> where TKey : struct, IEquatable<TKey>
     {
-        private readonly Dictionary<TKey, int> m_KeyToSlot;
-        private readonly Stack<int> m_ReuseStack;
-        private readonly int m_Capacity;
+        private readonly Dictionary<TKey, int> m_KeyToSlot = new();
+        private readonly Stack<int> m_ReuseStack = new();
+        private int m_Capacity;
 
         private int m_NextAvailableIndex;
 
@@ -35,18 +35,17 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// <summary>
         /// Gets a value indicating whether the mapper has been properly initialized.
         /// </summary>
-        public bool IsInitialized => m_KeyToSlot != null;
+        public bool IsInitialized => m_KeyToSlot != null && m_ReuseStack != null;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="KeyedSlotMapper{TKey}"/> struct.
+        /// Reconfigures the mapper with a new capacity.
+        /// Completely clears all mappings and rebuilds the internal structures.
         /// </summary>
-        /// <param name="capacity">The maximum number of slots to manage.</param>
-        public KeyedSlotMapper(int capacity)
+        /// <param name="newCapacity">The new maximum number of slots.</param>
+        public void Initialize(int newCapacity)
         {
-            m_Capacity = capacity;
-            m_KeyToSlot = new Dictionary<TKey, int>(capacity);
-            m_ReuseStack = new Stack<int>();
-            m_NextAvailableIndex = 0;
+            m_Capacity = newCapacity;
+            Reset();
         }
 
         /// <summary>

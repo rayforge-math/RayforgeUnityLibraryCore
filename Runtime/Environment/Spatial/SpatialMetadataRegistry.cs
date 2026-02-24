@@ -17,8 +17,10 @@ namespace Rayforge.Core.Environment.Spatial
         where TSpatial : unmanaged
         where TVisual : unmanaged
     {
-        private readonly MetadataStore<TSpatial> m_SpatialStore;
-        private readonly MetadataStore<TVisual> m_VisualStore;
+        private const string SubTag = "[SpatialRegistry]";
+
+        private MetadataStore<TSpatial> m_SpatialStore;
+        private MetadataStore<TVisual> m_VisualStore;
 
         /// <summary>
         /// Grants read-only access to the spatial store via the non-generic interface.
@@ -38,8 +40,33 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="batchSize">Size of a single dirty-tracking batch for optimized GPU uploads.</param>
         protected SpatialMetadataRegistry(int capacity, int batchSize) : base(capacity, batchSize)
         {
-            m_SpatialStore = AddStore<TSpatial>();
-            m_VisualStore = AddStore<TVisual>();
+            SetupStores();
+        }
+
+        /// <summary>
+        /// Reconfigures the entire registry hierarchy and re-binds the spatial and visual stores.
+        /// This ensures that local references point to the new, resized data stores.
+        /// </summary>
+        public new void Reconfigure(int newCapacity, int newBatchSize)
+        {
+            base.Reconfigure(newCapacity, newBatchSize);
+            SetupStores();
+        }
+
+        /// <summary>
+        /// Internal helper to bind or re-bind the mandatory stores.
+        /// </summary>
+        private void SetupStores()
+        {
+            try
+            {
+                m_SpatialStore = AddStore<TSpatial>();
+                m_VisualStore = AddStore<TVisual>();
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"{SubTag} Binding of mandatory stores failed: {e.Message}", e);
+            }
         }
 
         /// <summary>
