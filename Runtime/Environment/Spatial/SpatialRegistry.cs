@@ -204,7 +204,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// Clears all entries, destroys their associated GameObjects.
         /// </summary>
-        public void ClearChunks()
+        public void Clear()
         {
             foreach (var value in _storage.Values)
             {
@@ -221,14 +221,14 @@ namespace Rayforge.Core.Environment.Spatial
         /// English: Disposes the registry and all its managed chunks.
         /// Triggers the abstract OnDispose logic in each chunk implementation.
         /// </summary>
-        public virtual void Dispose() => Clear();
+        public virtual void Dispose() => Reset();
 
         /// <summary>
         /// Clears all entries, destroys their associated GameObjects, and removes the auto-generated container.
         /// </summary>
-        public void Clear()
+        public void Reset()
         {
-            ClearChunks();
+            Clear();
 
             if (_container != null)
             {
@@ -238,10 +238,12 @@ namespace Rayforge.Core.Environment.Spatial
             }
 
             _containerLinkedToAnchor = false;
-            _globalDirty = true;
             _isInitialized = false;
         }
 
+        /// <summary>
+        /// Triggers destruction of a spatial object.
+        /// </summary>
         private void DestroyEntry(TValue entry)
         {
             if (entry == null) return;

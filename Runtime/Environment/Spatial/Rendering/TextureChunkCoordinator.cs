@@ -28,13 +28,13 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         /// <summary>
         /// The total number of slices required in the Texture2DArray to fit all LOD levels.
-        /// English: Use this value as the 'depth' when allocating your Texture2DArray.
+        /// Use this value as the 'depth' when allocating your Texture2DArray.
         /// </summary>
         public int RequiredSliceCount => _mapper?.RequiredSliceCount ?? 0;
 
         /// <summary>
         /// The reference resolution of a single slot at LOD 0.
-        /// English: This defines the width and height of the Texture2DArray.
+        /// This defines the width and height of the Texture2DArray.
         /// </summary>
         public PowerOfTwoResolution BaseResolution => _mapper?.BaseResolution ?? default;
 
@@ -43,6 +43,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// Use this as the 'count' parameter for ComputeBuffer allocation.
         /// </summary>
         public int BufferCapacity => _mapper?.Registry.Capacity ?? 0;
+
+        /// <summary>
+        /// Gets the number of entries processed per dirty-tracking batch.
+        /// Used to align GPU buffer updates and optimize the transfer of modified data.
+        /// </summary>
+        public int BatchSize => _mapper?.Registry.BatchSize ?? 0;
 
         /// <summary>
         /// Gets the stride (byte size) for the spatial data buffer.
@@ -103,31 +109,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             {
                 Reset();
 
-                if (lodConfigs.Length == 0)
-                    throw new ArgumentException("LOD configurations cannot be empty.");
-
-                Span<float> distances = stackalloc float[lodConfigs.Length];
-                Span<PowerOfTwoResolution> resolutions = stackalloc PowerOfTwoResolution[lodConfigs.Length];
-
-                for (int i = 0; i < lodConfigs.Length; i++)
-                {
-                    distances[i] = lodConfigs[i].distanceThreshold;
-                    resolutions[i] = lodConfigs[i].mapResolution;
-                }
-
-                var lodSettings = new LodSettings
-                {
-                    LodDistances = distances,
-                    DeactivateOnCulled = deactivateOnCulled
-                };
+                ExtractLodConfiguration(lodConfigs, deactivateOnCulled, out var lodSettings, out var resolutions);
 
                 _chunkRegistry.Initialize(spatialSettings, lodSettings, viewer, container);
                 _mapper.Initialize(_chunkRegistry, resolutions, batchSize);
-
-                foreach (var chunk in _chunkRegistry.AllEntries)
-                {
-                    SetupChunk(chunk);
-                }
             }
             catch (Exception e)
             {
@@ -136,20 +121,31 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         }
 
         /// <summary>
-        /// Clears all chunks and resets the atlas mapping, but keeps the coordinator alive.
+        /// Clears all runtime data (chunks and mapping) but keeps the coordinator initialized.
+        /// Use this for a soft restart without destroying the container or settings.
         /// </summary>
-        public void Reset()
+        public void Clear()
         {
-            _chunkRegistry?.ClearChunks();
-            _mapper?.ClearAll();
+            _chunkRegistry?.Clear();
+
+            _mapper?.Clear();
 
             _toAssign.Clear();
             _toRelease.Clear();
         }
 
+        /// <summary>
+        /// Clears all chunks and resets the atlas mapping, but keeps the coordinator alive.
+        /// </summary>
+        public void Reset()
+        {
+            Clear();
+            _chunkRegistry?.Reset();
+        }
+
         #endregion
 
-        #region High-Frequency Updates (Exposed)
+        #region High-Frequency Updates
 
         /// <summary>
         /// Updates the viewer position for LOD calculations. 
@@ -184,7 +180,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// Updates all chunks' LOD state based on current viewer position.
         /// Call this before UpdateTopology.
         /// </summary>
-        public void RefreshLODs()
+        public void UpdateLODs()
         {
             if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
             _chunkRegistry.UpdateLODs();
@@ -192,7 +188,29 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         #endregion
 
-        #region Topology
+        #region Low-Frequency Updates
+
+        /// <summary>
+        /// Passes new LOD distance thresholds directly to the registry.
+        /// After updating thresholds, we refresh all chunks to apply the new logic.
+        /// </summary>
+        public void UpdateLodDistances(ReadOnlySpan<TextureLOD> lodConfigs)
+        {
+            if (!IsInitialized) return;
+
+            ExtractLodConfiguration(lodConfigs, _chunkRegistry.DeactivateOnCulled, out var lodSettings, out var resolutions);
+
+            if (_chunkRegistry.UpdateLodDistances(lodSettings.LodDistances))
+            {
+                UpdateLODs();
+            }
+
+            _mapper.Initialize(_chunkRegistry, resolutions, _mapper.Registry.BatchSize);
+        }
+
+        #endregion
+
+        #region Rendering Pipeline
 
         /// <summary>
         /// Phase 1: Update Mapping State.
@@ -236,8 +254,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             }
         }
 
-        #endregion
-
         /// <summary>
         /// Phase 2: Execution.
         /// Iterates over the result set. This allows multiple bake-passes (Height, Splat, etc.).
@@ -267,6 +283,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 _mapper.ClearMappingUpdates();
             }
         }
+
+        #endregion
+
+        #region Texture Chunk Setup
 
         /// <summary>
         /// Sets up a chunk by subscribing to its lifecycle and LOD state events.
@@ -311,5 +331,40 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             chunk.OnLODChanged -= HandleLodChanged;
             chunk.OnCleanup -= HandleChunkCleanup;
         }
+
+        #endregion
+
+        #region Helpers
+
+        /// <summary>
+        /// Centralized helper to extract distances and resolutions from the master config.
+        /// </summary>
+        private void ExtractLodConfiguration(
+            ReadOnlySpan<TextureLOD> lodConfigs,
+            bool deactivateOnCulled,
+            out LodSettings lodSettings,
+            out ReadOnlySpan<PowerOfTwoResolution> resolutions)
+        {
+            if (lodConfigs.Length == 0)
+                throw new ArgumentException("LOD configurations cannot be empty.");
+
+            float[] distances = new float[lodConfigs.Length];
+            PowerOfTwoResolution[] resArray = new PowerOfTwoResolution[lodConfigs.Length];
+
+            for (int i = 0; i < lodConfigs.Length; i++)
+            {
+                distances[i] = lodConfigs[i].distanceThreshold;
+                resArray[i] = lodConfigs[i].mapResolution;
+            }
+
+            lodSettings = new LodSettings
+            {
+                LodDistances = distances,
+                DeactivateOnCulled = deactivateOnCulled
+            };
+            resolutions = resArray;
+        }
+
+        #endregion
     }
 }

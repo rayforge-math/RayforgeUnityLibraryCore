@@ -166,7 +166,7 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// Resets the store by zeroing the CPU array and clearing all dirty tracking markers.
         /// Ensures no old data remains and the GPU synchronization starts fresh.
         /// </summary>
-        public void Reset()
+        public void Clear()
         {
             Array.Clear(m_CpuData, 0, m_CpuData.Length);
             ClearDirty();

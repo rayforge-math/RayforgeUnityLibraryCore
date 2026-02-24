@@ -139,88 +139,141 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// The provider dictates exactly how many slices are needed for each LOD ring.
         /// </summary>
         /// <param name="provider">The source of truth for spatial and LOD logic.</param>
-        /// <param name="lodConfigs">Resolution settings for each LOD level.</param>
+        /// <param name="lodResolutions">Resolution settings for each LOD level.</param>
         /// <param name="batchSize">GPU sync batch size.</param>
         public void Initialize(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
         {
             try
             {
-                if (provider == null)
-                    throw new ArgumentNullException(nameof(provider), $"Provider is null. Initialization aborted.");
-
-                if (lodResolutions.Length == 0)
-                    throw new ArgumentException($"lodResolutions array is empty.", nameof(lodResolutions));
-
-                if (provider.LodCount != lodResolutions.Length)
-                    throw new InvalidOperationException($"LOD Count mismatch: Provider expects {provider.LodCount}, but received {lodResolutions.Length} configurations.");
-
-                if (batchSize <= 0)
-                    throw new ArgumentOutOfRangeException(nameof(batchSize), $"Batch size must be at least 1.");
-
-                ClearAll();
-
-                BaseResolution = lodResolutions[0];
-
-                int lodCount = provider.LodCount;
-                m_LodLevels = new LodLevelManager[lodCount];
-
-                int currentSliceOffset = 0;
-                int totalAllocatedSlots = 0;
-
-                for (int i = 0; i < lodCount; i++)
-                {
-                    int tilesInRing = provider.GetMaxCapacityForLODLevel(i);
-                    int slotsPerDim = lodResolutions[i].ToSlotCountPerDim(lodResolutions[0]);
-                    int slotsPerSlice = slotsPerDim * slotsPerDim;
-
-                    if (slotsPerDim <= 0)
-                        throw new InvalidOperationException($"Resolution for LOD {i} is too large for BaseResolution {BaseResolution}.");
-
-                    int reqSlices = 0;
-                    if (tilesInRing > 0)
-                        reqSlices = Mathf.CeilToInt((float)tilesInRing / slotsPerSlice);
-
-                    int levelCapacity = reqSlices * slotsPerSlice;
-
-                    m_LodLevels[i] = new LodLevelManager
-                    {
-                        StartSlice = currentSliceOffset,
-                        SlotsPerDim = slotsPerDim,
-                        TotalCapacity = levelCapacity
-                    };
-
-                    totalAllocatedSlots += levelCapacity;
-                    currentSliceOffset += reqSlices;
-                }
-
-                m_Registry = new SphereMetadataRegistry<TKey, TextureMappingData>(totalAllocatedSlots, batchSize);
-                RequiredSliceCount = currentSliceOffset;
+                RebuildLayout(provider, lodResolutions, batchSize);
             }
             catch (Exception e)
             {
-                throw new Exception($"{Tag} Unexpected error during internal setup: {e.Message}", e);
+                throw new Exception($"{Tag} Setup failed: {e.Message}", e);
             }
         }
 
         /// <summary>
-        /// Clears all caches.
+        /// Central internal method to (re)calculate the atlas layout and structural slot management.
+        /// Wipes the current state and redefines how texture slots are distributed across slices
+        /// based on the provided LOD resolutions.
         /// </summary>
-        public void ClearAll()
+        /// <param name="provider">The source of truth for spatial logic and maximum tile capacities per ring.</param>
+        /// <param name="lodResolutions">A span of resolutions for each LOD level. Index 0 defines the BaseResolution.</param>
+        /// <param name="batchSize">The number of entries per dirty-tracking batch for GPU synchronization.</param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="provider"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="lodResolutions"/> is empty.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown if the number of resolutions doesn't match the provider's LOD count, 
+        /// or if a LOD resolution is larger than the base resolution.
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="batchSize"/> is less than 1.</exception>
+        private void RebuildLayout(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
         {
-            m_Registry?.Reset();
+            if (provider == null)
+                throw new ArgumentNullException(nameof(provider), $"Provider is null. Initialization aborted.");
+
+            if (lodResolutions.Length == 0)
+                throw new ArgumentException($"lodResolutions array is empty.", nameof(lodResolutions));
+
+            if (provider.LodCount != lodResolutions.Length)
+                throw new InvalidOperationException($"LOD Count mismatch: Provider expects {provider.LodCount}, but received {lodResolutions.Length} configurations.");
+
+            if (batchSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(batchSize), $"Batch size must be at least 1.");
+
+            Clear();
+
+            if (IsInitialized && !HasConfigurationChanged(provider, lodResolutions, batchSize))
+            {
+                return;
+            }
+
+            BaseResolution = lodResolutions[0];
+            int lodCount = lodResolutions.Length;
+
+            if (m_LodLevels == null || m_LodLevels.Length != lodCount)
+                m_LodLevels = new LodLevelManager[lodCount];
+
+            int currentSliceOffset = 0;
+            int totalCapacityNeeded = 0;
+
+            for (int i = 0; i < lodCount; i++)
+            {
+                int tilesInRing = provider.GetMaxCapacityForLODLevel(i);
+                int slotsPerDim = lodResolutions[i].ToSlotCountPerDim(BaseResolution);
+                int slotsPerSlice = slotsPerDim * slotsPerDim;
+
+                if (slotsPerDim <= 0)
+                    throw new InvalidOperationException($"Resolution for LOD {i} is too large for BaseResolution {BaseResolution}.");
+
+                int reqSlices = (tilesInRing > 0) ? Mathf.CeilToInt((float)tilesInRing / slotsPerSlice) : 0;
+                int levelCapacity = reqSlices * slotsPerSlice;
+
+                m_LodLevels[i] = new LodLevelManager
+                {
+                    StartSlice = currentSliceOffset,
+                    SlotsPerDim = slotsPerDim,
+                    TotalCapacity = levelCapacity
+                };
+
+                totalCapacityNeeded += levelCapacity;
+                currentSliceOffset += reqSlices;
+            }
+
+            RequiredSliceCount = currentSliceOffset;
+
+            if (m_Registry == null)
+            {
+                m_Registry = new SphereMetadataRegistry<TKey, TextureMappingData>(totalCapacityNeeded, batchSize);
+            }
+            else if (m_Registry.Capacity != totalCapacityNeeded || m_Registry.BatchSize != batchSize)
+            {
+                m_Registry.Reconfigure(totalCapacityNeeded, batchSize);
+            }
+        }
+
+        /// <summary>
+        /// Helper to detect if the incoming configuration differs from the active one.
+        /// </summary>
+        private bool HasConfigurationChanged(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
+        {
+            if (m_Registry == null || m_Registry.BatchSize != batchSize) return true;
+            if (m_LodLevels == null || m_LodLevels.Length != lodResolutions.Length) return true;
+            if (!BaseResolution.Equals(lodResolutions[0])) return true;
+
+            for (int i = 0; i < lodResolutions.Length; i++)
+            {
+                if (m_LodLevels[i].SlotsPerDim != lodResolutions[i].ToSlotCountPerDim(BaseResolution))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Clears all runtime mappings and releases all slots, but keeps the internal 
+        /// LOD structures and registry allocation intact.
+        /// Use this to wipe the current "world state" without re-allocating GPU buffers.
+        /// </summary>
+        public void Clear()
+        {
+            m_Registry?.Clear();
+
             m_ActiveMappings.Clear();
             m_PendingRemovals.Clear();
             m_PendingUpdates.Clear();
+            m_FrameResultsCache.Clear();
 
             if (m_LodLevels != null)
             {
-                foreach (var entry in m_LodLevels) entry.Reset();
+                foreach (var level in m_LodLevels) level.Reset();
             }
         }
 
         #endregion
 
-        #region Public API (Deferred)
+        #region Enqueue Change Requests (Deferred)
 
         /// <summary>
         /// Queues a tile to be updated or added. The actual processing is deferred until <see cref="ApplyChanges"/> is called.
@@ -262,6 +315,10 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             m_PendingRemovals.Add(key);
         }
 
+        #endregion
+
+        #region Execute Queue
+
         /// <summary>
         /// Executes all queued removals and then all queued updates in a single batch.
         /// </summary>
@@ -298,6 +355,10 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             }
             m_PendingUpdates.Clear();
         }
+
+        #endregion
+
+        #region Dispatch GPU Updates
 
         /// <summary>
         /// Broadcast.

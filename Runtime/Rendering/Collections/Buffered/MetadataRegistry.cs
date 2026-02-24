@@ -78,15 +78,14 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
 
         /// <summary>
         /// Resets the registry by clearing the key-to-slot mapping and resetting all registered data stores.
-        /// Full logical reset. Clears the mapper and zeroes out all CPU arrays and dirty bits.
         /// </summary>
-        public void Reset()
+        public void Clear()
         {
             m_Mapper.Reset();
 
             foreach (var store in m_Stores.Values)
             {
-                store.Reset();
+                store.Clear();
             }
         }
 

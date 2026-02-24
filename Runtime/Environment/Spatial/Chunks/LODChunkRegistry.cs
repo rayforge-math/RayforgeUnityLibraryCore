@@ -25,6 +25,12 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         public Transform Viewer { get; private set; }
 
+        /// <summary>
+        /// If true, chunks exceeding the maximum LOD distance threshold are automatically deactivated.
+        /// Use this to save performance by disabling GameObjects that are too far away to be visible.
+        /// </summary>
+        public bool DeactivateOnCulled => _deactivateOnCulled;
+
         /// <summary> 
         /// High-performance access to the squared thresholds. 
         /// Avoids array copying and heap allocations.

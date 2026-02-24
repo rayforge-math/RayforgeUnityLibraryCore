@@ -29,7 +29,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 if ((int)value <= 0) throw new ArgumentException($"{Tag} GridSize must be positive.");
 
                 _gridSize = value;
-                ClearChunks();
+                Clear();
             }
         }
         private GridSize _gridSize;

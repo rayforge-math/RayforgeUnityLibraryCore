@@ -66,37 +66,17 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void Awake()
         {
-            lodTable.OnTableChanged += HandleLodTableChanged;
-
             RefreshEditor();
-            EnsureSystemsReady(true);
-
+            lodTable.OnTableChanged += HandleLodTableChanged;
             UpdateShiftRelaySubscription(shiftRelay);
+
+            EnsureSystemsReady(true);
         }
 
         private void OnValidate()
         {
             RefreshEditor();
-
-            if (!Application.isPlaying)
-            {
-                try
-                {
-                    EnsureSystemsReady(false);
-                }
-                catch { }
-            }
-            else
-            {
-                UpdateShiftRelaySubscription(shiftRelay);
-            }
-        }
-
-        private void OnDestroy()
-        {
-            lodTable.OnTableChanged -= HandleLodTableChanged;
-
-            UpdateShiftRelaySubscription(null);
+            UpdateShiftRelaySubscription(shiftRelay);
         }
 
         private void Update()
@@ -119,6 +99,14 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 PerformGpuBake(key, mapping);
             });
             */
+        }
+
+        private void OnDestroy()
+        {
+            lodTable.OnTableChanged -= HandleLodTableChanged;
+            UpdateShiftRelaySubscription(null);
+
+            ShutdownSystems();
         }
 
         public void RefreshEditor()
@@ -164,11 +152,17 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             }
         }
 
-        public void RebuildSurfaceRegistry()
+        private bool CheckMovementThreshold()
         {
-            LogDebug("Rebuilding SurfaceRegistry...");
-            surfaceTracker.RebuildRegistry(transform);
-            LogDebug($"<color=green>Registry Rebuilt: {surfaceTracker.TotalTrackedCount} surfaces live.</color>");
+            float distSqr = (lodReference.position - _lastUpdatePos).sqrMagnitude;
+            float threshold = (float)chunkSize * updateSensitivity;
+
+            if (distSqr > threshold * threshold)
+            {
+                _lastUpdatePos = lodReference.position;
+                return true;
+            }
+            return false;
         }
 
         #endregion
@@ -226,7 +220,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             if (!_textureCoordinator.IsInitialized || force)
             {
                 LogDebug("Initializing TextureCoordinator...");
-                _textureCoordinator.Reset();
+                _textureCoordinator.Clear();
 
                 SpatialSettings spatialSettings = new SpatialSettings
                 {
@@ -343,60 +337,16 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #endregion
 
-        #region Configuration & Validation
-        /*
-        private void UpdateGridSize()
-        {
-            if (_chunkRegistry != null && _chunkRegistry.GridSize != (GridSize)chunkSize)
-            {
-                LogDebug("GridSize changed. Re-initializing entire pipeline.");
+        #region Update
 
-                _chunkRegistry?.ClearChunks();
-                EnsureSystemsReady(force: true);
-                surfaceTracker.RebuildRegistry(transform);
-            }
+        public void RebuildSurfaceRegistry()
+        {
+            LogDebug("Rebuilding SurfaceRegistry...");
+            surfaceTracker.RebuildRegistry(transform);
+            LogDebug($"<color=green>Registry Rebuilt: {surfaceTracker.TotalTrackedCount} surfaces live.</color>");
         }
 
-        private void UpdateLODSettings()
-        {
-            if (_chunkRegistry == null) return;
-
-            var distances = lodTable.ValidDistances;
-
-            bool updateLod = _chunkRegistry.SetViewer(lodReference);
-            updateLod |= _chunkRegistry.UpdateLodDistances(distances);
-
-            if (updateLod)
-            {
-                _chunkRegistry.UpdateLODs();
-                LogDebug("LOD Settings synchronized and LODs recalculated.");
-            }
-            else
-            {
-                LogDebug("LOD update skipped: Viewer and distances have not changed.");
-            }
-        }
-        */
-        #endregion
-        
-        #region Runtime Processing & Baking
-        
-        private bool CheckMovementThreshold()
-        {
-            float distSqr = (lodReference.position - _lastUpdatePos).sqrMagnitude;
-            float threshold = (float)chunkSize * updateSensitivity;
-
-            if (distSqr > threshold * threshold)
-            {
-                _lastUpdatePos = lodReference.position;
-                return true;
-            }
-            return false;
-        }
-
-        #endregion
-
-        #region System Events & Cleanup
+        public void ResetTrackingPosition() => _lastUpdatePos = lodReference ? lodReference.position : Vector3.zero;
 
         private void HandleOriginShift(Vector3 delta)
         {
@@ -404,70 +354,88 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             _lastUpdatePos += delta;
         }
 
-        private void HandleSurfacesChanged(SurfaceTracker sender)
+        private void HandleLodTableChanged(UniversalLodTable<TextureLOD> lodTable)
         {
-            if (sender == null || _textureCoordinator == null || !_textureCoordinator.IsInitialized)
+            LogDebug("LodTable reported LOD update. Syncing with components...");
+
+            if(lodTable == null || _textureCoordinator == null || !_textureCoordinator.IsInitialized)
             {
+                LogDebug("<color=orange>LOD sync aborted: LodTable is null or TextureCoordinator is null or uninitialized.</color>");
                 return;
             }
 
+
+        }
+
+        private void HandleSurfacesChanged(SurfaceTracker sender)
+        {
             LogDebug("SurfaceTracker reported changes. Syncing topology with TextureCoordinator...");
+
+            if (sender == null || _textureCoordinator == null || !_textureCoordinator.IsInitialized)
+            {
+                LogDebug("<color=orange>Topology sync aborted: SurfaceTracker is null or TextureCoordinator is null or uninitialized.</color>");
+                return;
+            }
 
             _textureCoordinator.UpdateTopology(sender.Registry);
 
-            LogDebug($"<color=green>Topology sync completed.</color> Coordinator is now managing {_textureCoordinator.LodGridProvider.ActiveCellCount} chunk(s).");
+            LogDebug($"<color=green>Topology sync completed.</color> Coordinator is now managing {_textureCoordinator.LodGridProvider.TotalCellCount} chunk(s).");
         }
 
-        private void HandleLodTableChanged(UniversalLodTable<TextureLOD> lodTable)
-        {
-            //if(_bakeCoordinator.)
-        }
+        #endregion
 
-        public void ResetTrackingPosition() => _lastUpdatePos = lodReference ? lodReference.position : Vector3.zero;
+        #region Cleanup Logic
 
         /// <summary>
-        /// English: Completely wipes all registered surfaces, destroys all chunks, 
-        /// and resets the registries to a clean state.
+        /// Completely shuts down all systems and releases resources.
+        /// Use this for a hard reset or during OnDestroy.
         /// </summary>
-        public void ClearAll()
+        private void ShutdownSystems()
         {
-            LogDebug("Performing full system cleanup...");
-            /*
-            _surfaceIds.Clear();
-            surfaces.Clear();
-            _cleanupBuffer.Clear();
+            LogDebug("<color=red>Shutting down all systems...</color>");
 
-            if (_objectRegistry != null)
-            {
-                _objectRegistry = new SpatialObjectRegistry { showDebugLogs = this.showDebugLogs };
-                _objectRegistry.Initialize(_chunkRegistry);
-            }
+            CleanupSurfaceTracker();
 
-            if (_chunkRegistry != null)
-            {
-                _chunkRegistry.Dispose();
-                CreateChunkRegistry(true);
-            }
+            if (_surfaceRegistry != null) _surfaceRegistry.Reset();
 
-            if (_atlasController != null)
-            {
-                _atlasController.ClearAll();
-                CreateLodAtlas(true);
-            }
+            CleanupAtlas();
 
-            ResetTrackingPosition();
-            */
-            LogDebug("System cleared. All chunks destroyed and registries reset.");
+            if (_textureCoordinator != null) _textureCoordinator.Reset();
+
+            LogDebug("<color=green>Shutdown completed.</color>");
         }
+
+        private void CleanupSurfaceTracker()
+        {
+            if (surfaceTracker != null)
+            {
+                LogDebug("Cleaning up SurfaceTracker...");
+                surfaceTracker.OnRegistryChanged -= HandleSurfacesChanged;
+                surfaceTracker.ClearState();
+            }
+        }
+
+        private void CleanupAtlas()
+        {
+            if (_atlasArray != null)
+            {
+                LogDebug("Releasing Atlas RenderTextures...");
+                _atlasArray.Release();
+                _atlasArray = null;
+            }
+        }
+
         #endregion
 
         #region Debug Helper
+
         [Conditional("UNITY_EDITOR")]
         private void LogDebug(string msg, [CallerLineNumber] int line = 0)
         {
             string formattedMsg = $"<b>[SurfaceSystem]</b> {msg}";
             DebugOutput.Log(formattedMsg, showDebugLogs, lineNumber: line);
         }
+
         #endregion
     }
 
@@ -493,7 +461,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             GUILayout.Space(10);
             if (GUILayout.Button("Clear Surfaces", GUILayout.Height(30)))
             {
-                script.ClearAll();
+                //script.();
             }
 
             GUILayout.Space(10);

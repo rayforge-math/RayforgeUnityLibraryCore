@@ -35,7 +35,7 @@ namespace Rayforge.Core.Rendering.Abstractions
         /// Resets the store to its initial state, clearing all data and dirty flags.
         /// Essential for full scene reloads or clearing the registry.
         /// </summary>
-        void Reset();
+        void Clear();
 
         /// <summary>
         /// Clears all dirty segment markers. 
