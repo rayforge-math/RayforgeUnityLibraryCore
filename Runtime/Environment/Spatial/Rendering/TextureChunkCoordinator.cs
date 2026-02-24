@@ -220,6 +220,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                     RequestChunkTile(chunk);
                 }
             }
+            _mapper.UpdateMappings();
         }
 
         /// <summary>
