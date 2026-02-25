@@ -3,7 +3,6 @@ using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.EditorExtensions.Abstractions;
 using System;
 using UnityEngine;
-using static Codice.CM.Common.CmCallContext;
 
 namespace Rayforge.Core.Rendering.EditorStructures
 {
@@ -12,7 +11,7 @@ namespace Rayforge.Core.Rendering.EditorStructures
     /// defining the distance and the corresponding resolution.
     /// </summary>
     [Serializable]
-    public struct TextureLOD : ILodEntry<TextureLOD>
+    public struct TextureLOD : ILodEntry<TextureLOD>, IEquatable<TextureLOD>
     {
         [Tooltip("Distance threshold for this level.")]
         public float distanceThreshold;
@@ -28,6 +27,44 @@ namespace Rayforge.Core.Rendering.EditorStructures
             get => distanceThreshold;
             set => distanceThreshold = value;
         }
+
+        #region Equality Implementation
+
+        /// <summary>
+        /// Checks if two TextureLOD entries are identical.
+        /// English: Using Mathf.Approximately for distances to handle float precision issues.
+        /// </summary>
+        public bool Equals(TextureLOD other)
+        {
+            return Mathf.Approximately(distanceThreshold, other.distanceThreshold) &&
+                   mapResolution == other.mapResolution;
+        }
+
+        /// <summary>
+        /// Fallback Equals to fulfill C# guidelines for structs.
+        /// </summary>
+        public override bool Equals(object obj) => obj is TextureLOD other && Equals(other);
+
+        /// <summary>
+        /// Gets a hash code based on the data values.
+        /// </summary>
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = hash * 23 + distanceThreshold.GetHashCode();
+                hash = hash * 23 + mapResolution.GetHashCode();
+                return hash;
+            }
+        }
+
+        public static bool operator ==(TextureLOD left, TextureLOD right) => left.Equals(right);
+        public static bool operator !=(TextureLOD left, TextureLOD right) => !left.Equals(right);
+
+        #endregion
+
+        #region Logical Validation
 
         /// <summary>
         /// Logic to check if this LOD entry is valid compared to a predecessor.
@@ -66,5 +103,7 @@ namespace Rayforge.Core.Rendering.EditorStructures
                 }
             }
         }
+
+        #endregion
     }
 }

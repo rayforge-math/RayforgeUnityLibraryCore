@@ -72,7 +72,7 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// </summary>
         public IIterator<int> GetDirtyBatchIndices()
         {
-            var logic = new BitIteratorState(m_DirtyBits, m_TotalBatches);
+            var logic = new BitIteratorState(m_DirtyBits, 0, m_TotalBatches);
             return new Iterator<int, BitIteratorState>(logic);
         }
 

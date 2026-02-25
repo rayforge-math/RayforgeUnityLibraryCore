@@ -342,7 +342,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #region Core LOD Logic
 
-        public void UpdateLODs() => UpdateLODs(ViewerPos);
+        public int UpdateLODs() => UpdateLODs(ViewerPos);
 
         public int UpdateLODs(Vector3 focusPos)
         {

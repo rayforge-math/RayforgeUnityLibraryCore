@@ -21,7 +21,7 @@ namespace Rayforge.Core.Rendering.Helpers
         }
 
         /// <summary>
-        /// Configures a descriptor for the LOD Atlas system.
+        /// Configures a descriptor for an Atlas system.
         /// Disables MSAA to prevent bleeding artifacts and optionally sets resolution.
         /// </summary>
         /// <param name="desc">The base descriptor to modify.</param>

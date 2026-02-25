@@ -1,5 +1,6 @@
 using Rayforge.Core.Collections.Iterator;
 using System;
+using System.Collections.Generic;
 
 namespace Rayforge.Core.Collections.Abstractions
 {
@@ -8,25 +9,14 @@ namespace Rayforge.Core.Collections.Abstractions
     /// Hides internal state implementation (like TState) from the caller.
     /// </summary>
     /// <typeparam name="TType">The type of the objects being iterated.</typeparam>
-    public interface IIterator<out TType> : IDisposable
+    public interface IIterator<out TType> : IEnumerator<TType>, IEnumerable<TType>, IDisposable
     {
-        /// <summary>
-        /// Gets the element at the current position of the iterator.
-        /// </summary>
-        TType Current { get; }
-
-        /// <summary>
-        /// Advances the iterator to the next element.
-        /// </summary>
-        /// <returns>True if the next element was successfully found; false otherwise.</returns>
-        bool MoveNext();
-
         /// <summary>
         /// Allows the 'foreach' pattern to work on the interface directly.
         /// Returns the interface itself as the enumerator.
         /// </summary>
         /// <returns>The current iterator instance.</returns>
-        IIterator<TType> GetEnumerator();
+        new IIterator<TType> GetEnumerator();
 
         /// <summary>
         /// Provides a zero-allocation empty iterator for the specified type.

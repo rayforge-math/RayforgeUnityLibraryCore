@@ -2,6 +2,7 @@ using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Rendering;
+using Rayforge.Core.Rendering.Abstractions;
 using Rayforge.Core.Rendering.EditorStructures;
 using Rayforge.Core.Rendering.Textures;
 using System;
@@ -172,10 +173,11 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// Updates all chunks' LOD state based on current viewer position.
         /// Call this before UpdateTopology.
         /// </summary>
-        public void UpdateLODs()
+        /// <returns>The number of chunks that actually changed their LOD level.</returns>
+        public int UpdateLODs()
         {
-            if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
-            _chunkRegistry.UpdateLODs();
+            if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return 0;
+            return _chunkRegistry.UpdateLODs();
         }
 
         #endregion
@@ -186,19 +188,26 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// Passes new LOD distance thresholds directly to the registry.
         /// After updating thresholds, we refresh all chunks to apply the new logic.
         /// </summary>
-        public void UpdateLodDistances(ReadOnlySpan<TextureLOD> lodConfigs)
+        /// <returns>True if the underlying atlas layout has been changed.</returns>
+        public bool UpdateLodConfiguration(ReadOnlySpan<TextureLOD> lodConfigs)
         {
-            if (!IsInitialized) return;
+            if (!IsInitialized) return false;
 
             ExtractLodConfiguration(lodConfigs, _chunkRegistry.DeactivateOnCulled, out var lodSettings, out var resolutions);
 
-            if (_chunkRegistry.UpdateLodDistances(lodSettings.LodDistances))
+            bool distancesChanged = _chunkRegistry.UpdateLodDistances(lodSettings.LodDistances);
+            if (distancesChanged)
             {
                 UpdateLODs();
             }
 
-            _mapper.Configure(_chunkRegistry, resolutions, _mapper.Registry.BatchSize);
-            ForceRequeueAll();
+            bool layoutChanged = _mapper.Configure(_chunkRegistry, resolutions, _mapper.Registry.BatchSize);
+            if (layoutChanged)
+            {
+                ForceRequeueAll(true);
+            }
+
+            return distancesChanged || layoutChanged;
         }
 
         #endregion
@@ -207,11 +216,13 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         /// <summary>
         /// Iterates through all registered chunks and forces them into the mapper's update queue.
-        /// Essential after origin shifts or LOD configuration changes to refresh the "World View".
+        /// Essential after LOD configuration changes to refresh the "World View".
         /// </summary>
-        public void ForceRequeueAll()
+        public void ForceRequeueAll(bool resetQueue)
         {
             if (!IsInitialized) return;
+
+            if (resetQueue) _mapper.ClearBroadcastQueue();
 
             foreach (var chunk in _chunkRegistry.AllEntries)
             {
@@ -225,7 +236,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         /// <summary>
         /// Phase 1: Update Mapping State.
-        /// Feeds registry changes into the mapper. Call this after the LOD update.
+        /// Feeds registry changes into the mapper. Call this when the external SpatialCollection has changed entries.
         /// </summary>
         public void UpdateTopology(ISpatialCollection<Vector3Int> masterSource)
         {
@@ -245,7 +256,9 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                     }
                 );
 
-                _mapper.FlushTileRequests();
+                if (_mapper.HasPendingRequests)
+                    _mapper.FlushTileRequests();
+                
             }
             catch (Exception e)
             {
@@ -259,7 +272,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         public void ExecuteBake(Action<Vector3Int, TextureMappingData> onBakeTile)
         {
-            if (!IsInitialized) return;
+            if (!IsInitialized || !_mapper.HasFrameUpdates) return;
 
             try
             {
@@ -268,9 +281,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                     if (_chunkRegistry.TryGetEntry(key, out var chunk))
                     {
                         chunk.SetTextureMapping(mapping);
+                        onBakeTile?.Invoke(key, mapping);
                     }
-
-                    onBakeTile?.Invoke(key, mapping);
                 });
             }
             catch (Exception e)
@@ -279,7 +291,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             }
             finally
             {
-                _mapper.ClearMappingUpdates();
+                _mapper.ClearBroadcastQueue();
             }
         }
 

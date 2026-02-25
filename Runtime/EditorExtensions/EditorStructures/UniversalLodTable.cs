@@ -1,3 +1,4 @@
+using Rayforge.Core.Caching.Containers;
 using Rayforge.Core.EditorExtensions.Abstractions;
 using System;
 using System.Collections.Generic;
@@ -12,16 +13,15 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
     /// </summary>
     /// <typeparam name="TEntry">A struct implementing <see cref="ILodEntry{TSelf}"/>.</typeparam>
     [Serializable]
-    public class UniversalLodTable<TEntry> : ISerializationCallbackReceiver
-        where TEntry : struct, ILodEntry<TEntry>
+    public class UniversalLodTable<TEntry> where TEntry : struct, ILodEntry<TEntry>, IEquatable<TEntry>
     {
         #region Fields & Events
 
         [SerializeField]
         private TEntry[] _entries = new TEntry[0];
 
-        private TEntry[] _validEntries = Array.Empty<TEntry>();
-        private float[] _validDistances = Array.Empty<float>();
+        private readonly SnapshotCache<TEntry> _entryCache = new SnapshotCache<TEntry>();
+        private readonly SnapshotCache<float> _distanceCache = new SnapshotCache<float>();
 
         /// <summary>
         /// Notifies listeners that the valid LOD chain has been updated.
@@ -37,25 +37,25 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
         /// Provides high-performance, read-only access to the sanitized LOD entries.
         /// Using ReadOnlySpan prevents external modification of the cached data.
         /// </summary>
-        public ReadOnlySpan<TEntry> ValidEntries => _validEntries;
+        public ReadOnlySpan<TEntry> ValidEntries => _entryCache.Current;
 
         /// <summary>
         /// Provides high-performance, read-only access to the distance thresholds.
         /// Does not allocate managed memory when accessed.
         /// </summary>
-        public ReadOnlySpan<float> ValidDistances => _validDistances;
+        public ReadOnlySpan<float> ValidDistances => _distanceCache.Current;
 
         /// <summary>
         /// Returns the number of validated entries in the cache.
         /// </summary>
-        public int Count => _validEntries.Length;
+        public int Count => _entryCache.Count;
 
         /// <summary>
         /// Indexer for quick access to validated entries.
         /// </summary>
         /// <param name="index">The index of the valid LOD level.</param>
         /// <returns>The validated LOD entry at the specified index.</returns>
-        public TEntry this[int index] => _validEntries[index];
+        public TEntry this[int index] => _entryCache.Current[index];
 
         #endregion
 
@@ -113,11 +113,11 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
         {
             if (_entries.Length == 0)
             {
-                bool wasNotEmpty = _validEntries.Length > 0;
-                _validEntries = Array.Empty<TEntry>();
-                _validDistances = Array.Empty<float>();
+                bool entriesChanged = _entryCache.Apply(ReadOnlySpan<TEntry>.Empty);
+                bool distancesChanged = _distanceCache.Apply(ReadOnlySpan<float>.Empty);
 
-                if (wasNotEmpty) OnTableChanged?.Invoke(this);
+                if (entriesChanged || distancesChanged)
+                    OnTableChanged?.Invoke(this);
                 return;
             }
 
@@ -131,7 +131,6 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
             for (int i = 1; i < _entries.Length; i++)
             {
                 TEntry cur = _entries[i];
-
                 if (cur.DistanceThreshold > lastAccepted.DistanceThreshold &&
                     cur.IsLogicalSuccessor(lastAccepted))
                 {
@@ -141,29 +140,13 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
                 }
             }
 
-            if (!AreDistancesEqual(distanceList))
-            {
-                _validEntries = validList.ToArray();
-                _validDistances = distanceList.ToArray();
+            bool changed = _entryCache.Apply(validList.ToArray());
+            _distanceCache.Apply(distanceList.ToArray());
 
+            if (changed)
+            {
                 OnTableChanged?.Invoke(this);
             }
-        }
-
-        /// <summary>
-        /// Compares a list of distances against the currently cached valid distances.
-        /// </summary>
-        /// <param name="newList">The new list of distances to check.</param>
-        /// <returns>True if the distances are identical within floating point precision.</returns>
-        private bool AreDistancesEqual(List<float> newList)
-        {
-            if (_validDistances.Length != newList.Count) return false;
-
-            for (int i = 0; i < _validDistances.Length; i++)
-            {
-                if (!Mathf.Approximately(_validDistances[i], newList[i])) return false;
-            }
-            return true;
         }
 
         #endregion
@@ -177,24 +160,7 @@ namespace Rayforge.Core.EditorExtensions.EditorStructures
         public void Clear()
         {
             if (_entries.Length == 0) return;
-
-            _entries = new TEntry[0];
-            RebuildCache();
-        }
-
-        #endregion
-
-        #region ISerializationCallbackReceiver
-
-        /// <summary> Internal Unity callback. Not used. </summary>
-        void ISerializationCallbackReceiver.OnBeforeSerialize() { }
-
-        /// <summary>
-        /// Internal Unity callback. Rebuilds the transient caches after deserialization 
-        /// to ensure the table is ready for use after loading a scene or asset.
-        /// </summary>
-        void ISerializationCallbackReceiver.OnAfterDeserialize()
-        {
+            _entries = Array.Empty<TEntry>();
             RebuildCache();
         }
 

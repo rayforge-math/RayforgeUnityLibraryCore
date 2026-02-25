@@ -1,4 +1,7 @@
 using Rayforge.Core.Collections.Abstractions;
+using System;
+using System.Collections;
+using System.Collections.Generic;
 
 namespace Rayforge.Core.Collections.Iterator
 {
@@ -48,6 +51,8 @@ namespace Rayforge.Core.Collections.Iterator
         /// </summary>
         public TType Current => _current;
 
+        object IEnumerator.Current => Current;
+
         /// <summary>
         /// Advances the iterator to the next element by invoking the internal logic struct.
         /// </summary>
@@ -77,5 +82,24 @@ namespace Rayforge.Core.Collections.Iterator
         /// Required by the IDisposable interface for the foreach pattern.
         /// </summary>
         public void Dispose() { }
+
+        /// <summary>
+        /// Explicit IEnumerable<T> implementation for LINQ and generic usage.
+        /// </summary>
+        IEnumerator<TType> IEnumerable<TType>.GetEnumerator() => this;
+
+        /// <summary>
+        /// Explicit non-generic IEnumerable implementation.
+        /// </summary>
+        IEnumerator IEnumerable.GetEnumerator() => this;
+
+        /// <summary>
+        /// Resets the iterator to its initial state.
+        /// Not supported because state-based iterators are intended to be single-pass and immutable in their initial configuration.
+        /// </summary>
+        void IEnumerator.Reset()
+        {
+            throw new NotSupportedException("Reset is not supported on state-based struct iterators. Create a new iterator instead.");
+        }
     }
 }

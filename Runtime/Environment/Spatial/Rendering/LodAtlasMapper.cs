@@ -99,13 +99,22 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #endregion
 
-        #region Configuration & State
+        #region Private State
 
         private const string Tag = "[AtlasMapper]";
 
         private SphereMetadataRegistry<TKey, TextureMappingData> m_Registry;
         private LodLevelManager[] m_LodLevels;
         private readonly Dictionary<TKey, (int lodIndex, int slotIndex)> m_ActiveMappings = new();
+
+        private readonly HashSet<TKey> m_PendingRemovals = new();
+        private readonly Dictionary<TKey, TileUpdateRequest> m_PendingUpdates = new();
+
+        private readonly List<TileUpdateMeta> m_FrameResultsCache = new();
+
+        #endregion
+
+        #region Configuration & Public Getters
 
         /// <summary>
         /// The total number of slices required in the Texture2DArray to fit all LOD levels.
@@ -125,10 +134,17 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </summary>
         public ISpatialMetadataRegistry Registry => m_Registry;
 
-        private readonly HashSet<TKey> m_PendingRemovals = new();
-        private readonly Dictionary<TKey, TileUpdateRequest> m_PendingUpdates = new();
+        /// <summary>
+        /// Indicates if there are pending requests (adds or removals) in the queue.
+        /// Use this to determine if FlushTileRequests() needs to be executed this frame.
+        /// </summary>
+        public bool HasPendingRequests => m_PendingUpdates.Count > 0 || m_PendingRemovals.Count > 0;
 
-        private readonly List<TileUpdateMeta> m_FrameResultsCache = new();
+        /// <summary>
+        /// Indicates if new atlas mappings were generated during the last flush.
+        /// If true, a bake pass is required to update the texture content.
+        /// </summary>
+        public bool HasFrameUpdates => m_FrameResultsCache.Count > 0;
 
         #endregion
 
@@ -150,19 +166,12 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         {
             try
             {
-                if (IsInitialized && !HasConfigurationChanged(provider, lodResolutions, batchSize))
-                {
-                    return false;
-                }
-
-                RebuildLayout(provider, lodResolutions, batchSize);
+                return CheckAndCalculateLayout(provider, lodResolutions, batchSize);
             }
             catch (Exception e)
             {
                 throw new Exception($"{Tag} Setup failed: {e.Message}", e);
             }
-
-            return true;
         }
 
         /// <summary>
@@ -180,7 +189,11 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// or if a LOD resolution is larger than the base resolution.
         /// </exception>
         /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="batchSize"/> is less than 1.</exception>
-        private void RebuildLayout(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
+        /// <returns>
+        /// True if the layout was rebuilt (all current mappings were cleared).
+        /// False if the configuration was compatible and the state remains intact.
+        /// </returns>
+        private bool CheckAndCalculateLayout(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
         {
             if (provider == null)
                 throw new ArgumentNullException(nameof(provider), $"Provider is null. Initialization aborted.");
@@ -194,30 +207,43 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             if (batchSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(batchSize), $"Batch size must be at least 1.");
 
-            Clear();
+            bool changed = 
+                !IsInitialized ||
+                m_LodLevels.Length != lodResolutions.Length ||
+                m_Registry.BatchSize != batchSize ||
+                !BaseResolution.Equals(lodResolutions[0]);
 
-            BaseResolution = lodResolutions[0];
             int lodCount = lodResolutions.Length;
 
-            if (m_LodLevels == null || m_LodLevels.Length != lodCount)
-                m_LodLevels = new LodLevelManager[lodCount];
-
+            var nextLevels = new LodLevelManager[lodCount];
             int currentSliceOffset = 0;
             int totalCapacityNeeded = 0;
+            PowerOfTwoResolution incomingBase = lodResolutions[0];
 
             for (int i = 0; i < lodCount; i++)
             {
                 int tilesInRing = provider.GetMaxCapacityForLODLevel(i);
-                int slotsPerDim = lodResolutions[i].ToSlotCountPerDim(BaseResolution);
+                int slotsPerDim = lodResolutions[i].ToSlotCountPerDim(incomingBase);
                 int slotsPerSlice = slotsPerDim * slotsPerDim;
 
                 if (slotsPerDim <= 0)
-                    throw new InvalidOperationException($"Resolution for LOD {i} is too large for BaseResolution {BaseResolution}.");
+                    throw new InvalidOperationException($"Resolution for LOD {i} is too large for BaseResolution {incomingBase}.");
 
                 int reqSlices = (tilesInRing > 0) ? Mathf.CeilToInt((float)tilesInRing / slotsPerSlice) : 0;
                 int levelCapacity = reqSlices * slotsPerSlice;
 
-                m_LodLevels[i] = new LodLevelManager
+                if (!changed)
+                {
+                    var current = m_LodLevels[i];
+                    if (current.StartSlice != currentSliceOffset ||
+                        current.SlotsPerDim != slotsPerDim ||
+                        current.TotalCapacity != levelCapacity)
+                    {
+                        changed = true;
+                    }
+                }
+
+                nextLevels[i] = new LodLevelManager
                 {
                     StartSlice = currentSliceOffset,
                     SlotsPerDim = slotsPerDim,
@@ -228,34 +254,20 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 currentSliceOffset += reqSlices;
             }
 
+            if (!changed) return false;
+
+            Clear();
+
+            m_LodLevels = nextLevels;
+            BaseResolution = incomingBase;
             RequiredSliceCount = currentSliceOffset;
 
             if (m_Registry == null)
-            {
                 m_Registry = new SphereMetadataRegistry<TKey, TextureMappingData>(totalCapacityNeeded, batchSize);
-            }
-            else if (m_Registry.Capacity != totalCapacityNeeded || m_Registry.BatchSize != batchSize)
-            {
+            else
                 m_Registry.Reconfigure(totalCapacityNeeded, batchSize);
-            }
-        }
 
-        /// <summary>
-        /// Helper to detect if the incoming configuration differs from the active one.
-        /// </summary>
-        private bool HasConfigurationChanged(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
-        {
-            if (m_Registry == null || m_Registry.BatchSize != batchSize) return true;
-            if (m_LodLevels == null || m_LodLevels.Length != lodResolutions.Length) return true;
-            if (!BaseResolution.Equals(lodResolutions[0])) return true;
-
-            for (int i = 0; i < lodResolutions.Length; i++)
-            {
-                if (m_LodLevels[i].SlotsPerDim != lodResolutions[i].ToSlotCountPerDim(BaseResolution))
-                    return true;
-            }
-
-            return false;
+            return true;
         }
 
         /// <summary>
@@ -336,8 +348,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </remarks>
         public void FlushTileRequests()
         {
-            m_FrameResultsCache.Clear();
-
             int removeCount = m_PendingRemovals.Count;
             int updateCount = m_PendingUpdates.Count;
 
@@ -388,7 +398,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// Final cleanup of the pending requests. 
         /// Call this only after ALL atlases have processed the changes.
         /// </summary>
-        public void ClearMappingUpdates()
+        public void ClearBroadcastQueue()
         {
             m_FrameResultsCache.Clear();
         }

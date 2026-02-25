@@ -10,7 +10,9 @@ using Rayforge.Core.Rendering.Helpers;
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Unity.VisualScripting.YamlDotNet.Core.Tokens;
 using UnityEngine;
+using static Codice.CM.Common.CmCallContext;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering
 {
@@ -179,7 +181,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
                 if (_textureCoordinator.IsInitialized)
                 {
-                    CreateAtlasTexture(_textureCoordinator, force);
+                    CheckAndAllocateAtlas(_textureCoordinator);
                 }
 
                 if (_textureCoordinator.IsInitialized)
@@ -230,52 +232,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
                 _textureCoordinator.Initialize(spatialSettings, lodTable.ValidEntries, batchSize, lodReference, transform);
                 LogDebug("<color=green>TextureCoordinator initialized.</color>");
-            }
-        }
-
-        private void CreateAtlasTexture(TextureChunkCoordinator coordinator, bool force)
-        {
-            if (coordinator == null || !coordinator.IsInitialized)
-            {
-                LogDebug("Atlas creation deferred: Coordinator not ready.");
-                return;
-            }
-
-            if (_atlasArray == null || force)
-            {
-                var sliceCount = coordinator.RequiredSliceCount;
-                var resolution = (int)coordinator.BaseResolution;
-
-                LogDebug($"Checking Atlas Texture requirements (Slices: {sliceCount}, Res: {resolution})...");
-
-                var newDesc = DefaultDescriptors.HeightmapPrecision(resolution, resolution).ToAtlasArray(sliceCount);
-
-                bool shouldRecreate = force || _atlasArray == null || !_atlasArray.IsCreated;
-
-                if (!shouldRecreate && _atlasArray != null)
-                {
-                    if (!_atlasArray.Descriptor.InternalDescriptor.IsCompatible(newDesc))
-                    {
-                        shouldRecreate = true;
-                    }
-                }
-
-                if (shouldRecreate)
-                {
-                    string reason = force ? "Forced" : (_atlasArray == null ? "Initial" : "Descriptor Mismatch");
-                    LogDebug($"<b>Atlas Rebuild:</b> {reason}. Slices: {sliceCount}, Res: {resolution}");
-
-                    if (_atlasArray != null)
-                    {
-                        _atlasArray.Release();
-                    }
-
-                    var newWrapper = new RenderTextureDescriptorWrapper { InternalDescriptor = newDesc };
-                    _atlasArray = new ManagedRenderTexture(newWrapper);
-                    _atlasArray.Create();
-
-                    LogDebug("<color=green>Atlas Texture Array created successfully.</color>");
-                }
             }
         }
 
@@ -339,6 +295,27 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #region Update
 
+        private void CheckAndAllocateAtlas(TextureChunkCoordinator coordinator)
+        {
+            if (coordinator == null || !coordinator.IsInitialized)
+            {
+                LogDebug("Atlas creation deferred: Coordinator not ready.");
+                return;
+            }
+
+            int requiredSlices = coordinator.RequiredSliceCount;
+            int resolution = (int)coordinator.BaseResolution;
+
+            if (EnsureAtlasCapacity(requiredSlices, resolution))
+            {
+                LogDebug($"Atlas texture <color=yellow>re-allocated</color>. Size: {resolution}px, Slices: {requiredSlices}.");
+            }
+            else
+            {
+                LogDebug($"Atlas texture <color=green>reused</color>. Current configuration is compatible.");
+            }
+        }
+
         public void RebuildSurfaceRegistry()
         {
             LogDebug("Rebuilding SurfaceRegistry...");
@@ -364,7 +341,14 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 return;
             }
 
-
+            if (_textureCoordinator.UpdateLodConfiguration(lodTable.ValidEntries))
+            {
+                CheckAndAllocateAtlas(_textureCoordinator);
+            }
+            else
+            {
+                LogDebug("<color=green>LodTable update resulted in no structural changes. System state preserved.</color>");
+            }
         }
 
         private void HandleSurfacesChanged(SurfaceTracker sender)
@@ -380,6 +364,43 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             _textureCoordinator.UpdateTopology(sender.Registry);
 
             LogDebug($"<color=green>Topology sync completed.</color> Coordinator is now managing {_textureCoordinator.LodGridProvider.TotalCellCount} chunk(s).");
+        }
+
+        /// <summary>
+        /// Ensures the Atlas Texture Array matches the required dimensions.
+        /// Returns true if the texture was (re)created, false if the existing one was compatible.
+        /// Pure resource management logic. Decoupled from the coordinator to allow independent calls.
+        /// </summary>
+        private bool EnsureAtlasCapacity(int sliceCount, int resolution)
+        {
+            if (sliceCount <= 0 || resolution <= 0) return false;
+
+            var newDesc = DefaultDescriptors.HeightmapPrecision(resolution, resolution).ToAtlasArray(sliceCount);
+            bool shouldRecreate = _atlasArray == null || !_atlasArray.IsCreated;
+
+            if (!shouldRecreate && _atlasArray != null)
+            {
+                if (!_atlasArray.Descriptor.InternalDescriptor.IsCompatible(newDesc))
+                {
+                    shouldRecreate = true;
+                }
+            }
+
+            if (shouldRecreate)
+            {
+                string reason = (_atlasArray == null) ? "Initial Allocation" : "Descriptor/Size Mismatch";
+                LogDebug($"Rebuilding GPU Resource: {reason} ({sliceCount} Slices @ {resolution}px)");
+
+                if (_atlasArray != null) _atlasArray.Release();
+
+                var newWrapper = new RenderTextureDescriptorWrapper { InternalDescriptor = newDesc };
+                _atlasArray = new ManagedRenderTexture(newWrapper);
+                _atlasArray.Create();
+
+                return true;
+            }
+
+            return false;
         }
 
         #endregion
