@@ -1,7 +1,6 @@
 using Rayforge.Core.Rendering.Abstractions;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace Rayforge.Core.Rendering.Collections.Buffered
 {
@@ -16,7 +15,7 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         private const string Tag = "[MetadataRegistry]";
 
         private readonly KeyedSlotMapper<TKey> m_Mapper = new();
-        private readonly Dictionary<Type, IMetadataStore> m_Stores = new();
+        private readonly Dictionary<Type, IMetadataStoreController> m_Stores = new();
 
         private int m_Capacity;
         private int m_BatchSize;
@@ -51,29 +50,84 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
 
         /// <summary>
         /// (Re)Initializes the registry with a fixed capacity and batch size.
-        /// English: Clears all existing stores and creates a fresh mapper. 
-        /// Any previous store references held externally will become invalid.
+        /// If parameters are identical, it only clears data to ensure a fresh state.
+        /// If parameters differ, it performs a structural re-allocation.
         /// </summary>
-        public void Reconfigure(int capacity, int batchSize)
+        /// <param name="capacity">The target slot capacity.</param>
+        /// <param name="batchSize">The target sync granularity.</param>
+        /// <returns>True if a structural resize/re-allocation happened; false if only a Clear was performed.</returns>
+        public bool Reconfigure(int capacity, int batchSize)
         {
-            try
+            if (capacity <= 0)
+                throw new ArgumentOutOfRangeException(nameof(capacity), $"{Tag} Capacity must be greater than zero.");
+
+            if (batchSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(batchSize), $"{Tag} BatchSize must be at least 1.");
+
+            if (m_Capacity == capacity && m_BatchSize == batchSize)
             {
-                if (capacity <= 0)
-                    throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be greater than zero.");
-
-                if (batchSize <= 0)
-                    throw new ArgumentOutOfRangeException(nameof(batchSize), "BatchSize must be at least 1.");
-
-                m_Capacity = capacity;
-                m_BatchSize = batchSize;
-
-                m_Stores.Clear();
-                m_Mapper.Initialize(capacity);
+                Clear();
+                return false;
             }
-            catch (Exception e)
+
+            m_Capacity = capacity;
+            m_BatchSize = batchSize;
+
+            m_Mapper.Initialize(capacity);
+            foreach (var store in m_Stores.Values)
             {
-                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
+                store.Resize(capacity);
+                store.UpdateBatchSize(batchSize);
             }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Resizes all registered stores and the internal mapper to a new capacity.
+        /// </summary>
+        /// <param name="newCapacity">The new maximum number of slots.</param>
+        /// <returns>True if the capacity changed and data was reset; false if already at target capacity.</returns>
+        public bool Resize(int newCapacity)
+        {
+            if (newCapacity <= 0)
+                throw new ArgumentOutOfRangeException(nameof(newCapacity), $"{Tag} Capacity must be greater than zero.");
+
+            if (m_Capacity == newCapacity)
+                return false;
+
+            m_Capacity = newCapacity;
+            m_Mapper.Initialize(newCapacity);
+            foreach (var store in m_Stores.Values)
+            {
+                store.Resize(newCapacity);
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Updates the dirty-tracking granularity for all registered stores.
+        /// This is a non-destructive operation. Metadata values are preserved.
+        /// </summary>
+        /// <param name="newBatchSize">The new size for tracking segments.</param>
+        /// <returns>True if the batch size was changed and migrated; false if already at target size.</returns>
+        public bool UpdateBatchSize(int newBatchSize)
+        {
+            if (newBatchSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(newBatchSize), $"{Tag} BatchSize must be at least 1.");
+
+            if (m_BatchSize == newBatchSize)
+                return false;
+
+            m_BatchSize = newBatchSize;
+
+            foreach (var store in m_Stores.Values)
+            {
+                store.UpdateBatchSize(newBatchSize);
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -123,7 +177,7 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         /// Registers a new data stream for a specific type. 
         /// Returns the existing store if it was already registered.
         /// </summary>
-        public MetadataStore<T> AddStore<T>() where T : unmanaged
+        protected MetadataStore<T> AddStore<T>() where T : unmanaged
         {
             var type = typeof(T);
             if (m_Stores.TryGetValue(type, out var existing))
@@ -132,6 +186,28 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
             var store = new MetadataStore<T>(m_Capacity, m_BatchSize);
             m_Stores[type] = store;
             return store;
+        }
+
+        /// <summary>
+        /// Retrieves an existing store as a read-only interface.
+        /// Use this for external systems like renderers that should not 
+        /// be able to call Resize or UpdateBatchSize.
+        /// </summary>
+        protected MetadataStore<T> GetStoreInternal<T>() where T : unmanaged
+        {
+            if (m_Stores.TryGetValue(typeof(T), out var storeObj))
+                return (MetadataStore<T>)storeObj;
+            return null;
+        }
+
+        /// <summary>
+        /// Retrieves an existing store as a read-only interface.
+        /// Use this for external systems like renderers that should not 
+        /// be able to call Resize or UpdateBatchSize.
+        /// </summary>
+        protected IMetadataStore GetStore<T>() where T : unmanaged
+        {
+            return GetStoreInternal<T>();
         }
 
         /// <summary>
@@ -153,16 +229,6 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         }
 
         /// <summary>
-        /// Retrieves the store for a specific type. Useful for manual synchronization.
-        /// </summary>
-        public MetadataStore<T> GetStore<T>() where T : unmanaged
-        {
-            if (m_Stores.TryGetValue(typeof(T), out var storeObj))
-                return (MetadataStore<T>)storeObj;
-            return null;
-        }
-
-        /// <summary>
         /// Releases the key and ensures that the data in a specific "Main-Store" is reset.
         /// This prevents 'ghosting' (GPU rendering old data) by invalidating the culling data.
         /// </summary>
@@ -171,7 +237,7 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         {
             if (m_Mapper.TryGetIndex(key, out int index))
             {
-                GetStore<TMain>()?.Set(index, default);
+                GetStoreInternal<TMain>()?.Set(index, default);
                 Release(key);
             }
         }

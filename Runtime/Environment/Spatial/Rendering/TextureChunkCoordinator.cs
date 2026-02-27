@@ -2,7 +2,6 @@ using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Rendering;
-using Rayforge.Core.Rendering.Abstractions;
 using Rayforge.Core.Rendering.EditorStructures;
 using Rayforge.Core.Rendering.Textures;
 using System;
@@ -143,6 +142,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <summary>
         /// Updates the viewer position for LOD calculations. 
         /// Safe to call every frame or when the camera changes.
+        /// Call UpdateLODs() afterwards.
         /// </summary>
         public void SetViewer(Transform viewer)
         {
@@ -171,7 +171,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         /// <summary>
         /// Updates all chunks' LOD state based on current viewer position.
-        /// Call this before UpdateTopology.
         /// </summary>
         /// <returns>The number of chunks that actually changed their LOD level.</returns>
         public int UpdateLODs()
@@ -204,10 +203,46 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             bool layoutChanged = _mapper.Configure(_chunkRegistry, resolutions, _mapper.Registry.BatchSize);
             if (layoutChanged)
             {
-                ForceRequeueAll(true);
+                ForceRequeueAll();
             }
 
             return distancesChanged || layoutChanged;
+        }
+
+        /// <summary>
+        /// Updates the physical size of the grid cells. 
+        /// Warning: Changing the grid size at runtime will force a full clear of the current registry 
+        /// as the spatial keys (GridKey) will no longer align with world positions.
+        /// After calling this, you MUST call UpdateTopology with your master source to rebuild the world.
+        /// </summary>
+        /// <param name="newGridSize">The new size of a chunk (e.g., from GridSizeBinary).</param>
+        /// <returns>True if the grid size was actually changed and a rebuild is required.</returns>
+        public bool UpdateGridSize(GridSize newGridSize)
+        {
+            if (!IsInitialized) return false;
+            if (_chunkRegistry.SetGridSize(newGridSize))
+            {
+                _mapper.Clear();
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Updates the number of chunks processed in a single execution frame.
+        /// This is a performance tuning parameter and does not require a world rebuild.
+        /// </summary>
+        /// <param name="newBatchSize">The maximum number of chunks to bake/update per frame.</param>
+        /// <returns>True if the batch size was actually changed.</returns>
+        public bool UpdateBatchSize(int newBatchSize)
+        {
+            if (!IsInitialized) return false;
+
+            int validatedSize = Mathf.Max(1, newBatchSize);
+            return _mapper.UpdateBatchSize(validatedSize);
         }
 
         #endregion
@@ -218,17 +253,21 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// Iterates through all registered chunks and forces them into the mapper's update queue.
         /// Essential after LOD configuration changes to refresh the "World View".
         /// </summary>
-        public void ForceRequeueAll(bool resetQueue)
+        public void ForceRequeueAll()
         {
             if (!IsInitialized) return;
 
-            if (resetQueue) _mapper.ClearBroadcastQueue();
+            _mapper.ClearBroadcastQueue();
 
             foreach (var chunk in _chunkRegistry.AllEntries)
             {
                 if (chunk.IsVisible)
                 {
                     RequestChunkTile(chunk);
+                }
+                else
+                {
+                    RemoveChunkTile(chunk);
                 }
             }
             _mapper.FlushTileRequests();
@@ -268,7 +307,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         /// <summary>
         /// Phase 2: Execution.
-        /// Iterates over the result set. This allows multiple bake-passes (Height, Splat, etc.).
+        /// Iterates over the result set. This allows multiple bake-passes (Height, Splat, etc.) using the passed in function pointer.
         /// </summary>
         public void ExecuteBake(Action<Vector3Int, TextureMappingData> onBakeTile)
         {

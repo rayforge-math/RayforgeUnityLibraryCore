@@ -14,6 +14,12 @@ namespace Rayforge.Core.Environment.Abstractions
         int CurrentLOD { get; }
 
         /// <summary>
+        /// The maximum possible LOD index defined for this chunk.
+        /// Used to normalize LOD-dependent logic (e.g., shaders or debug colors).
+        /// </summary>
+        int MaxLOD { get; }
+
+        /// <summary>
         /// Indicates if the chunk is currently active and visible in the world.
         /// Typically false if CurrentLOD is -1.
         /// </summary>

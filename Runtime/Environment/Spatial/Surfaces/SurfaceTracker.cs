@@ -91,7 +91,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         #endregion
 
-        #region Lifecycle & Initialization
+        #region Runtime & Init
 
         /// <summary>
         /// Connects the tracker to an external spatial registry and synchronizes existing data.
@@ -116,30 +116,21 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// Performs a complete rebuild of the tracker state by syncing the list and scanning hierarchy.
         /// </summary>
         /// <param name="root">The root transform to start the hierarchy scan from.</param>
-        public void RebuildRegistry(Transform root)
+        /// <returns>True if any surfaces are currently being tracked after the rebuild.</returns>
+        public bool RebuildRegistry(Transform root)
         {
-            if (!IsInitialized) return;
+            if (!IsInitialized) return false;
 
-            SyncListToTracking();
+            ClearStateInternal();
+
+            SyncListToTrackingInternal();
 
             if (_settings.scanHierarchy && root != null)
             {
-                ScanHierarchyInternal(root, persist: false);
+                ScanHierarchyInternal(root);
             }
             TryNotifyOnRegistryChanged();
-        }
-
-        /// <summary>
-        /// Scans a transform hierarchy for valid surface candidates.
-        /// Found objects are registered as dynamic entries and are not added to the persistent wishlist.
-        /// Triggers a single notification if any new surfaces were discovered.
-        /// </summary>
-        /// <param name="root">The root transform to start the recursive scan from.</param>
-        public void ScanHierarchy(Transform root)
-        {
-            if (root == null || !IsInitialized) return;
-            ScanHierarchyInternal(root, persist: false);
-            TryNotifyOnRegistryChanged();
+            return TotalTrackedCount > 0;
         }
 
         /// <summary>
@@ -151,7 +142,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <returns>True if the object passed validation and was added to the registry.</returns>
         public bool TryAddSurface(GameObject obj)
         {
-            bool added = TryAddSurfaceInternal(obj, isManual: false);
+            bool added = TryAddSurfaceInternal(obj, false);
             TryNotifyOnRegistryChanged();
             return added;
         }
@@ -168,22 +159,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             bool removed = RemoveSurfaceInternal(id);
             TryNotifyOnRegistryChanged();
             return removed;
-        }
-
-        #endregion
-
-        #region Editor & Persistence Tooling
-
-        /// <summary>
-        /// Forces a hierarchy scan that populates the persistent wishlist (_surfaces).
-        /// WARNING: This modifies the serialized user list. Should only be called via Editor buttons.
-        /// </summary>
-        public void ForceScanToWishlist(Transform root)
-        {
-            if (root == null || !IsInitialized) return;
-
-            ScanHierarchyInternal(root, persist: true);
-            TryNotifyOnRegistryChanged();
         }
 
         /// <summary>
@@ -221,11 +196,54 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             TryNotifyOnRegistryChanged();
         }
 
+        #endregion
+
+        #region Editor Tooling
+
+        /// <summary>
+        /// Scans a transform hierarchy for valid surface candidates.
+        /// Found objects are registered as dynamic entries and are not added to the persistent wishlist.
+        /// Triggers a single notification if any new surfaces were discovered.
+        /// </summary>
+        /// <param name="root">The root transform to start the recursive scan from.</param>
+        public bool ScanHierarchyToTable(Transform root)
+        {
+            if (root == null) return false;
+
+            _surfaces.Clear();
+            _isDirty = true;
+
+            TraverseHierarchy(root, (obj) =>
+            {
+                _surfaces.Add(obj);
+            });
+
+            if (_isDirty)
+            {
+                CleanupTableNulls();
+            }
+
+            return _surfaces.Count > 0;
+        }
+
+        /// <summary>
+        /// Clears all entries from the persistent wishlist.
+        /// Pure Editor operation. Does not affect live tracking until the next Rebuild.
+        /// </summary>
+        public void ClearTable()
+        {
+            if (_surfaces.Count > 0)
+            {
+                _surfaces.Clear();
+                _isDirty = true;
+            }
+        }
+
         /// <summary>
         /// Optional: Removes only the 'null' entries from the wishlist.
         /// Useful for cleaning up the Inspector without losing valid references.
         /// </summary>
-        public void CleanupWishlistNulls()
+        public void CleanupTableNulls()
         {
             int removed = _surfaces.RemoveAll(s => s == null);
             if (removed > 0) _isDirty = true;
@@ -233,19 +251,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         #endregion
 
-        #region Synchronization API
-
-        /// <summary>
-        /// Synchronizes the serialized wishlist with the runtime tracking.
-        /// Call this in OnValidate or at Start to handle UI changes.
-        /// </summary>
-        public void SyncListToTracking()
-        {
-            if (!IsInitialized) return;
-
-            SyncListToTrackingInternal();
-            TryNotifyOnRegistryChanged();
-        }
+        #region Internal UI List Logic (Runtime)
 
         /// <summary>
         /// Internal logic for synchronization without triggering events.
@@ -256,20 +262,16 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             SyncNewListEntriesInternal();
         }
 
-        #endregion
-
-        #region Internal UI List Logic
-
         /// <summary>
         /// Removes manual entries from tracking that are no longer in the list.
         /// </summary>
         private void CleanupLogicalOrphansInternal()
         {
-            if (_objectRegistry == null) return;
+            if (!IsInitialized) return;
 
             List<int> toRemove = new List<int>();
 
-            var it = _trackedSurfaces.GetEnumerator().ToIterator();
+            var it = _trackedSurfaces.GetEnumerator();
             while (it.MoveNext())
             {
                 var entry = it.Current;
@@ -299,7 +301,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
                 if (!_trackedSurfaces.TryGetValue(id, out bool isManual) || !isManual)
                 {
-                    TryAddSurfaceInternal(obj, isManual: true);
+                    TryAddSurfaceInternal(obj, true);
                 }
             }
         }
@@ -331,16 +333,15 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// Updates the tracking dictionary status. Does not modify the serialized list.
         /// </summary>
         /// <param name="obj">The GameObject candidate.</param>
-        /// <param name="isManual">True if the object should be tracked as a persistent/manual surface.</param>
         /// <returns>True if the object passed validation and is now registered.</returns>
-        private bool TryAddSurfaceInternal(GameObject obj, bool isManual)
+        private bool TryAddSurfaceInternal(GameObject obj, bool isManualEntry)
         {
             if (obj == null || _objectRegistry == null) return false;
             int id = obj.GetInstanceID();
 
             if (_trackedSurfaces.TryGetValue(id, out bool currentlyManual))
             {
-                if (isManual && !currentlyManual)
+                if (isManualEntry && !currentlyManual)
                 {
                     _trackedSurfaces[id] = true;
                     _isDirty = true;
@@ -348,11 +349,11 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 return true;
             }
 
-            if (!IsValidCandidate(obj.transform)) return false;
+            if (!TryGetBounds(obj.transform, out _)) return false;
 
             if (_objectRegistry.TryRegister(obj))
             {
-                _trackedSurfaces[id] = isManual;
+                _trackedSurfaces[id] = isManualEntry;
                 _isDirty = true;
                 return true;
             }
@@ -378,38 +379,45 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         /// <summary>
         /// Recursively scans the hierarchy to identify and register surfaces.
-        /// Efficiently batches changes by setting _isDirty and only adding to 
-        /// the serialized list if 'persist' is true.
+        /// Efficiently batches changes by setting _isDirty.
         /// </summary>
-        /// <param name="parent">The starting transform for the recursion.</param>
-        /// <param name="persist">If true, found candidates are added to the serialized _surfaces list.</param>
-        private void ScanHierarchyInternal(Transform parent, bool persist)
+        /// <param name="root">The starting transform for the recursion.</param>
+        private void ScanHierarchyInternal(Transform root)
         {
-            foreach (Transform child in parent)
+            TraverseHierarchy(root, (obj) =>
             {
-                int id = child.gameObject.GetInstanceID();
-                bool isAlreadyTracked = _trackedSurfaces.TryGetValue(id, out bool isManual);
-
-                if ((!isAlreadyTracked || (persist && !isManual)) &&
-                    IsValidCandidate(child))
+                if (!_trackedSurfaces.ContainsKey(obj.GetInstanceID()))
                 {
-                    if (TryAddSurfaceInternal(child.gameObject, persist))
-                    {
-                        if (persist && !IsIdInList(id))
-                        {
-                            _surfaces.Add(child.gameObject);
-                            _isDirty = true;
-                        }
-                    }
+                    TryAddSurfaceInternal(obj, false);
                 }
-
-                if (child.childCount > 0) ScanHierarchyInternal(child, persist);
-            }
+            });
         }
 
         #endregion
 
         #region Helper & Validation Logic
+
+        /// <summary>
+        /// Centrally traverses a hierarchy and executes an action for every valid surface candidate.
+        /// Prevents code duplication for recursive scanning.
+        /// </summary>
+        private void TraverseHierarchy(Transform root, Action<GameObject> onCandidateFound)
+        {
+            if (root == null) return;
+
+            foreach (Transform child in root)
+            {
+                if (TryGetBounds(child, out var bounds) && FulfillsFilterCriteria(child, bounds))
+                {
+                    onCandidateFound?.Invoke(child.gameObject);
+                }
+
+                if (child.childCount > 0)
+                {
+                    TraverseHierarchy(child, onCandidateFound);
+                }
+            }
+        }
 
         /// <summary>
         /// Checks if a specific InstanceID is present in the serialized wishlist.
@@ -428,24 +436,40 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         }
 
         /// <summary>
-        /// Evaluates a transform against the internal SurfaceTrackerSettings (Name filter, Area threshold).
+        /// Attempts to extract spatial bounds from a candidate. 
+        /// Acts as the primary technical compatibility check.
         /// </summary>
-        /// <param name="t">The transform of the candidate.</param>
-        /// <returns>True if the transform meets all defined criteria.</returns>
-        private bool IsValidCandidate(Transform t)
+        private bool TryGetBounds(Transform t, out Bounds bounds)
+        {
+            bounds = new Bounds();
+            if (t == null) return false;
+
+            if (t.TryGetComponent<Renderer>(out var r))
+            {
+                bounds = r.bounds;
+                return true;
+            }
+
+            if (t.TryGetComponent<Collider>(out var c))
+            {
+                bounds = c.bounds;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Checks if the candidate meets the designer's filter settings.
+        /// Only used for automatic discovery, not for manual wishlist entries.
+        /// </summary>
+        private bool FulfillsFilterCriteria(Transform t, Bounds b)
         {
             if (!string.IsNullOrEmpty(_settings.nameFilter) && !t.name.Contains(_settings.nameFilter))
-            {
                 return false;
-            }
 
             if (_settings.enableAreaCheck)
             {
-                Bounds b;
-                if (t.TryGetComponent<Renderer>(out var r)) b = r.bounds;
-                else if (t.TryGetComponent<Collider>(out var c)) b = c.bounds;
-                else return false;
-
                 return (b.size.x * b.size.z) > _settings.minAreaThreshold;
             }
 

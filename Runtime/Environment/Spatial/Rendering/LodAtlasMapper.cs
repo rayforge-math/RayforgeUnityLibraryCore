@@ -148,7 +148,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #endregion
 
-        #region Initialization & Cleanup
+        #region Configuration & Cleanup
 
         /// <summary>
         /// Configures or reconfigures the atlas layout based on the provided LOD settings.
@@ -164,15 +164,44 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </returns>
         public bool Configure(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
         {
-            try
+            return CheckAndCalculateLayout(provider, lodResolutions, batchSize);
+        }
+
+        /// <summary>
+        /// Updates the dirty-tracking granularity without losing any mapping data.
+        /// Safe to call at runtime for performance tuning. Non-destructive.
+        /// </summary>
+        /// <returns>True if the batch size was changed and migrated; false if already at target size.</returns>
+        public bool UpdateBatchSize(int newBatchSize)
+        {
+            if (!IsInitialized) return false;
+
+            return m_Registry.UpdateBatchSize(newBatchSize);
+        }
+
+        /// <summary>
+        /// Clears all runtime mappings and releases all slots, but keeps the internal 
+        /// LOD structures and registry allocation intact.
+        /// Use this to wipe the current "world state" without re-allocating GPU buffers.
+        /// </summary>
+        public void Clear()
+        {
+            m_Registry?.Clear();
+
+            m_ActiveMappings.Clear();
+            m_PendingRemovals.Clear();
+            m_PendingUpdates.Clear();
+            m_FrameResultsCache.Clear();
+
+            if (m_LodLevels != null)
             {
-                return CheckAndCalculateLayout(provider, lodResolutions, batchSize);
-            }
-            catch (Exception e)
-            {
-                throw new Exception($"{Tag} Setup failed: {e.Message}", e);
+                foreach (var level in m_LodLevels) level.Reset();
             }
         }
+
+        #endregion
+
+        #region Internal Setup
 
         /// <summary>
         /// Central internal method to (re)calculate the atlas layout and structural slot management.
@@ -268,26 +297,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 m_Registry.Reconfigure(totalCapacityNeeded, batchSize);
 
             return true;
-        }
-
-        /// <summary>
-        /// Clears all runtime mappings and releases all slots, but keeps the internal 
-        /// LOD structures and registry allocation intact.
-        /// Use this to wipe the current "world state" without re-allocating GPU buffers.
-        /// </summary>
-        public void Clear()
-        {
-            m_Registry?.Clear();
-
-            m_ActiveMappings.Clear();
-            m_PendingRemovals.Clear();
-            m_PendingUpdates.Clear();
-            m_FrameResultsCache.Clear();
-
-            if (m_LodLevels != null)
-            {
-                foreach (var level in m_LodLevels) level.Reset();
-            }
         }
 
         #endregion

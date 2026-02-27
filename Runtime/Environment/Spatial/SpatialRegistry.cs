@@ -115,7 +115,7 @@ namespace Rayforge.Core.Environment.Spatial
             }
             catch (Exception e)
             {
-                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
+                throw new Exception($"{Tag} Failed to create registry hierarchy: {e.Message}", e);
             }
         }
 
@@ -133,23 +133,23 @@ namespace Rayforge.Core.Environment.Spatial
         /// <returns>The existing or newly created entry.</returns>
         protected bool GetOrCreate(TKey key, string name, Vector3 position, Func<GameObject, TKey, TValue> factory, out TValue result)
         {
+            if (!IsInitialized)
+            {
+                throw new InvalidOperationException("Registry is not initialized. Call Initialize() first.");
+            }
+
+            if (_storage.TryGetValue(key, out result))
+            {
+                if (result != null && result.gameObject != null)
+                {
+                    return false;
+                }
+                _storage.Remove(key);
+            }
+
+            GameObject go = new GameObject(name);
             try
             {
-                if (!IsInitialized)
-                {
-                    throw new InvalidOperationException("Registry is not initialized. Call Initialize() first.");
-                }
-
-                if (_storage.TryGetValue(key, out result))
-                {
-                    if (result != null && result.gameObject != null)
-                    {
-                        return false;
-                    }
-                    _storage.Remove(key);
-                }
-
-                GameObject go = new GameObject(name);
                 if (_container != null) go.transform.SetParent(_container);
                 go.transform.position = position;
 
@@ -160,11 +160,16 @@ namespace Rayforge.Core.Environment.Spatial
 
                 _storage[key] = result;
                 _globalDirty = true;
-
                 return true;
             }
             catch (Exception e)
             {
+                if (go != null)
+                {
+                    if (Application.isPlaying) UnityEngine.Object.Destroy(go);
+                    else UnityEngine.Object.DestroyImmediate(go);
+                }
+
                 throw new Exception($"{Tag} GetOrCreate failed for key {key}: {e.Message}", e);
             }
         }
@@ -184,20 +189,13 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public virtual void RemoveAndDestroy(TKey key)
         {
-            try
+            if (_storage.Remove(key, out TValue value))
             {
-                if (_storage.Remove(key, out TValue value))
+                if (value != null && value.gameObject != null)
                 {
-                    if (value != null && value.gameObject != null)
-                    {
-                        DestroyEntry(value);
-                    }
-                    _globalDirty = true;
+                    DestroyEntry(value);
                 }
-            }
-            catch (Exception e)
-            {
-                throw new Exception($"{Tag} RemoveAndDestroy failed for key {key}: {e.Message}", e);
+                _globalDirty = true;
             }
         }
 
@@ -247,7 +245,15 @@ namespace Rayforge.Core.Environment.Spatial
         private void DestroyEntry(TValue entry)
         {
             if (entry == null) return;
-            entry.Dispose();
+
+            try
+            {
+                entry.Dispose();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"{Tag} Destruction of entry failed for {entry.GetType().Name}: {e.Message}");
+            }
         }
 
         #endregion

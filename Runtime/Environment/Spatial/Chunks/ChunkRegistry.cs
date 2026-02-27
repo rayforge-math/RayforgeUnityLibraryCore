@@ -30,6 +30,9 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
                 _gridSize = value;
                 Clear();
+                RegistryName = _baseName;
+
+                OnGridStructureChanged?.Invoke(this);
             }
         }
         private GridSize _gridSize;
@@ -81,16 +84,33 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public int TotalCellCount => Count;
 
         /// <summary>
-        /// Updates the grid resolution and destroys all existing chunks
-        /// as their spatial keys are no longer valid for the new size.
+        /// Updates the grid resolution and returns whether a change occurred.
+        /// <para><b>Warning:</b> Changing the size invalidates all existing spatial keys. 
+        /// This will trigger a destruction of all active chunks to prevent coordinate misalignment.</para>
         /// </summary>
-        public void SetGridSize(GridSize newSize) => GridSize = newSize;
+        /// <param name="newSize">The new binary grid size to apply.</param>
+        /// <returns>True if the grid size was different from the current value, signaling a mandatory reset.</returns>
+        public bool SetGridSize(GridSize newSize)
+        {
+            if (GridSize == newSize) return false;
+
+            GridSize = newSize;
+            return true;
+        }
 
         /// <summary>
-        /// Updates the grid origin. Use this for Floating Origin shifts.
+        /// Updates the grid origin and returns whether the anchor has shifted significantly.
+        /// Useful for Floating Origin systems to avoid redundant LOD recalculations.
         /// </summary>
-        /// <param name="newAnchor">The new world-space origin.</param>
-        public void SetAnchor(Vector3 newAnchor) => Anchor = newAnchor;
+        /// <param name="newAnchor">The new world-space position to act as the coordinate root.</param>
+        /// <returns>True if the anchor position was updated (exceeds epsilon threshold).</returns>
+        public bool SetAnchor(Vector3 newAnchor)
+        {
+            if (Vector3.SqrMagnitude(Anchor - newAnchor) < 0.0001f) return false;
+
+            Anchor = newAnchor;
+            return true;
+        }
 
         /// <summary>
         /// Triggered when the grid's scale or fundamental structure changes 
@@ -172,9 +192,13 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                     throw new ArgumentException($"Invalid GridSize: {settings.GridSize}. Size must be a positive power of two.");
 
                 _gridSize = settings.GridSize;
+                var delta = settings.Anchor - _anchor;
                 _anchor = settings.Anchor;
 
                 RegistryName = _baseName;
+
+                OnGridStructureChanged?.Invoke(this);
+                OnAnchorChanged?.Invoke(this, delta);
             }
             catch (Exception e)
             {

@@ -47,10 +47,12 @@ namespace Rayforge.Core.Environment.Spatial
         /// Reconfigures the entire registry hierarchy and re-binds the spatial and visual stores.
         /// This ensures that local references point to the new, resized data stores.
         /// </summary>
-        public new void Reconfigure(int newCapacity, int newBatchSize)
+        /// <returns>True if a structural resize/re-allocation happened; false if only a Clear was performed.</returns>
+        public new bool Reconfigure(int newCapacity, int newBatchSize)
         {
-            base.Reconfigure(newCapacity, newBatchSize);
+            bool changed = base.Reconfigure(newCapacity, newBatchSize);
             SetupStores();
+            return changed;
         }
 
         /// <summary>
@@ -58,15 +60,8 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         private void SetupStores()
         {
-            try
-            {
-                m_SpatialStore = AddStore<TSpatial>();
-                m_VisualStore = AddStore<TVisual>();
-            }
-            catch (Exception e)
-            {
-                throw new Exception($"{SubTag} Binding of mandatory stores failed: {e.Message}", e);
-            }
+            m_SpatialStore = AddStore<TSpatial>();
+            m_VisualStore = AddStore<TVisual>();
         }
 
         /// <summary>

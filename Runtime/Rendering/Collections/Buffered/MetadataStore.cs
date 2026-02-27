@@ -14,13 +14,13 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
     /// This is now a class to ensure stable references when managed by a Registry.
     /// </summary>
     /// <typeparam name="TValue">The unmanaged metadata struct (e.g., SpatialData or AtlasVisualData).</typeparam>
-    public class MetadataStore<TValue> : IMetadataStore
+    public class MetadataStore<TValue> : IMetadataStoreController
         where TValue : unmanaged
     {
-        private readonly TValue[] m_CpuData;
-        private readonly BitArray m_DirtyBits;
-        private readonly int m_BatchSize;
-        private readonly int m_TotalBatches;
+        private TValue[] m_CpuData;
+        private BitArray m_DirtyBits;
+        private int m_BatchSize;
+        private int m_TotalBatches;
         private bool m_AnyDirty;
 
         /// <summary>
@@ -64,6 +64,59 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
             m_TotalBatches = BufferMath.GetTotalBatches(capacity, m_BatchSize);
             m_DirtyBits = new BitArray(m_TotalBatches);
             m_AnyDirty = false;
+        }
+
+        /// <summary>
+        /// Resizes the underlying data array to a new capacity.
+        /// This is a destructive operation that clears all existing metadata.
+        /// The current BatchSize is preserved and applied to the new capacity.
+        /// </summary>
+        /// <param name="newCapacity">The new maximum number of elements.</param>
+        public void Resize(int newCapacity)
+        {
+            if (newCapacity <= 0) throw new ArgumentException("Capacity must be positive.");
+            if (m_CpuData != null && m_CpuData.Length == newCapacity) return;
+
+            m_CpuData = new TValue[newCapacity];
+
+            m_TotalBatches = BufferMath.GetTotalBatches(newCapacity, m_BatchSize);
+
+            m_DirtyBits = new BitArray(m_TotalBatches);
+            m_AnyDirty = false;
+        }
+
+        /// <summary>
+        /// Updates the batching logic without losing any data.
+        /// Use this for performance tuning at runtime.
+        /// </summary>
+        public void UpdateBatchSize(int newBatchSize)
+        {
+            newBatchSize = Math.Max(1, newBatchSize);
+            if (m_BatchSize == newBatchSize) return;
+
+            int oldBatchSize = m_BatchSize;
+            int oldTotal = m_TotalBatches;
+            BitArray oldBits = m_DirtyBits;
+
+            m_BatchSize = newBatchSize;
+            m_TotalBatches = BufferMath.GetTotalBatches(m_CpuData.Length, m_BatchSize);
+            m_DirtyBits = new BitArray(m_TotalBatches);
+
+            if (m_AnyDirty)
+            {
+                for (int i = 0; i < oldTotal; i++)
+                {
+                    if (oldBits.Get(i))
+                    {
+                        BufferMath.GetElementRange(i, i, oldBatchSize, m_CpuData.Length, out int start, out int count);
+                        int firstNew = BufferMath.GetBatchIndex(start, m_BatchSize);
+                        int lastNew = BufferMath.GetBatchIndex(start + count - 1, m_BatchSize);
+
+                        for (int n = firstNew; n <= lastNew; n++)
+                            m_DirtyBits.Set(n, true);
+                    }
+                }
+            }
         }
 
         /// <summary>

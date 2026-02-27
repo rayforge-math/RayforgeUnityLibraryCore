@@ -252,6 +252,19 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             _ => SizeXZ
         };
 
+        /// <summary>
+        /// Calculates the visual size of the chunk based on active axes.
+        /// Inactive axes are returned with a minimal thickness (0.1f) for better visualization.
+        /// </summary>
+        public Vector3 GetLogicalSize()
+        {
+            return new Vector3(
+                IsXActive ? localExtent.x * 2f : 0.1f,
+                IsYActive ? localExtent.y * 2f : 0.1f,
+                IsZActive ? localExtent.z * 2f : 0.1f
+            );
+        }
+
         #endregion
 
         #region State Management
@@ -278,22 +291,22 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         #endregion
 
         #region Debugging
+
         protected virtual void OnDrawGizmosSelected()
         {
-            Vector3 displaySize = new Vector3(
-                IsXActive ? localExtent.x * 2f : 0.1f,
-                IsYActive ? localExtent.y * 2f : 0.1f,
-                IsZActive ? localExtent.z * 2f : 0.1f
-            );
+            if (localExtent.sqrMagnitude < 0.0001f) return;
 
             Vector3 pos = transform.position;
 
-            Gizmos.color = Color.cyan;
-            Gizmos.DrawWireCube(pos, displaySize);
+            Vector3 displaySize = GetLogicalSize();
 
-            Gizmos.color = Color.green;
+            Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.2f);
             Gizmos.DrawCube(pos, displaySize);
+
+            Gizmos.color = new Color(1f, 1f, 1f, 0.3f);
+            Gizmos.DrawWireCube(pos, displaySize);
         }
+
         #endregion
     }
 }

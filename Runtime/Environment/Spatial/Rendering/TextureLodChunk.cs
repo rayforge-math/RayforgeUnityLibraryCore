@@ -50,34 +50,25 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <summary>
         /// Visualizes the chunk bounds and its assigned atlas slot in the scene view.
         /// </summary>
-        protected virtual void OnDrawGizmos()
+        protected override void OnDrawGizmosSelected()
         {
-            Vector3 pos = transform.position;
-            Vector3 size = new Vector3(localExtent.x * 2f, 0.1f, localExtent.z * 2f);
-
-            Gizmos.color = GetLODColor(CurrentLOD);
-            Gizmos.DrawCube(pos, size);
-            Gizmos.DrawWireCube(pos, size);
+            base.OnDrawGizmosSelected();
 
 #if UNITY_EDITOR
-            if (HasMapping)
+            if (IsVisible && HasMapping)
             {
-                string debugInfo = $"Slice: {Mapping.SliceIndex}\nScale: {Mapping.RelativeScale:F2}";
-                Handles.Label(pos + Vector3.up, debugInfo);
+                Vector3 pos = transform.position;
+
+                Vector3 displaySize = GetLogicalSize();
+                Vector3 labelPos = pos + Vector3.up * (displaySize.y + 1f);
+
+                string debugInfo = $"LOD: {CurrentLOD}\nSlice: {Mapping.SliceIndex}\nScale: {Mapping.RelativeScale:F2}";
+
+                Handles.Label(labelPos, debugInfo);
             }
 #endif
         }
 
-        private Color GetLODColor(int lod)
-        {
-            return lod switch
-            {
-                -1 => new Color(1, 0, 0, 0.2f),
-                0 => new Color(0, 1, 0, 0.4f),
-                1 => new Color(1, 1, 0, 0.4f),
-                _ => new Color(1, 0.5f, 0, 0.4f)
-            };
-        }
         #endregion
     }
 

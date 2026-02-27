@@ -12,7 +12,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Unity.VisualScripting.YamlDotNet.Core.Tokens;
 using UnityEngine;
-using static Codice.CM.Common.CmCallContext;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering
 {
@@ -32,12 +31,13 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         [Header("LOD & Culling Settings")]
         public Transform lodReference;
+        private Transform _activeLodReference = null;
         public GridSizeBinary chunkSize = GridSizeBinary.Huge;
         [Range(0.01f, 0.5f)] public float updateSensitivity = 0.1f;
+        public TextureLodTable lodTable = new();
 
         [Header("Atlas & Batching")]
-        [Range(16, 256)] public int batchSize = 64;
-        public TextureLodTable lodTable = new();
+        [Range(2, 64)] public int batchSize = 16;
         public float minRelativeY;
         public float maxRelativeY;
 
@@ -68,28 +68,38 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void Awake()
         {
-            RefreshEditor();
             lodTable.OnTableChanged += HandleLodTableChanged;
+
+            ValidateSettings();
+
             UpdateShiftRelaySubscription(shiftRelay);
+            UpdateLodReferenceSubscription(lodReference);
 
             EnsureSystemsReady(true);
         }
 
+#if UNITY_EDITOR
         private void OnValidate()
         {
             RefreshEditor();
+
+            ValidateSettings();
+
             UpdateShiftRelaySubscription(shiftRelay);
+            UpdateLodReferenceSubscription(lodReference);
         }
+#endif
 
         private void Update()
         {
             if (!IsReady) return;
-            /*
+            
             if (CheckMovementThreshold())
             {
-                _chunkRegistry.UpdateLODs();
+                _textureCoordinator?.UpdateLODs();
             }
 
+            /*
             if (surfaceTracker.IsDirty)
             {
                 _bakeCoordinator.UpdateTopology(surfaceTracker.Registry);
@@ -106,7 +116,9 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         private void OnDestroy()
         {
             lodTable.OnTableChanged -= HandleLodTableChanged;
+
             UpdateShiftRelaySubscription(null);
+            UpdateLodReferenceSubscription(null);
 
             ShutdownSystems();
         }
@@ -132,25 +144,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             {
                 lodReference = Camera.main.transform;
                 LogDebug("LOD Reference: Auto-assigned Main Camera.");
-            }
-        }
-
-        private void UpdateShiftRelaySubscription(OriginShiftRelay targetRelay)
-        {
-            if (_activeShiftRelay == targetRelay) return;
-
-            if (_activeShiftRelay != null)
-            {
-                _activeShiftRelay.OnWorldShiftDetected -= HandleOriginShift;
-                LogDebug($"Unsubscribed from old OriginShiftRelay: {_activeShiftRelay.name}");
-            }
-
-            _activeShiftRelay = targetRelay;
-
-            if (_activeShiftRelay != null && Application.isPlaying)
-            {
-                _activeShiftRelay.OnWorldShiftDetected += HandleOriginShift;
-                LogDebug($"<color=green>Shift subscription updated: {_activeShiftRelay.name}</color>");
             }
         }
 
@@ -293,7 +286,92 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #endregion
 
-        #region Update
+        #region Editor Update
+
+        /// <summary>
+        /// Editor-Only: Completely refreshes the serialized wishlist from the hierarchy.
+        /// Use this via Inspector buttons to update the designer-facing list.
+        /// </summary>
+        public void RefreshPersistentSurfaceTable()
+        {
+            LogDebug("Scanning hierarchy for persistent surfaces...");
+
+            bool foundAny = surfaceTracker.ScanHierarchyToTable(this.transform);
+
+            if (foundAny)
+            {
+                LogDebug($"<color=cyan>Table Refreshed: {surfaceTracker.WishlistCount} entries saved to wishlist.</color>");
+            }
+            else
+            {
+                LogDebug("Scan complete. No valid surfaces found in hierarchy.");
+            }
+        }
+
+        /// <summary>
+        /// Editor-Only: Removes all 'null' or 'Missing' references from the persistent wishlist.
+        /// Keeps the Inspector list clean without losing valid surface assignments.
+        /// </summary>
+        public void CleanupPersistentSurfaceTable()
+        {
+            LogDebug("Cleaning up null references in surface table...");
+
+            int countBefore = surfaceTracker.WishlistCount;
+            surfaceTracker.CleanupTableNulls();
+            int removed = countBefore - surfaceTracker.WishlistCount;
+
+            if (removed > 0)
+            {
+                LogDebug($"<color=cyan>Cleanup complete: Removed {removed} empty entries.</color>");
+            }
+            else
+            {
+                LogDebug("Cleanup complete: No null references found.");
+            }
+        }
+
+        /// <summary>
+        /// Editor-Only: Wipes the persistent list.
+        /// </summary>
+        public void ClearPersistentSurfaceTable()
+        {
+            LogDebug("Clearing persistent surface wishlist...");
+            surfaceTracker.ClearTable();
+            LogDebug("<color=orange>Wishlist cleared.</color>");
+        }
+
+        #endregion
+
+        #region Runtime Udpate
+
+        public void ResetTrackingPosition() => _lastUpdatePos = lodReference ? lodReference.position : Vector3.zero;
+
+        public void RebuildSurfaceRegistry()
+        {
+            LogDebug("Rebuilding SurfaceRegistry...");
+            if (surfaceTracker.RebuildRegistry(transform))
+            {
+                LogDebug($"<color=green>Registry Rebuilt: {surfaceTracker.TotalTrackedCount} surfaces live.</color>");
+            }
+            else
+            {
+                LogDebug("<color=orange>Registry Rebuilt: No valid surfaces found. System is idling.</color>");
+            }
+        }
+
+        /// <summary>
+        /// Clears all live tracking data without touching the persistent list.
+        /// </summary>
+        public void ResetLiveTracking()
+        {
+            LogDebug("Resetting live tracking state...");
+            surfaceTracker.ClearState();
+            LogDebug("<color=orange>Live state cleared. Registry is now empty.</color>");
+        }
+
+        #endregion
+
+        #region Internal Update
 
         private void CheckAndAllocateAtlas(TextureChunkCoordinator coordinator)
         {
@@ -314,56 +392,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             {
                 LogDebug($"Atlas texture <color=green>reused</color>. Current configuration is compatible.");
             }
-        }
-
-        public void RebuildSurfaceRegistry()
-        {
-            LogDebug("Rebuilding SurfaceRegistry...");
-            surfaceTracker.RebuildRegistry(transform);
-            LogDebug($"<color=green>Registry Rebuilt: {surfaceTracker.TotalTrackedCount} surfaces live.</color>");
-        }
-
-        public void ResetTrackingPosition() => _lastUpdatePos = lodReference ? lodReference.position : Vector3.zero;
-
-        private void HandleOriginShift(Vector3 delta)
-        {
-            _textureCoordinator?.NotifyOriginShift(delta);
-            _lastUpdatePos += delta;
-        }
-
-        private void HandleLodTableChanged(UniversalLodTable<TextureLOD> lodTable)
-        {
-            LogDebug("LodTable reported LOD update. Syncing with components...");
-
-            if(lodTable == null || _textureCoordinator == null || !_textureCoordinator.IsInitialized)
-            {
-                LogDebug("<color=orange>LOD sync aborted: LodTable is null or TextureCoordinator is null or uninitialized.</color>");
-                return;
-            }
-
-            if (_textureCoordinator.UpdateLodConfiguration(lodTable.ValidEntries))
-            {
-                CheckAndAllocateAtlas(_textureCoordinator);
-            }
-            else
-            {
-                LogDebug("<color=green>LodTable update resulted in no structural changes. System state preserved.</color>");
-            }
-        }
-
-        private void HandleSurfacesChanged(SurfaceTracker sender)
-        {
-            LogDebug("SurfaceTracker reported changes. Syncing topology with TextureCoordinator...");
-
-            if (sender == null || _textureCoordinator == null || !_textureCoordinator.IsInitialized)
-            {
-                LogDebug("<color=orange>Topology sync aborted: SurfaceTracker is null or TextureCoordinator is null or uninitialized.</color>");
-                return;
-            }
-
-            _textureCoordinator.UpdateTopology(sender.Registry);
-
-            LogDebug($"<color=green>Topology sync completed.</color> Coordinator is now managing {_textureCoordinator.LodGridProvider.TotalCellCount} chunk(s).");
         }
 
         /// <summary>
@@ -401,6 +429,128 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             }
 
             return false;
+        }
+
+        private void ValidateSettings()
+        {
+            ValidateGridSettings();
+            ValidateBatchSize();
+        }
+
+        private void ValidateGridSettings()
+        {
+            if (_textureCoordinator == null || !_textureCoordinator.IsInitialized) return;
+
+            if (_textureCoordinator.UpdateGridSize((GridSize)chunkSize))
+            {
+                LogDebug($"Spatial Rebuild Triggered: GridSize changed to {chunkSize}. " +
+                    $"Re-mapping SurfaceRegistry and synchronizing Topology.");
+
+                _textureCoordinator.UpdateTopology(_surfaceRegistry);
+
+                LogDebug("Spatial Rebuild Complete: Topology is now in sync with new GridSize.");
+            }
+        }
+
+        private void ValidateBatchSize()
+        {
+            int sanitizedSize = Mathf.Max(1, batchSize);
+            int potSize = Mathf.NextPowerOfTwo(sanitizedSize);
+
+            if (batchSize != potSize)
+            {
+                batchSize = potSize;
+            }
+
+            if (_textureCoordinator == null || !_textureCoordinator.IsInitialized) return;
+
+            if (_textureCoordinator.UpdateBatchSize(batchSize))
+            {
+                LogDebug($"Batch Configuration Updated: New BatchSize is {batchSize}. " +
+                 $"This will affect the number of chunks processed per frame.");
+            }
+        }
+
+        private void UpdateShiftRelaySubscription(OriginShiftRelay targetRelay)
+        {
+            if (_activeShiftRelay == targetRelay) return;
+
+            if (_activeShiftRelay != null)
+            {
+                _activeShiftRelay.OnWorldShiftDetected -= HandleOriginShift;
+                LogDebug($"Unsubscribed from old OriginShiftRelay: {_activeShiftRelay.name}");
+            }
+
+            _activeShiftRelay = targetRelay;
+
+            if (_activeShiftRelay != null && Application.isPlaying)
+            {
+                _activeShiftRelay.OnWorldShiftDetected += HandleOriginShift;
+                LogDebug($"<color=green>Shift subscription updated: {_activeShiftRelay.name}</color>");
+            }
+        }
+
+        private void UpdateLodReferenceSubscription(Transform targetReference)
+        {
+            if (_activeLodReference == targetReference) return;
+
+            string oldName = _activeLodReference != null ? _activeLodReference.name : "None";
+            string newName = targetReference != null ? targetReference.name : "None";
+
+            _activeLodReference = targetReference;
+
+            if (_textureCoordinator != null && _textureCoordinator.IsInitialized)
+            {
+                _textureCoordinator.UpdateLODs();
+            }
+
+            LogDebug($"<color=cyan>LOD Reference updated: {oldName} -> {newName}</color>");
+        }
+
+        #endregion
+
+        #region Internal Event Udpate
+
+        private void HandleOriginShift(Vector3 delta)
+        {
+            _textureCoordinator?.NotifyOriginShift(delta);
+            _lastUpdatePos += delta;
+        }
+
+        private void HandleLodTableChanged(UniversalLodTable<TextureLOD> lodTable)
+        {
+            LogDebug("LodTable reported LOD update. Syncing with components...");
+
+            if(lodTable == null || _textureCoordinator == null || !_textureCoordinator.IsInitialized)
+            {
+                LogDebug("<color=orange>LOD sync aborted: LodTable is null or TextureCoordinator is null or uninitialized.</color>");
+                return;
+            }
+
+
+            if (_textureCoordinator.UpdateLodConfiguration(lodTable.ValidEntries))
+            {
+                CheckAndAllocateAtlas(_textureCoordinator);
+            }
+            else
+            {
+                LogDebug("<color=green>LodTable update resulted in no structural changes. System state preserved.</color>");
+            }
+        }
+
+        private void HandleSurfacesChanged(SurfaceTracker sender)
+        {
+            LogDebug("SurfaceTracker reported changes. Syncing topology with TextureCoordinator...");
+
+            if (sender == null || _textureCoordinator == null || !_textureCoordinator.IsInitialized)
+            {
+                LogDebug("<color=orange>Topology sync aborted: SurfaceTracker is null or TextureCoordinator is null or uninitialized.</color>");
+                return;
+            }
+
+            _textureCoordinator.UpdateTopology(sender.Registry);
+
+            LogDebug($"<color=green>Topology sync completed.</color> Coordinator is now managing {_textureCoordinator.LodGridProvider.TotalCellCount} chunk(s).");
         }
 
         #endregion
@@ -474,21 +624,21 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             HeightmapManager script = (HeightmapManager)target;
 
             GUILayout.Space(10);
-            if (GUILayout.Button("Refresh Surfaces", GUILayout.Height(30)))
+            if (GUILayout.Button("Scan Surfaces", GUILayout.Height(30)))
             {
-                script.RebuildSurfaceRegistry();
+                script.RefreshPersistentSurfaceTable();
+            }
+
+            GUILayout.Space(10);
+            if (GUILayout.Button("Cleanup Surfaces", GUILayout.Height(30)))
+            {
+                script.CleanupPersistentSurfaceTable();
             }
 
             GUILayout.Space(10);
             if (GUILayout.Button("Clear Surfaces", GUILayout.Height(30)))
             {
-                //script.();
-            }
-
-            GUILayout.Space(10);
-            if (GUILayout.Button("Bake Heightmaps", GUILayout.Height(30)))
-            {
-                //script.RebakeAll();
+                script.ClearPersistentSurfaceTable();
             }
         }
     }

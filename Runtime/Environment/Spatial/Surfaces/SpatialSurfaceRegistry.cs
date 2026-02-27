@@ -45,8 +45,11 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         /// <summary>
         /// Initializes the orchestrator and sub-registries with the given grid provider.
+        /// The provider serves as the master source for the coordinate system; the registry 
+        /// automatically subscribes to structural changes (like GridSize) to keep its internal 
+        /// buckets synchronized.
         /// </summary>
-        /// <param name="gridProvider">The provider for coordinate mapping.</param>
+        /// <param name="gridProvider">The master provider for coordinate and bucket mapping.</param>
         public void Initialize(ISpatialGridProvider<Vector3Int> gridProvider)
         {
             try

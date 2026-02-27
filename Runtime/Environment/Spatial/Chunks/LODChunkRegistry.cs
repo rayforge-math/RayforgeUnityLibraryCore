@@ -83,7 +83,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 _deactivateOnCulled = lodSettings.DeactivateOnCulled;
                 Viewer = viewer;
 
-                ApplyLodConfiguration(lodSettings.LodDistances, false);
+                ApplyLodConfiguration(lodSettings.LodDistances);
             }
             catch (Exception e)
             {
@@ -96,7 +96,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// Re-calculates squared values to keep the Update loop math simple and fast.
         /// </summary>
         public bool UpdateLodDistances(ReadOnlySpan<float> newDistances)
-            => ApplyLodConfiguration(newDistances, true);
+            => ApplyLodConfiguration(newDistances);
 
         /// <summary> Updates the viewer reference (e.g., when switching cameras). </summary>
         public bool SetViewer(Transform viewer)
@@ -113,49 +113,42 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// The single source of truth for changing LOD arrays.
         /// Handles validation, allocation, and notification.
         /// </summary>
-        private bool ApplyLodConfiguration(ReadOnlySpan<float> newDistances, bool notify)
+        private bool ApplyLodConfiguration(ReadOnlySpan<float> newDistances)
         {
-            try
-            {
-                if (newDistances.Length == 0)
-                    throw new ArgumentException("Cannot apply an empty LOD configuration.");
+            if (newDistances.Length == 0)
+                throw new ArgumentException("Cannot apply an empty LOD configuration.");
 
-                if (_lodDistances != null && _lodDistances.Length == newDistances.Length)
+            if (_lodDistances != null && _lodDistances.Length == newDistances.Length)
+            {
+                bool changed = false;
+                for (int i = 0; i < newDistances.Length; i++)
                 {
-                    bool changed = false;
-                    for (int i = 0; i < newDistances.Length; i++)
+                    if (!Mathf.Approximately(_lodDistances[i], newDistances[i]))
                     {
-                        if (!Mathf.Approximately(_lodDistances[i], newDistances[i]))
-                        {
-                            changed = true;
-                            break;
-                        }
+                        changed = true;
+                        break;
                     }
-                    if (!changed) return false;
                 }
-
-                int count = newDistances.Length;
-                _lodDistances = new float[count];
-                _lodSqrDistances = new float[count];
-
-                for (int i = 0; i < count; i++)
-                {
-                    float d = newDistances[i];
-                    if (i > 0 && d <= _lodDistances[i - 1])
-                        throw new InvalidOperationException($"LOD Distance at index {i} ({d}) must be greater than index {i - 1} ({_lodDistances[i - 1]}).");
-
-                    _lodDistances[i] = d;
-                    _lodSqrDistances[i] = d * d;
-                }
-
-                if (notify) OnLODSettingsChanged?.Invoke(this);
-
-                return true;
+                if (!changed) return false;
             }
-            catch (Exception e)
+
+            int count = newDistances.Length;
+            _lodDistances = new float[count];
+            _lodSqrDistances = new float[count];
+
+            for (int i = 0; i < count; i++)
             {
-                throw new Exception($"{Tag} Failed to apply LOD configuration: {e.Message}", e);
+                float d = newDistances[i];
+                if (i > 0 && d <= _lodDistances[i - 1])
+                    throw new InvalidOperationException($"LOD Distance at index {i} ({d}) must be greater than index {i - 1} ({_lodDistances[i - 1]}).");
+
+                _lodDistances[i] = d;
+                _lodSqrDistances[i] = d * d;
             }
+
+            OnLODSettingsChanged?.Invoke(this);
+
+            return true;
         }
 
         #endregion
@@ -171,6 +164,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             bool isNew = base.GetOrCreateChunk(key, onConfigure, out chunk);
             if (isNew)
             {
+                ((ILODReceiver)chunk).ConfigureLODRange(_lodDistances.Length - 1);
                 chunk.OnLODChanged += HandleChunkLODChanged;
                 chunk.OnCleanup += HandleChunkDestroyed;
                 UpdateChunkLOD(chunk, ViewerPos);
