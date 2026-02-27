@@ -1,4 +1,6 @@
+using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Rendering.Abstractions;
+using Rayforge.Core.Rendering.Collections.Iterator;
 using System;
 using System.Collections.Generic;
 
@@ -144,21 +146,39 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         }
 
         /// <summary>
-        /// Synchronizes all modified data across all stores to the GPU.
-        /// Centralized sync point for the entire metadata system.
+        /// Provides a direct sync iterator for a specific metadata type.
+        /// Use this to target a specific ComputeBuffer for a specific data stream.
         /// </summary>
-        /// <param name="uploadAction">Callback for (Array source, int start, int count, Type storeType).</param>
-        public void SyncAllStores(Action<Array, int, int, Type> uploadAction)
+        /// <typeparam name="T">The metadata struct type.</typeparam>
+        public IIterator<BufferSegmentMeta> GetDirtyBatchIterator<T>() where T : unmanaged
         {
-            foreach (var entry in m_Stores)
-            {
-                var store = entry.Value;
-                if (store.AnyDirty)
-                {
-                    store.ProcessDirtyBatches((data, start, count) =>
-                        uploadAction(data, start, count, entry.Key));
-                }
-            }
+            var store = GetStoreInternal<T>();
+            if (store == null || !store.AnyDirty)
+                return IIterator<BufferSegmentMeta>.Empty;
+
+            return store.GetDirtyBatchIterator();
+        }
+
+        /// <summary>
+        /// Provides a direct, element-wise iterator for a specific metadata type.
+        /// Use this for CPU-side logic that requires reading all stored data sequentially,
+        /// such as serialization, validation, or global data analysis.
+        /// </summary>
+        /// <typeparam name="T">The unmanaged metadata struct type (e.g., SpatialData).</typeparam>
+        /// <returns>
+        /// An <see cref="IIterator{T}"/> over the underlying CPU array. 
+        /// Returns an empty iterator if no store is registered for the specified type.
+        /// </returns>
+        /// <remarks>
+        /// Unlike the Batch-Iterator, this does not group changes and ignores the dirty state. 
+        /// It performs a full sweep over the allocated capacity.
+        /// </remarks>
+        public IIterator<T> GetIterator<T>() where T : unmanaged
+        {
+            var store = GetStoreInternal<T>();
+            if (store == null) return IIterator<T>.Empty;
+
+            return store.GetIterator();
         }
 
         /// <summary>

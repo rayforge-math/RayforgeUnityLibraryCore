@@ -2,8 +2,10 @@ using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Rendering.Abstractions;
+using Rayforge.Core.Rendering.Collections.Iterator;
 using System;
 using System.Collections;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace Rayforge.Core.Rendering.Collections.Buffered
@@ -148,34 +150,34 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         public TValue Get(int index) => m_CpuData[index];
 
         /// <summary>
-        /// Group dirty batches into contiguous ranges and invoke the provided callback.
-        /// Clears the dirty flags after processing.
+        /// Provides an iterator over contiguous dirty element ranges.
+        /// Replaces the previous callback-based processing to allow for pull-based GPU synchronization.
         /// </summary>
-        /// <param name="uploadCallback">Callback for (Array source, int start, int count).</param>
-        public void ProcessDirtyBatches(Action<Array, int, int> uploadCallback)
+        /// <returns>An iterator yielding <see cref="BufferSegmentMeta"/> segments.</returns>
+        public IIterator<BufferSegmentMeta> GetDirtyBatchIterator()
         {
-            if (!m_AnyDirty) return;
-
-            int current = 0;
-            while (current < m_TotalBatches)
+            if (!m_AnyDirty)
             {
-                if (!m_DirtyBits.Get(current))
-                {
-                    current++;
-                    continue;
-                }
-
-                int startBatch = current;
-                while (current < m_TotalBatches && m_DirtyBits.Get(current))
-                {
-                    current++;
-                }
-                int endBatch = current - 1;
-
-                BufferMath.GetElementRange(startBatch, endBatch, m_BatchSize, m_CpuData.Length, out int start, out int count);
-
-                uploadCallback?.Invoke(m_CpuData, start, count);
+                return IIterator<BufferSegmentMeta>.Empty;
             }
+
+            var logic = new DirtyBatchIteratorState(m_CpuData, m_DirtyBits, m_BatchSize, m_CpuData.Length);
+            return new Iterator<BufferSegmentMeta, DirtyBatchIteratorState>(logic);
+        }
+
+        /// <summary>
+        /// Provides a typed iterator over all elements in the store.
+        /// Use this for CPU-side processing like validation or serialization.
+        /// </summary>
+        public IIterator<TValue> GetIterator()
+        {
+            if (m_CpuData == null || m_CpuData.Length == 0)
+            {
+                return IIterator<TValue>.Empty;
+            }
+
+            var logic = new ArrayIteratorState<TValue>(m_CpuData, 0, m_CpuData.Length);
+            return new Iterator<TValue, ArrayIteratorState<TValue>>(logic);
         }
 
         /// <summary>

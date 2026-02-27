@@ -257,7 +257,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             if (!IsInitialized) return;
 
-            _mapper.ClearBroadcastQueue();
+            _mapper.ClearBakeQueue();
 
             foreach (var chunk in _chunkRegistry.AllEntries)
             {
@@ -311,18 +311,21 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         public void ExecuteBake(Action<Vector3Int, TextureMappingData> onBakeTile)
         {
-            if (!IsInitialized || !_mapper.HasFrameUpdates) return;
+            if (!IsInitialized || !_mapper.HasBakeCommands) return;
 
             try
             {
-                _mapper.BroadcastMappings((key, mapping) =>
+                if(_mapper.TryGetBakeIterator(out var iter))
                 {
-                    if (_chunkRegistry.TryGetEntry(key, out var chunk))
+                    foreach(var entry in iter)
                     {
-                        chunk.SetTextureMapping(mapping);
-                        onBakeTile?.Invoke(key, mapping);
+                        if (_chunkRegistry.TryGetEntry(entry.Key, out var chunk))
+                        {
+                            chunk.SetTextureMapping(entry.Mapping);
+                            onBakeTile?.Invoke(entry.Key, entry.Mapping);
+                        }
                     }
-                });
+                }
             }
             catch (Exception e)
             {
@@ -330,7 +333,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             }
             finally
             {
-                _mapper.ClearBroadcastQueue();
+                _mapper.ClearBakeQueue();
             }
         }
 

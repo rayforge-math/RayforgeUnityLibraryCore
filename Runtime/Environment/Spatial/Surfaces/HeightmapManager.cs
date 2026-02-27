@@ -10,7 +10,6 @@ using Rayforge.Core.Rendering.Helpers;
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using Unity.VisualScripting.YamlDotNet.Core.Tokens;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering
@@ -39,7 +38,9 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         [Header("Atlas & Batching")]
         [Range(2, 64)] public int batchSize = 16;
         public float minRelativeY;
+        private float _activeMinRelativeY = 0;
         public float maxRelativeY;
+        private float _activeMaxRelativeY = 0;
 
         [Header("Surface Detection Settings")]
         public SurfaceTracker surfaceTracker = new();
@@ -274,7 +275,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                     surfaceTracker.ClearState();
                 }
 
-                surfaceTracker.Initialize(registry);
+                surfaceTracker.Initialize(registry, transform);
                 RebuildSurfaceRegistry();
 
                 surfaceTracker.OnRegistryChanged += HandleSurfacesChanged;
@@ -296,9 +297,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         {
             LogDebug("Scanning hierarchy for persistent surfaces...");
 
-            bool foundAny = surfaceTracker.ScanHierarchyToTable(this.transform);
-
-            if (foundAny)
+            if (surfaceTracker.ScanHierarchyToTable(transform))
             {
                 LogDebug($"<color=cyan>Table Refreshed: {surfaceTracker.WishlistCount} entries saved to wishlist.</color>");
             }
@@ -349,7 +348,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         public void RebuildSurfaceRegistry()
         {
             LogDebug("Rebuilding SurfaceRegistry...");
-            if (surfaceTracker.RebuildRegistry(transform))
+            if (surfaceTracker.RebuildRegistry())
             {
                 LogDebug($"<color=green>Registry Rebuilt: {surfaceTracker.TotalTrackedCount} surfaces live.</color>");
             }
@@ -435,6 +434,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         {
             ValidateGridSettings();
             ValidateBatchSize();
+            ValidateYRange();
+            ValidateTrackerSettings();
         }
 
         private void ValidateGridSettings()
@@ -468,6 +469,41 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             {
                 LogDebug($"Batch Configuration Updated: New BatchSize is {batchSize}. " +
                  $"This will affect the number of chunks processed per frame.");
+            }
+        }
+
+        private void ValidateTrackerSettings()
+        {
+            if (surfaceTracker.SettingsDirty)
+            {
+                surfaceTracker.ApplySettings();
+                LogDebug("SurfaceTracker Settings synchronized.");
+            }
+        }
+
+        /// <summary>
+        /// Ensures Y-range values are logical and syncs them to the active runtime state.
+        /// Ensures min is below max and updates active baking bounds.
+        /// </summary>
+        private void ValidateYRange()
+        {
+            if (minRelativeY >= maxRelativeY)
+            {
+                maxRelativeY = minRelativeY + 1.0f;
+            }
+
+            if (!Mathf.Approximately(_activeMinRelativeY, minRelativeY) ||
+                !Mathf.Approximately(_activeMaxRelativeY, maxRelativeY))
+            {
+                _activeMinRelativeY = minRelativeY;
+                _activeMaxRelativeY = maxRelativeY;
+
+                LogDebug($"Baking Y-Range updated: Min {_activeMinRelativeY} / Max {_activeMaxRelativeY}");
+
+                if (IsReady)
+                {
+                    _textureCoordinator?.ForceRequeueAll();
+                }
             }
         }
 
@@ -630,7 +666,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             }
 
             GUILayout.Space(10);
-            if (GUILayout.Button("Cleanup Surfaces", GUILayout.Height(30)))
+            if (GUILayout.Button("Clean-up Surfaces", GUILayout.Height(30)))
             {
                 script.CleanupPersistentSurfaceTable();
             }

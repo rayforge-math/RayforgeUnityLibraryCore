@@ -1,4 +1,5 @@
 using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Rendering.Collections.Iterator;
 using System;
 
 namespace Rayforge.Core.Rendering.Abstractions
@@ -50,11 +51,10 @@ namespace Rayforge.Core.Rendering.Abstractions
         void MarkAllDirty();
 
         /// <summary>
-        /// Scans for modified segments and invokes a callback for each contiguous range.
-        /// Bridges the gap between the typed CPU array and the untyped GPU upload call.
+        /// Provides an iterator over contiguous dirty element ranges.
         /// </summary>
-        /// <param name="uploadCallback">A delegate receiving the raw Array, the start index, and the element count.</param>
-        void ProcessDirtyBatches(Action<Array, int, int> uploadCallback);
+        /// <returns>An iterator yielding <see cref="BufferSegmentMeta"/> segments.</returns>
+        IIterator<BufferSegmentMeta> GetDirtyBatchIterator();
 
         /// <summary>
         /// Returns an iterator over the indices of all segments marked as modified.

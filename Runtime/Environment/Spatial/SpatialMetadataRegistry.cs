@@ -1,6 +1,8 @@
+using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Rendering.Abstractions;
 using Rayforge.Core.Rendering.Collections.Buffered;
+using Rayforge.Core.Rendering.Collections.Iterator;
 using System;
 
 namespace Rayforge.Core.Environment.Spatial
@@ -17,21 +19,10 @@ namespace Rayforge.Core.Environment.Spatial
         where TSpatial : unmanaged
         where TVisual : unmanaged
     {
-        private const string SubTag = "[SpatialRegistry]";
-
         private MetadataStore<TSpatial> m_SpatialStore;
         private MetadataStore<TVisual> m_VisualStore;
 
-        /// <summary>
-        /// Grants read-only access to the spatial store via the non-generic interface.
-        /// English comment: Useful for external buffer management or debugging.
-        /// </summary>
-        public IMetadataStore SpatialMetadata => m_SpatialStore;
-
-        /// <summary>
-        /// Grants read-only access to the visual store via the non-generic interface.
-        /// </summary>
-        public IMetadataStore VisualMetadata => m_VisualStore;
+        #region Lifecycle & Configuration
 
         /// <summary>
         /// Initializes a new spatial registry and automatically registers the mandatory spatial and visual stores.
@@ -64,13 +55,68 @@ namespace Rayforge.Core.Environment.Spatial
             m_VisualStore = AddStore<TVisual>();
         }
 
+        #endregion
+
+        #region ISpatialMetadataRegistry Implementation
+
+        /// <summary>
+        /// Grants read-only access to the spatial store via the non-generic interface.
+        /// English comment: Useful for external buffer management or debugging.
+        /// </summary>
+        public IMetadataStore SpatialMetadata => m_SpatialStore;
+
+        /// <summary>
+        /// Grants read-only access to the visual store via the non-generic interface.
+        /// </summary>
+        public IMetadataStore VisualMetadata => m_VisualStore;
+
+        /// <summary>
+        /// Gets the specialized iterator for modified spatial data.
+        /// English comment: Use this to update the GPU culling buffer.
+        /// </summary>
+        public IIterator<BufferSegmentMeta> SpatialDirtyIterator => m_SpatialStore.GetDirtyBatchIterator();
+
+        /// <summary>
+        /// Gets the specialized iterator for modified visual data.
+        /// English comment: Use this to update the GPU rendering/atlas buffer.
+        /// </summary>
+        public IIterator<BufferSegmentMeta> VisualDirtyIterator => m_VisualStore.GetDirtyBatchIterator();
+
+        /// <summary>
+        /// Clears the dirty tracking state for both spatial and visual stores.
+        /// English comment: Call this after a full synchronization of both buffers.
+        /// </summary>
+        public void ClearAllDirty()
+        {
+            m_SpatialStore.ClearDirty();
+            m_VisualStore.ClearDirty();
+        }
+
+        /// <summary>
+        /// Clears the dirty tracking state only for the spatial store.
+        /// English comment: Useful if you sync buffers at different frequencies.
+        /// </summary>
+        public void ClearSpatialDirty()
+        {
+            m_SpatialStore.ClearDirty();
+        }
+
+        /// <summary>
+        /// Clears the dirty tracking state only for the visual store.
+        /// </summary>
+        public void ClearVisualDirty()
+        {
+            m_VisualStore.ClearDirty();
+        }
+
+        #endregion
+
+        #region Data Access (Setters)
+
         /// <summary>
         /// Updates both spatial and visual data for a specific key using a single index lookup.
         /// If the key does not exist, a new slot is automatically allocated.
         /// </summary>
-        /// <param name="key">The unique identifier of the entity.</param>
-        /// <param name="spatial">The new spatial/culling data.</param>
-        /// <param name="visual">The new visual/rendering data.</param>
         public void SetMetadata(TKey key, TSpatial spatial, TVisual visual)
         {
             int idx = GetOrAllocateIndex(key);
@@ -80,10 +126,7 @@ namespace Rayforge.Core.Environment.Spatial
 
         /// <summary>
         /// Updates only the spatial/culling data for a key.
-        /// Useful for moving objects that don't change their appearance.
         /// </summary>
-        /// <param name="key">The unique identifier of the entity.</param>
-        /// <param name="spatial">The new spatial/culling data.</param>
         public void SetSpatial(TKey key, TSpatial spatial)
         {
             int idx = GetOrAllocateIndex(key);
@@ -92,23 +135,20 @@ namespace Rayforge.Core.Environment.Spatial
 
         /// <summary>
         /// Updates only the visual/atlas data for a key.
-        /// Useful for LOD swaps or texture updates where the position stays fixed.
         /// </summary>
-        /// <param name="key">The unique identifier of the entity.</param>
-        /// <param name="visual">The new visual/rendering data.</param>
         public void SetVisual(TKey key, TVisual visual)
         {
             int idx = GetOrAllocateIndex(key);
             m_VisualStore.Set(idx, visual);
         }
 
+        #endregion
+
+        #region Data Access (Getters & State)
+
         /// <summary>
         /// Tries to retrieve the current spatial and visual data for a given key.
         /// </summary>
-        /// <param name="key">The unique identifier of the entity.</param>
-        /// <param name="spatial">The current spatial data (out).</param>
-        /// <param name="visual">The current visual data (out).</param>
-        /// <returns>True if the key was found and data was retrieved.</returns>
         public bool TryGetMetadata(TKey key, out TSpatial spatial, out TVisual visual)
         {
             if (TryGetIndex(key, out int index))
@@ -126,9 +166,6 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// Tries to retrieve only the spatial data.
         /// </summary>
-        /// <param name="key">The unique identifier of the entity.</param>
-        /// <param name="spatial">The current spatial data (out).</param>
-        /// <returns>True if the key was found and data was retrieved.</returns>
         public bool TryGetSpatial(TKey key, out TSpatial spatial)
         {
             if (TryGetIndex(key, out int index))
@@ -143,9 +180,6 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// Tries to retrieve only the visual data.
         /// </summary>
-        /// <param name="key">The unique identifier of the entity.</param>
-        /// <param name="visual">The current visual data (out).</param>
-        /// <returns>True if the key was found and data was retrieved.</returns>
         public bool TryGetVisual(TKey key, out TVisual visual)
         {
             if (TryGetIndex(key, out int index))
@@ -158,23 +192,13 @@ namespace Rayforge.Core.Environment.Spatial
         }
 
         /// <summary>
-        /// Iterates through all dirty segments of the internal stores and invokes the provided callbacks.
-        /// This allows external systems to synchronize GPU buffers without the registry knowing about hardware resources.
-        /// </summary>
-        /// <param name="onSpatialChanged">Callback invoked for modified spatial data ranges (sourceArray, offset, count).</param>
-        /// <param name="onVisualChanged">Callback invoked for modified visual data ranges (sourceArray, offset, count).</param>
-        public void ExtractChanges(Action<Array, int, int> onSpatialChanged, Action<Array, int, int> onVisualChanged)
-        {
-            m_SpatialStore.ProcessDirtyBatches(onSpatialChanged);
-            m_VisualStore.ProcessDirtyBatches(onVisualChanged);
-        }
-
-        /// <summary>
         /// Checks if a specific key is currently registered and has an allocated slot.
         /// </summary>
-        /// <param name="key">The key to check.</param>
-        /// <returns>True if the key exists in the registry.</returns>
         public bool Contains(TKey key) => TryGetIndex(key, out _);
+
+        #endregion
+
+        #region Mass Operations & Template Methods
 
         /// <summary>
         /// Marks all data in all registered stores as dirty, forcing a full GPU re-upload.
@@ -203,5 +227,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// Must be implemented by child classes to define what "inactive" means for TSpatial.
         /// </summary>
         protected abstract TSpatial GetInvalidSpatialData();
+
+        #endregion
     }
 }

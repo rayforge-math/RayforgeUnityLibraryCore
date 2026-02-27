@@ -1,3 +1,5 @@
+using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Collections.Iterator.Helpers;
 using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Environment.Abstractions;
@@ -16,6 +18,12 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     {
         #region Internal Types
 
+        public struct TileMetadata
+        {
+            public TKey Key;
+            public TextureMappingData Mapping;
+        }
+
         /// <summary>
         /// Stores the parameters for a pending tile update request.
         /// </summary>
@@ -25,15 +33,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             public int LodIndex;
             public Vector3 WorldPos;
             public float Radius;
-        }
-
-        /// <summary>
-        /// Stores the parameters for a pending tile update.
-        /// </summary>
-        private struct TileUpdateMeta
-        {
-            public TKey Key;
-            public TextureMappingData Data;
         }
 
         /// <summary>
@@ -110,7 +109,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         private readonly HashSet<TKey> m_PendingRemovals = new();
         private readonly Dictionary<TKey, TileUpdateRequest> m_PendingUpdates = new();
 
-        private readonly List<TileUpdateMeta> m_FrameResultsCache = new();
+        private readonly List<TileMetadata> m_BakeQueue = new();
 
         #endregion
 
@@ -130,11 +129,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         public bool IsInitialized => m_LodLevels != null && m_LodLevels.Length > 0 && m_Registry != null;
 
         /// <summary>
-        /// Grants read-only access to the internal registry.
-        /// </summary>
-        public ISpatialMetadataRegistry Registry => m_Registry;
-
-        /// <summary>
         /// Indicates if there are pending requests (adds or removals) in the queue.
         /// Use this to determine if FlushTileRequests() needs to be executed this frame.
         /// </summary>
@@ -144,7 +138,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// Indicates if new atlas mappings were generated during the last flush.
         /// If true, a bake pass is required to update the texture content.
         /// </summary>
-        public bool HasFrameUpdates => m_FrameResultsCache.Count > 0;
+        public bool HasBakeCommands => m_BakeQueue.Count > 0;
 
         #endregion
 
@@ -191,7 +185,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             m_ActiveMappings.Clear();
             m_PendingRemovals.Clear();
             m_PendingUpdates.Clear();
-            m_FrameResultsCache.Clear();
+            m_BakeQueue.Clear();
 
             if (m_LodLevels != null)
             {
@@ -374,10 +368,10 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             foreach (var request in m_PendingUpdates.Values)
             {
                 var mapping = ExecuteSet(request);
-                m_FrameResultsCache.Add(new TileUpdateMeta
+                m_BakeQueue.Add(new TileMetadata
                 {
                     Key = request.Key,
-                    Data = mapping
+                    Mapping = mapping
                 });
             }
             m_PendingUpdates.Clear();
@@ -388,49 +382,35 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         #region Dispatch GPU Updates
 
         /// <summary>
-        /// Broadcast.
+        /// Broadcast Iterator. 
         /// Iterates over the cached results. 
         /// Can be called multiple times for different texture passes.
         /// </summary>
-        /// <param name="onBakeAction">The atlas-specific bake logic (e.g., Draw Heightmap).</param>
-        public void BroadcastMappings(Action<TKey, TextureMappingData> onBakeAction)
+        public bool TryGetBakeIterator(out IIterator<TileMetadata> iter)
         {
-            if (!IsInitialized) return;
-            for (int i = 0; i < m_FrameResultsCache.Count; i++)
+            if (!IsInitialized)
             {
-                var meta = m_FrameResultsCache[i];
-                onBakeAction?.Invoke(meta.Key, meta.Data);
+                iter = IIterator<TileMetadata>.Empty;
+                return false;
             }
+
+            iter = m_BakeQueue.GetEnumerator().ToIterator();
+            return true;
         }
 
         /// <summary>
         /// Final cleanup of the pending requests. 
         /// Call this only after ALL atlases have processed the changes.
         /// </summary>
-        public void ClearBroadcastQueue()
+        public void ClearBakeQueue()
         {
-            m_FrameResultsCache.Clear();
+            m_BakeQueue.Clear();
         }
 
         /// <summary>
-        /// Extracts modified metadata segments and passes them to external buffer synchronization callbacks.
+        /// Grants read-only access to the internal registry.
         /// </summary>
-        /// <param name="onSpatialChanged">Callback for spatial buffer updates: (sourceArray, startElement, elementCount).</param>
-        /// <param name="onVisualChanged">Callback for visual buffer updates: (sourceArray, startElement, elementCount).</param>
-        public void SyncMetadata(Action<Array, int, int> onSpatialChanged, Action<Array, int, int> onVisualChanged)
-        {
-            if (!IsInitialized) return;
-            m_Registry?.ExtractChanges(onSpatialChanged, onVisualChanged);
-        }
-
-        /// <summary>
-        /// Acknowledges the successful synchronization of metadata by clearing all dirty flags.
-        /// Call this after SyncMetadata has successfully uploaded the data to the GPU.
-        /// </summary>
-        public void ClearDirtyMetadata()
-        {
-            m_Registry?.ClearDirtyState();
-        }
+        public ISpatialMetadataRegistry Registry => m_Registry;
 
         #endregion
 

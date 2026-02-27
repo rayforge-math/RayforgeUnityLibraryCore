@@ -1,3 +1,5 @@
+using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Rendering.Collections.Iterator;
 using System;
 
 namespace Rayforge.Core.Rendering.Collections.Buffered
@@ -35,13 +37,26 @@ namespace Rayforge.Core.Rendering.Collections.Buffered
         int HighestIndex { get; }
 
         /// <summary>
-        /// Triggers a synchronization of all modified data across all registered stores.
-        /// While this triggers an action, it is considered "read-only access" 
-        /// to the data flow, as it only facilitates the transfer to the GPU.
+        /// Provides a direct sync iterator for a specific metadata type.
+        /// Use this to target a specific ComputeBuffer for a specific data stream.
         /// </summary>
-        /// <param name="uploadAction">
-        /// Callback invoked for each dirty block: (Array source, int start, int count, Type storeType).
-        /// </param>
-        void SyncAllStores(Action<Array, int, int, Type> uploadAction);
+        /// <typeparam name="T">The metadata struct type.</typeparam>
+        public IIterator<BufferSegmentMeta> GetDirtyBatchIterator<T>() where T : unmanaged;
+
+        /// <summary>
+        /// Provides a direct, element-wise iterator for a specific metadata type.
+        /// Use this for CPU-side logic that requires reading all stored data sequentially,
+        /// such as serialization, validation, or global data analysis.
+        /// </summary>
+        /// <typeparam name="T">The unmanaged metadata struct type (e.g., SpatialData).</typeparam>
+        /// <returns>
+        /// An <see cref="IIterator{T}"/> over the underlying CPU array. 
+        /// Returns an empty iterator if no store is registered for the specified type.
+        /// </returns>
+        /// <remarks>
+        /// Unlike the Batch-Iterator, this does not group changes and ignores the dirty state. 
+        /// It performs a full sweep over the allocated capacity.
+        /// </remarks>
+        public IIterator<T> GetIterator<T>() where T : unmanaged;
     }
 }

@@ -19,6 +19,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         [SerializeField]
         private SurfaceTrackerSettings _settings = SurfaceTrackerSettings.Default;
+        private SurfaceTrackerSettings _activeSettings = SurfaceTrackerSettings.Default;
 
         [SerializeField]
         [Tooltip("Internal list of validated surfaces. Use TrackedSurfaces to access this externally.")]
@@ -30,6 +31,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         /// <summary> Event triggered on registry changes. </summary>
         public event Action<SurfaceTracker> OnRegistryChanged;
+
+        /// <summary> 
+        /// Event triggered when tracking settings (filters, scan rules) are modified. 
+        /// Useful for refreshing visualizers or forcing a re-scan.
+        /// </summary>
+        public event Action<SurfaceTracker> OnSettingsChanged;
 
         /// <summary>
         /// Provides read-only access to the underlying spatial database.
@@ -65,6 +72,9 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <summary> The shared spatial database where validated surfaces are stored. </summary>
         private SpatialSurfaceRegistry _objectRegistry;
 
+        /// <summary> Cached root transform. </summary>
+        private Transform _root;
+
         /// <summary> 
         /// Key: InstanceID, Value: IsManual (true if the surface is part of the persistent _surfaces list). 
         /// </summary>
@@ -91,33 +101,68 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         #endregion
 
+        #region Public Configuration
+
+        /// <summary>
+        /// Returns true if the current Settings differ from the ActiveSettings.
+        /// Use this to check if ApplySettings() needs to be called.
+        /// </summary>
+        public bool SettingsDirty => !_activeSettings.Equals(_settings);
+
+        /// <summary>
+        /// Provides access to the currently applied settings. (Read-only)
+        /// Use this to see what rules the tracker is actually following right now.
+        /// </summary>
+        public SurfaceTrackerSettings ActiveSettings => _activeSettings;
+
+        /// <summary>
+        /// Gets or sets the current tracker settings. 
+        /// Changing this does not automatically trigger a re-validation. 
+        /// Call ApplySettings() to synchronize the registry with these new rules.
+        /// </summary>
+        public SurfaceTrackerSettings Settings
+        {
+            get => _settings;
+            set => _settings = value;
+        }
+
+        /// <summary>
+        /// Synchronizes the current tracking state with the current settings.
+        /// Re-validates existing surfaces and triggers the OnSettingsChanged event.
+        /// </summary>
+        public void ApplySettings()
+        {
+            if (!SettingsDirty) return;
+
+            _activeSettings = _settings;
+            RebuildRegistry();
+
+            OnSettingsChanged?.Invoke(this);
+        }
+
+        #endregion
+
         #region Runtime & Init
 
         /// <summary>
         /// Connects the tracker to an external spatial registry and synchronizes existing data.
         /// </summary>
         /// <param name="externalRegistry">The shared spatial database to populate.</param>
-        public void Initialize(SpatialSurfaceRegistry externalRegistry)
+        /// <param name="root">The root transform to start the hierarchy scan from.</param>
+        public void Initialize(SpatialSurfaceRegistry externalRegistry, Transform root)
         {
             ClearStateInternal();
 
             _objectRegistry = externalRegistry;
-
-            if (IsInitialized)
-            {
-                SyncListToTrackingInternal();
-                _isDirty = true;
-            }
-
-            TryNotifyOnRegistryChanged();
+            _root = root;
+            _activeSettings = _settings;
         }
 
         /// <summary>
         /// Performs a complete rebuild of the tracker state by syncing the list and scanning hierarchy.
         /// </summary>
-        /// <param name="root">The root transform to start the hierarchy scan from.</param>
         /// <returns>True if any surfaces are currently being tracked after the rebuild.</returns>
-        public bool RebuildRegistry(Transform root)
+        public bool RebuildRegistry()
         {
             if (!IsInitialized) return false;
 
@@ -125,9 +170,9 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
             SyncListToTrackingInternal();
 
-            if (_settings.scanHierarchy && root != null)
+            if (_activeSettings.scanHierarchy && _root != null)
             {
-                ScanHierarchyInternal(root);
+                ScanHierarchyInternal(_root);
             }
             TryNotifyOnRegistryChanged();
             return TotalTrackedCount > 0;
@@ -465,12 +510,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         private bool FulfillsFilterCriteria(Transform t, Bounds b)
         {
-            if (!string.IsNullOrEmpty(_settings.nameFilter) && !t.name.Contains(_settings.nameFilter))
+            if (!string.IsNullOrEmpty(_activeSettings.nameFilter) && !t.name.Contains(_activeSettings.nameFilter))
                 return false;
 
-            if (_settings.enableAreaCheck)
+            if (_activeSettings.enableAreaCheck)
             {
-                return (b.size.x * b.size.z) > _settings.minAreaThreshold;
+                return (b.size.x * b.size.z) > _activeSettings.minAreaThreshold;
             }
 
             return true;

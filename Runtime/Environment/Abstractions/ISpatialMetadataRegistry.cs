@@ -1,6 +1,7 @@
+using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Rendering.Abstractions;
 using Rayforge.Core.Rendering.Collections.Buffered;
-using System;
+using Rayforge.Core.Rendering.Collections.Iterator;
 
 namespace Rayforge.Core.Environment.Abstractions
 {
@@ -22,8 +23,32 @@ namespace Rayforge.Core.Environment.Abstractions
         IMetadataStore VisualMetadata { get; }
 
         /// <summary>
-        /// Convenience bridge for external systems to extract changes from both stores at once.
+        /// Provides an iterator over modified spatial data segments.
+        /// Use this to perform optimized GPU uploads for the culling buffer.
         /// </summary>
-        void ExtractChanges(Action<Array, int, int> onSpatialChanged, Action<Array, int, int> onVisualChanged);
+        IIterator<BufferSegmentMeta> SpatialDirtyIterator { get; }
+
+        /// <summary>
+        /// Provides an iterator over modified visual data segments.
+        /// Use this to perform optimized GPU uploads for the rendering/atlas buffer.
+        /// </summary>
+        IIterator<BufferSegmentMeta> VisualDirtyIterator { get; }
+
+        /// <summary>
+        /// Clears the dirty tracking state only for the spatial store.
+        /// Call this after the spatial GPU buffer has been synchronized.
+        /// </summary>
+        void ClearSpatialDirty();
+
+        /// <summary>
+        /// Clears the dirty tracking state only for the visual store.
+        /// Call this after the visual GPU buffer has been synchronized.
+        /// </summary>
+        void ClearVisualDirty();
+
+        /// <summary>
+        /// Clears the dirty tracking state for both spatial and visual stores at once.
+        /// </summary>
+        void ClearAllDirty();
     }
 }
