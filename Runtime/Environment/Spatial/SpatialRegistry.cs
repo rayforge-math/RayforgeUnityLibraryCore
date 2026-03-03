@@ -1,3 +1,5 @@
+using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Collections.Helpers;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -33,7 +35,7 @@ namespace Rayforge.Core.Environment.Spatial
         protected bool _globalDirty = false;
 
         /// <summary> Provides read-only access to all currently registered entries. </summary>
-        public Dictionary<TKey, TValue>.ValueCollection AllEntries => _storage.Values;
+        public IIterator<TValue> AllEntries => _storage.Values.GetEnumerator().ToIterator();
 
         /// <summary> 
         /// The number of entries currently held in the registry.
@@ -126,12 +128,14 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// The master factory method. Retrieves an existing entry or creates, parents, and registers a new one.
         /// </summary>
+        /// <typeparam name="TData">The type of additional context data to pass to the factory without heap allocation.</typeparam>
         /// <param name="key">The spatial key for indexing.</param>
         /// <param name="name">The name for the new GameObject.</param>
         /// <param name="position">The initial world position.</param>
+        /// <param name="data">The context data passed into the factory to avoid lambda captures/closures.</param>
         /// <param name="factory">Factory method for initialization.</param>
         /// <returns>The existing or newly created entry.</returns>
-        protected bool GetOrCreate(TKey key, string name, Vector3 position, Func<GameObject, TKey, TValue> factory, out TValue result)
+        protected bool GetOrCreate<TData>(TKey key, string name, Vector3 position, TData data, Func<TKey, GameObject, TData, TValue> factory, out TValue result)
         {
             if (!IsInitialized)
             {
@@ -153,7 +157,7 @@ namespace Rayforge.Core.Environment.Spatial
                 if (_container != null) go.transform.SetParent(_container);
                 go.transform.position = position;
 
-                result = factory.Invoke(go, key);
+                result = factory.Invoke(key, go, data);
 
                 if (result == null)
                     throw new NullReferenceException($"Factory for {name} returned null.");

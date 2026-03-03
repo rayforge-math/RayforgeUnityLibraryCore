@@ -12,31 +12,26 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     {
         /// <summary>
         /// Synchronizes a spatial data source with a chunk registry by comparing "dirty" cells.
-        /// It handles the lifecycle (creation, update, removal) of chunks without being coupled to specific 
-        /// logic like LODs, Atlasing, or Baking.
+        /// Uses a data passthrough pattern to ensure callbacks can be static and allocation-free.
         /// </summary>
-        /// <typeparam name="TChunk">
-        /// The type of the chunk shell. Must be a reference type.
-        /// </typeparam>
-        /// <param name="spatialData">
-        /// The source of truth containing tracked objects in a grid.
-        /// </param>
-        /// <param name="chunkRegistry">
-        /// The registry managing the lifecycle and storage of the chunk shells.
-        /// </param>
+        /// <typeparam name="TChunk">The type of the chunk shell. Must be a reference type.</typeparam>
+        /// <typeparam name="TData">The type of the configuration data passed to the lifecycle callbacks.</typeparam>
+        /// <param name="spatialData">The source of truth containing tracked objects in a grid.</param>
+        /// <param name="chunkRegistry">The registry managing the lifecycle and storage of the chunk shells.</param>
+        /// <param name="data">The state object passed to onCreate and onDataChanged (prevents closures).</param>
         /// <param name="onCreate">
         /// Callback invoked when a new chunk is created. 
-        /// Use this to initialize the chunk (e.g., subscribe to LOD events).
+        /// Use static lambdas here to avoid GC pressure during synchronization.
         /// </param>
         /// <param name="onDataChanged">
-        /// Callback invoked when a chunk already exists but the underlying 
-        /// spatial data in its cell has been modified (e.g., to trigger a re-bake).
+        /// Callback invoked when a chunk already exists but the underlying spatial data has changed.
         /// </param>
-        public static void Synchronize<TChunk>(
+        public static void Synchronize<TChunk, TData>(
             ISpatialCollection<Vector3Int> spatialData,
             ChunkRegistry<TChunk> chunkRegistry,
-            Action<TChunk> onCreate,
-            Action<TChunk> onDataChanged) 
+            TData data,
+            Action<TChunk, TData> onCreate,
+            Action<TChunk, TData> onDataChanged)
             where TChunk : Chunk<TChunk>
         {
             if (!spatialData.IsInitialized) return;
@@ -50,11 +45,11 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 {
                     if (exists)
                     {
-                        onDataChanged?.Invoke(chunk);
+                        onDataChanged?.Invoke(chunk, data);
                     }
                     else
                     {
-                        chunkRegistry.GetOrCreateChunk(key, onCreate, out _);
+                        chunkRegistry.GetOrCreateChunk(key, data, onCreate, out _);
                     }
                 }
                 else if (exists)

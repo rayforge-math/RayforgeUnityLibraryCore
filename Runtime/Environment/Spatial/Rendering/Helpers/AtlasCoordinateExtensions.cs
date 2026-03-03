@@ -1,4 +1,4 @@
-using Rayforge.Core.Rendering.Textures;
+using Rayforge.Core.Rendering.Abstractions;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering.Helpers

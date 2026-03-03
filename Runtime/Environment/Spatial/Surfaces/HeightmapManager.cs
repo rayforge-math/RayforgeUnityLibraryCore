@@ -146,6 +146,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 lodReference = Camera.main.transform;
                 LogDebug("LOD Reference: Auto-assigned Main Camera.");
             }
+
         }
 
         private bool CheckMovementThreshold()

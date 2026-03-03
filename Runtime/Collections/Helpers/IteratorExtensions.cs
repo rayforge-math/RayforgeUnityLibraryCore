@@ -1,7 +1,8 @@
 using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Collections.Iterator;
 using System.Collections.Generic;
 
-namespace Rayforge.Core.Collections.Iterator.Helpers
+namespace Rayforge.Core.Collections.Helpers
 {
     public static class IteratorExtensions
     {
@@ -105,16 +106,16 @@ namespace Rayforge.Core.Collections.Iterator.Helpers
             int validCount = 0;
             for (int i = 0; i < sources.Length; i++)
             {
-                if (sources[i] != null && sources[i] != IIterator<T>.Empty)
+                if (sources[i] != null && sources[i] != IIterator<T>.Empty())
                     validCount++;
             }
 
-            if (validCount == 0) return IIterator<T>.Empty;
+            if (validCount == 0) return IIterator<T>.Empty();
             if (validCount == 1)
             {
                 for (int i = 0; i < sources.Length; i++)
                 {
-                    if (sources[i] != null && sources[i] != IIterator<T>.Empty) 
+                    if (sources[i] != null && sources[i] != IIterator<T>.Empty()) 
                         return sources[i];
                 }
             }

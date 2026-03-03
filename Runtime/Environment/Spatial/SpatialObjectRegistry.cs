@@ -1,6 +1,6 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Iterator;
-using Rayforge.Core.Collections.Iterator.Helpers;
+using Rayforge.Core.Collections.Helpers;
 using Rayforge.Core.Environment.Abstractions;
 using System;
 using System.Collections.Generic;

@@ -10,6 +10,24 @@ namespace Rayforge.Core.Collections.Abstractions
         where TState : struct
     {
         /// <summary>
+        /// Checks if a next element is available.
+        /// Implementation Note: This method is allowed to advance internal pointers 
+        /// to the next valid element to optimize the subsequent MoveNext call.
+        /// </summary>
+        /// <param name="state">A reference to the tracking state.</param>
+        /// <returns>True if more elements are pending; false otherwise.</returns>
+        bool HasNext(ref TState state);
+
+        /// <summary>
+        /// Returns the next element without consuming it or clearing the eager-fetch cache.
+        /// Essential for "Lockstep" synchronization between multiple iterators.
+        /// </summary>
+        /// <param name="state">A reference to the tracking state.</param>
+        /// <param name="result">The next element if found.</param>
+        /// <returns>True if a next element exists.</returns>
+        bool TryPeekNext(ref TState state, out TType result);
+
+        /// <summary>
         /// Advances the iteration logic using a reference to the provided state.
         /// </summary>
         /// <param name="state">A reference to the tracking state.</param>

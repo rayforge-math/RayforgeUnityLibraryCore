@@ -27,6 +27,10 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         private readonly Dictionary<int, SpatialState<TType>> _storage;
 
+        private TType _cachedValue;
+        private bool _hasCachedValue;
+        private bool _isExhausted;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="SpatialIteratorState{TKey, TType}"/> struct.
         /// </summary>
@@ -36,6 +40,29 @@ namespace Rayforge.Core.Environment.Spatial
         {
             _bucket = bucket;
             _storage = storage;
+            _cachedValue = default;
+            _hasCachedValue = false;
+            _isExhausted = false;
+        }
+
+        /// <summary>
+        /// Checks if a next valid component exists by pre-resolving the next ID from the bucket.
+        /// </summary>
+        public bool HasNext(ref SpatialIteratorState<TKey, TType> self)
+        {
+            MoveBeforeNext(ref self);
+            return self._hasCachedValue;
+        }
+
+        /// <summary>
+        /// Returns the already resolved component without consuming it.
+        /// Useful for comparing spatial objects with other data streams before processing.
+        /// </summary>
+        public bool TryPeekNext(ref SpatialIteratorState<TKey, TType> self, out TType result)
+        {
+            MoveBeforeNext(ref self);
+            result = self._cachedValue;
+            return self._hasCachedValue;
         }
 
         /// <summary>
@@ -46,17 +73,40 @@ namespace Rayforge.Core.Environment.Spatial
         /// <returns>True if a valid component was found and resolved; false otherwise.</returns>
         public bool MoveNext(ref SpatialIteratorState<TKey, TType> self, out TType result)
         {
-            while (self._bucket.MoveNext())
+            MoveBeforeNext(ref self);
+
+            if (self._hasCachedValue)
             {
-                if (self._storage.TryGetValue(self._bucket.Current, out var state))
-                {
-                    result = state.component;
-                    return true;
-                }
+                result = self._cachedValue;
+                self._cachedValue = default;
+                self._hasCachedValue = false;
+                return true;
             }
 
             result = default;
             return false;
+        }
+
+        /// <summary>
+        /// Core optimization: Advances the bucket enumerator until a valid storage entry is found.
+        /// Pre-fetches the component into the cache so that both HasNext and MoveNext 
+        /// operate on the same pre-validated data.
+        /// </summary>
+        private static void MoveBeforeNext(ref SpatialIteratorState<TKey, TType> self)
+        {
+            if (self._hasCachedValue || self._isExhausted) return;
+
+            while (self._bucket.MoveNext())
+            {
+                if (self._storage != null && self._storage.TryGetValue(self._bucket.Current, out var state))
+                {
+                    self._cachedValue = state.component;
+                    self._hasCachedValue = true;
+                    return;
+                }
+            }
+
+            self._isExhausted = true;
         }
     }
 }

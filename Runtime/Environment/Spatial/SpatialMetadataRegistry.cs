@@ -1,8 +1,6 @@
 using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Collections.Buffered;
 using Rayforge.Core.Environment.Abstractions;
-using Rayforge.Core.Rendering.Abstractions;
-using Rayforge.Core.Rendering.Collections.Buffered;
-using Rayforge.Core.Rendering.Collections.Iterator;
 using System;
 
 namespace Rayforge.Core.Environment.Spatial
@@ -12,15 +10,15 @@ namespace Rayforge.Core.Environment.Spatial
     /// This class enforces the presence of spatial (culling) and visual (rendering) data stores.
     /// </summary>
     /// <typeparam name="TKey">The unique identifier type for the entities (e.g., Vector3Int for Chunks).</typeparam>
-    /// <typeparam name="TSpatial">The struct type used for GPU culling (e.g., SphereSpatialData).</typeparam>
-    /// <typeparam name="TVisual">The struct type used for GPU rendering (e.g., MatrixSpatialData).</typeparam>
-    public abstract class SpatialMetadataRegistry<TKey, TSpatial, TVisual> : MetadataRegistry<TKey>, ISpatialMetadataRegistry
+    /// <typeparam name="TCulling">The struct type used for GPU culling (e.g., SphereSpatialData).</typeparam>
+    /// <typeparam name="TRender">The struct type used for GPU rendering (e.g., MatrixSpatialData).</typeparam>
+    public abstract class SpatialMetadataRegistry<TKey, TCulling, TRender> : MetadataRegistry<TKey>, ISpatialMetadataRegistry
         where TKey : struct, IEquatable<TKey>
-        where TSpatial : unmanaged
-        where TVisual : unmanaged
+        where TCulling : unmanaged
+        where TRender : unmanaged
     {
-        private MetadataStore<TSpatial> m_SpatialStore;
-        private MetadataStore<TVisual> m_VisualStore;
+        private MetadataStore<TCulling> m_CullingStore;
+        private MetadataStore<TRender> m_RenderStore;
 
         #region Lifecycle & Configuration
 
@@ -51,8 +49,8 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         private void SetupStores()
         {
-            m_SpatialStore = AddStore<TSpatial>();
-            m_VisualStore = AddStore<TVisual>();
+            m_CullingStore = AddStore<TCulling>();
+            m_RenderStore = AddStore<TRender>();
         }
 
         #endregion
@@ -60,27 +58,32 @@ namespace Rayforge.Core.Environment.Spatial
         #region ISpatialMetadataRegistry Implementation
 
         /// <summary>
-        /// Grants read-only access to the spatial store via the non-generic interface.
-        /// English comment: Useful for external buffer management or debugging.
+        /// Access to the culling metadata (Position, Radius). 
+        /// Usually synchronized instantly via a merged iterator.
         /// </summary>
-        public IMetadataStore SpatialMetadata => m_SpatialStore;
+        public IMetadataStore CullingMetadata => m_CullingStore;
 
         /// <summary>
-        /// Grants read-only access to the visual store via the non-generic interface.
+        /// Access to the rendering metadata (UVs, Slices, ...).
+        /// Usually synchronized staggered via a fragmented iterator.
         /// </summary>
-        public IMetadataStore VisualMetadata => m_VisualStore;
+        public IMetadataStore RenderMetadata => m_RenderStore;
 
         /// <summary>
-        /// Gets the specialized iterator for modified spatial data.
-        /// English comment: Use this to update the GPU culling buffer.
+        /// Provides an iterator for modified spatial metadata (Position, Radius).
+        /// Use this for GPU culling updates. 'merge' optimizes for fewer SetData calls.
         /// </summary>
-        public IIterator<BufferSegmentMeta> SpatialDirtyIterator => m_SpatialStore.GetDirtyBatchIterator();
+        /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
+        public IIterator<BufferSegmentMeta> GetCullingDirtyIterator(bool merge = true)
+            => m_CullingStore.GetDirtyBatchIterator(merge);
 
         /// <summary>
-        /// Gets the specialized iterator for modified visual data.
-        /// English comment: Use this to update the GPU rendering/atlas buffer.
+        /// Provides an iterator for modified visual metadata (Atlas Slices, UV Offsets).
+        /// Use this for GPU rendering updates. Set 'merge' to false for staggered baking.
         /// </summary>
-        public IIterator<BufferSegmentMeta> VisualDirtyIterator => m_VisualStore.GetDirtyBatchIterator();
+        /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
+        public IIterator<BufferSegmentMeta> GetRenderDirtyIterator(bool merge = true)
+            => m_RenderStore.GetDirtyBatchIterator(merge);
 
         /// <summary>
         /// Clears the dirty tracking state for both spatial and visual stores.
@@ -88,26 +91,20 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public void ClearAllDirty()
         {
-            m_SpatialStore.ClearDirty();
-            m_VisualStore.ClearDirty();
+            m_CullingStore.ClearDirty();
+            m_RenderStore.ClearDirty();
         }
 
         /// <summary>
         /// Clears the dirty tracking state only for the spatial store.
         /// English comment: Useful if you sync buffers at different frequencies.
         /// </summary>
-        public void ClearSpatialDirty()
-        {
-            m_SpatialStore.ClearDirty();
-        }
+        public void ClearCullingDirty() => m_CullingStore.ClearDirty();
 
         /// <summary>
         /// Clears the dirty tracking state only for the visual store.
         /// </summary>
-        public void ClearVisualDirty()
-        {
-            m_VisualStore.ClearDirty();
-        }
+        public void ClearRenderDirty() => m_RenderStore.ClearDirty();
 
         #endregion
 
@@ -117,29 +114,35 @@ namespace Rayforge.Core.Environment.Spatial
         /// Updates both spatial and visual data for a specific key using a single index lookup.
         /// If the key does not exist, a new slot is automatically allocated.
         /// </summary>
-        public void SetMetadata(TKey key, TSpatial spatial, TVisual visual)
+        /// <returns>The absolute index in the metadata stores.</returns>
+        public int SetMetadata(TKey key, TCulling culling, TRender render)
         {
             int idx = GetOrAllocateIndex(key);
-            m_SpatialStore.Set(idx, spatial);
-            m_VisualStore.Set(idx, visual);
+            m_CullingStore.Set(idx, culling);
+            m_RenderStore.Set(idx, render);
+            return idx;
         }
 
         /// <summary>
         /// Updates only the spatial/culling data for a key.
         /// </summary>
-        public void SetSpatial(TKey key, TSpatial spatial)
+        /// <returns>The absolute index in the metadata stores.</returns>
+        public int SetCulling(TKey key, TCulling culling)
         {
             int idx = GetOrAllocateIndex(key);
-            m_SpatialStore.Set(idx, spatial);
+            m_CullingStore.Set(idx, culling);
+            return idx;
         }
 
         /// <summary>
         /// Updates only the visual/atlas data for a key.
         /// </summary>
-        public void SetVisual(TKey key, TVisual visual)
+        /// <returns>The absolute index in the metadata stores.</returns>
+        public int SetRender(TKey key, TRender render)
         {
             int idx = GetOrAllocateIndex(key);
-            m_VisualStore.Set(idx, visual);
+            m_RenderStore.Set(idx, render);
+            return idx;
         }
 
         #endregion
@@ -149,28 +152,27 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// Tries to retrieve the current spatial and visual data for a given key.
         /// </summary>
-        public bool TryGetMetadata(TKey key, out TSpatial spatial, out TVisual visual)
+        public bool TryGetMetadata(TKey key, out TCulling culling, out TRender render)
         {
             if (TryGetIndex(key, out int index))
             {
-                spatial = m_SpatialStore.Get(index);
-                visual = m_VisualStore.Get(index);
+                culling = m_CullingStore.Get(index);
+                render = m_RenderStore.Get(index);
                 return true;
             }
-
-            spatial = default;
-            visual = default;
+            culling = default;
+            render = default;
             return false;
         }
 
         /// <summary>
         /// Tries to retrieve only the spatial data.
         /// </summary>
-        public bool TryGetSpatial(TKey key, out TSpatial spatial)
+        public bool TryGetCulling(TKey key, out TCulling spatial)
         {
             if (TryGetIndex(key, out int index))
             {
-                spatial = m_SpatialStore.Get(index);
+                spatial = m_CullingStore.Get(index);
                 return true;
             }
             spatial = default;
@@ -180,11 +182,11 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// Tries to retrieve only the visual data.
         /// </summary>
-        public bool TryGetVisual(TKey key, out TVisual visual)
+        public bool TryGetRender(TKey key, out TRender visual)
         {
             if (TryGetIndex(key, out int index))
             {
-                visual = m_VisualStore.Get(index);
+                visual = m_RenderStore.Get(index);
                 return true;
             }
             visual = default;
@@ -198,7 +200,7 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
-        #region Mass Operations & Template Methods
+        #region Mass Operations & Management
 
         /// <summary>
         /// Marks all data in all registered stores as dirty, forcing a full GPU re-upload.
@@ -206,27 +208,29 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public void MarkAllDirty()
         {
-            m_SpatialStore.MarkAllDirty();
-            m_VisualStore.MarkAllDirty();
+            m_CullingStore.MarkAllDirty();
+            m_RenderStore.MarkAllDirty();
         }
 
         /// <summary>
         /// Fully releases the key and ensures the GPU data is invalidated.
         /// This is the "Template Method" that provides a unified API.
         /// </summary>
-        public void ReleaseAndKill(TKey key)
+        /// <returns>The index that was released, or -1 if the key was not found.</returns>
+        public int ReleaseAndKill(TKey key)
         {
             if (TryGetIndex(key, out int index))
             {
-                m_SpatialStore.Set(index, GetInvalidSpatialData());
-                Release(key);
+                m_CullingStore.Set(index, GetInvalidCullingData());
+                return Release(key);
             }
+            return -1;
         }
 
         /// <summary>
         /// Must be implemented by child classes to define what "inactive" means for TSpatial.
         /// </summary>
-        protected abstract TSpatial GetInvalidSpatialData();
+        protected abstract TCulling GetInvalidCullingData();
 
         #endregion
     }

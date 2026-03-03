@@ -40,18 +40,31 @@ namespace Rayforge.Core.Collections.Iterator
         }
 
         /// <summary>
-        /// Returns an empty iterator instance. 
-        /// The _isInitialized flag ensures MoveNext immediately returns false without allocation.
-        /// </summary>
-        /// <returns>A default, uninitialized iterator.</returns>
-        public static Iterator<TType, TState> Empty => default;
-
-        /// <summary>
         /// Gets the element at the current position of the iterator.
         /// </summary>
         public TType Current => _current;
 
         object IEnumerator.Current => Current;
+
+        /// <summary>
+        /// Indicates if there are more elements to process.
+        /// Use this to check the iterator state without advancing the iterator via MoveNext().
+        /// </summary>
+        public bool HasNext => _state.HasNext(ref _state);
+
+        /// <summary>
+        /// Implements the new Peek functionality from the interface.
+        /// Delegates directly to the underlying state logic.
+        /// </summary>
+        public bool TryPeekNext(out TType result)
+        {
+            if (!_isInitialized)
+            {
+                result = default;
+                return false;
+            }
+            return _state.TryPeekNext(ref _state, out result);
+        }
 
         /// <summary>
         /// Advances the iterator to the next element by invoking the internal logic struct.
@@ -101,5 +114,12 @@ namespace Rayforge.Core.Collections.Iterator
         {
             throw new NotSupportedException("Reset is not supported on state-based struct iterators. Create a new iterator instead.");
         }
+
+        /// <summary>
+        /// Returns an empty iterator instance. 
+        /// The _isInitialized flag ensures MoveNext immediately returns false without allocation.
+        /// </summary>
+        /// <returns>A default, uninitialized iterator.</returns>
+        public IIterator<TType> Empty() => default;
     }
 }

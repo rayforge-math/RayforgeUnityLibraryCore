@@ -1,53 +1,54 @@
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Rendering.Abstractions;
-using Rayforge.Core.Rendering.Collections.Buffered;
-using Rayforge.Core.Rendering.Collections.Iterator;
 
 namespace Rayforge.Core.Environment.Abstractions
 {
     /// <summary>
-    /// Specialized contract for registries that manage both spatial (culling) and visual (rendering) metadata.
+    /// Specialized contract for registries that manage both culling (visibility) and rendering (atlas/shader) metadata.
     /// Inherits from IMetadataRegistry to provide a unified interface for 
-    /// all registries participating in the spatial-visual pipeline.
+    /// all registries participating in the culling-render pipeline.
     /// </summary>
     public interface ISpatialMetadataRegistry : IMetadataRegistry
     {
         /// <summary>
-        /// Gets the untyped metadata store for spatial/culling information.
+        /// Gets the untyped metadata store for culling information (e.g., Position, Radius).
+        /// Use this to manage the GPU buffer for spatial culling passes.
         /// </summary>
-        IMetadataStore SpatialMetadata { get; }
+        IMetadataStore CullingMetadata { get; }
 
         /// <summary>
-        /// Gets the untyped metadata store for visual/transformation information.
+        /// Gets the untyped metadata store for rendering/atlas information (e.g., UVs, Slices).
+        /// Use this to manage the GPU buffer for the final fragment shader.
         /// </summary>
-        IMetadataStore VisualMetadata { get; }
+        IMetadataStore RenderMetadata { get; }
 
         /// <summary>
-        /// Provides an iterator over modified spatial data segments.
-        /// Use this to perform optimized GPU uploads for the culling buffer.
+        /// Provides an iterator over modified culling data segments.
+        ///  Use merge = true for immediate, efficient GPU uploads of spatial changes.
         /// </summary>
-        IIterator<BufferSegmentMeta> SpatialDirtyIterator { get; }
+        /// <param name="merge">Whether to combine contiguous dirty batches into single segments.</param>
+        IIterator<BufferSegmentMeta> GetCullingDirtyIterator(bool merge = true);
 
         /// <summary>
-        /// Provides an iterator over modified visual data segments.
-        /// Use this to perform optimized GPU uploads for the rendering/atlas buffer.
+        /// Provides an iterator over modified rendering/atlas data segments.
+        /// Use merge = false for staggered processing (e.g., texture baking budget).
         /// </summary>
-        IIterator<BufferSegmentMeta> VisualDirtyIterator { get; }
+        /// <param name="merge">Whether to combine contiguous dirty batches into single segments.</param>
+        IIterator<BufferSegmentMeta> GetRenderDirtyIterator(bool merge = true);
 
         /// <summary>
-        /// Clears the dirty tracking state only for the spatial store.
-        /// Call this after the spatial GPU buffer has been synchronized.
+        /// Clears the dirty tracking state only for the culling store.
+        /// Call this after the culling GPU buffer has been synchronized.
         /// </summary>
-        void ClearSpatialDirty();
+        void ClearCullingDirty();
 
         /// <summary>
-        /// Clears the dirty tracking state only for the visual store.
-        /// Call this after the visual GPU buffer has been synchronized.
+        /// Clears the dirty tracking state only for the render store.
+        /// Call this after the rendering/atlas GPU buffer has been synchronized.
         /// </summary>
-        void ClearVisualDirty();
+        void ClearRenderDirty();
 
         /// <summary>
-        /// Clears the dirty tracking state for both spatial and visual stores at once.
+        /// Clears the dirty tracking state for both culling and rendering stores at once.
         /// </summary>
         void ClearAllDirty();
     }

@@ -2,8 +2,8 @@ using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Rendering;
+using Rayforge.Core.Rendering.Abstractions;
 using Rayforge.Core.Rendering.EditorStructures;
-using Rayforge.Core.Rendering.Textures;
 using System;
 using UnityEngine;
 
@@ -15,6 +15,21 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// </summary>
     public class TextureChunkCoordinator
     {
+        /*
+        private struct BakeSession : IDisposable
+        {
+            public Iterator<BufferSegmentMeta, DirtySegmentIteratorState> RenderIterator;
+            public Iterator<BufferSegmentMeta, DirtySegmentIteratorState> CullingIterator;
+
+            public bool IsActive => RenderIterator.HasNext || CullingIterator.HasNext;
+
+            public void Dispose()
+            {
+                RenderIterator.Dispose();
+                CullingIterator.Dispose();
+            }
+        }*/
+
         private const string Tag = "[TextureCoordinator]";
 
         private readonly LodAtlasMapper<Vector3Int> _mapper = new();
@@ -47,14 +62,14 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public int BatchSize => _mapper?.Registry.BatchSize ?? 0;
 
         /// <summary>
-        /// Gets the stride (byte size) for the spatial data buffer.
+        /// Gets the stride (byte size) for the culling data buffer.
         /// </summary>
-        public int SpatialStride => _mapper?.Registry.SpatialMetadata.Stride ?? 0;
+        public int CullingStride => _mapper?.Registry.CullingMetadata.Stride ?? 0;
 
         /// <summary>
-        /// Gets the stride (byte size) for the visual mapping buffer.
+        /// Gets the stride (byte size) for the render mapping buffer.
         /// </summary>
-        public int VisualStride => _mapper?.Registry.VisualMetadata.Stride ?? 0;
+        public int RenderStride => _mapper?.Registry.RenderMetadata.Stride ?? 0;
 
         /// <summary>
         /// Gets the highest index currently in use to optimize Compute Shader dispatch.
@@ -270,6 +285,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                     RemoveChunkTile(chunk);
                 }
             }
+
             _mapper.FlushTileRequests();
         }
 
@@ -286,18 +302,17 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 ChunkSyncUtility.Synchronize(
                     masterSource,
                     _chunkRegistry,
-                    onCreate: chunk => {
-                        SetupChunk(chunk);
-                        if (chunk.IsVisible) RequestChunkTile(chunk);
+                    this,
+                    static (chunk, @this) => {
+                        @this.SetupChunk(chunk);
+                        if (chunk.IsVisible) @this.RequestChunkTile(chunk);
                     },
-                    onDataChanged: chunk => {
-                        if (chunk.IsVisible) RequestChunkTile(chunk);
+                    static (chunk, @this) => {
+                        if (chunk.IsVisible) @this.RequestChunkTile(chunk);
                     }
                 );
 
-                if (_mapper.HasPendingRequests)
-                    _mapper.FlushTileRequests();
-                
+                _mapper.FlushTileRequests();
             }
             catch (Exception e)
             {
@@ -315,6 +330,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
             try
             {
+                _mapper
                 if(_mapper.TryGetBakeIterator(out var iter))
                 {
                     foreach(var entry in iter)

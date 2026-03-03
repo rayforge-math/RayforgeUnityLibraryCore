@@ -13,6 +13,12 @@ namespace Rayforge.Core.Collections.Iterator
         private readonly int _end;
         private int _index;
 
+        /// <summary>
+        /// Initializes the state with a target array and a specific range.
+        /// </summary>
+        /// <param name="array">The source array.</param>
+        /// <param name="start">The starting index.</param>
+        /// <param name="count">The number of elements to iterate.</param>
         public ArrayIteratorState(T[] array, int start, int count)
         {
             _array = array;
@@ -20,11 +26,44 @@ namespace Rayforge.Core.Collections.Iterator
             _end = start + count;
         }
 
+        /// <summary>
+        /// Non-destructive check if more elements are available in the specified range.
+        /// </summary>
+        /// <param name="self">Reference to the current state.</param>
+        /// <returns>True if the next index is within bounds; false otherwise.</returns>
+        public bool HasNext(ref ArrayIteratorState<T> self)
+        {
+            return IsValid(ref self, self._index + 1);
+        }
+
+        /// <summary>
+        /// Peeks at the next element (+1) without advancing the internal pointer.
+        /// Critical for synchronization between multiple array-based streams.
+        /// </summary>
+        public bool TryPeekNext(ref ArrayIteratorState<T> self, out T result)
+        {
+            int nextIndex = self._index + 1;
+            if (IsValid(ref self, nextIndex))
+            {
+                result = self._array[nextIndex];
+                return true;
+            }
+
+            result = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Advances the internal index and retrieves the next element.
+        /// </summary>
+        /// <param name="self">Reference to the current state.</param>
+        /// <param name="result">The element at the new index.</param>
+        /// <returns>True if an element was retrieved; false if the end was reached.</returns>
         public bool MoveNext(ref ArrayIteratorState<T> self, out T result)
         {
             self._index++;
 
-            if (self._array != null && self._index < self._end && self._index < self._array.Length)
+            if (IsValid(ref self, self._index))
             {
                 result = self._array[self._index];
                 return true;
@@ -32,6 +71,15 @@ namespace Rayforge.Core.Collections.Iterator
 
             result = default;
             return false;
+        }
+
+        /// <summary>
+        /// Centralized bounds check. 
+        /// Static to ensure no accidental 'this' capture and to encourage inlining.
+        /// </summary>
+        private static bool IsValid(ref ArrayIteratorState<T> self, int index)
+        {
+            return self._array != null && index >= 0 && index < self._end && index < self._array.Length;
         }
     }
 }

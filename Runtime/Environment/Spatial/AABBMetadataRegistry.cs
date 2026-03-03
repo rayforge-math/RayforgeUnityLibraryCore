@@ -23,6 +23,6 @@ namespace Rayforge.Core.Environment.Spatial
         /// Returns the default invalid state for AABBs (where IsActive = 0.0f).
         /// </summary>
         /// <returns>An inactive AABB spatial data structure.</returns>
-        protected override AABBSpatialData GetInvalidSpatialData() => default;
+        protected override AABBSpatialData GetInvalidCullingData() => default;
     }
 }

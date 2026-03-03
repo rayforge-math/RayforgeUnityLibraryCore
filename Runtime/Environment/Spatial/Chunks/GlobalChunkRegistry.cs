@@ -46,25 +46,37 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         #endregion
 
         #region Lifecycle & Factory
+
         /// <summary>
         /// Retrieves an existing chunk or creates a new one at the specified grid coordinate.
         /// </summary>
-        /// <param name="key">The 3D grid coordinate.</param>
-        /// <returns>The chunk instance at the given location.</returns>
-        public static bool GetOrCreateChunk(Vector3Int key, Action<T> onConfigure, out T chunk) => Instance.GetOrCreateChunk(key, onConfigure, out chunk);
+        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
+        /// <param name="key">The 3D grid coordinate (e.g., world-space index).</param>
+        /// <param name="data">The data object used to initialize or configure the chunk.</param>
+        /// <param name="onConfigure">A callback executed to set up the chunk if it's newly created or needs refresh.</param>
+        /// <param name="chunk">When this method returns, contains the chunk associated with the key.</param>
+        /// <returns>True if the chunk was successfully retrieved or created; otherwise, false.</returns>
+        public static bool GetOrCreateChunk<TData>(Vector3Int key, TData data, Action<T, TData> onConfigure, out T chunk)
+            => Instance.GetOrCreateChunk(key, data, onConfigure, out chunk);
 
         /// <summary>
         /// Ensures a chunk exists at the given world position, creating it if necessary.
         /// </summary>
-        /// <param name="pos">The world-space position.</param>
-        /// <returns>The existing or newly created chunk instance.</returns>
-        public static bool GetOrCreateChunkAtWorldPos(Vector3 pos, Action<T> onConfigure, out T chunk) => Instance.GetOrCreateChunkAtWorldPos(pos, onConfigure, out chunk);
+        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
+        /// <param name="pos">The world-space position to check for a chunk.</param>
+        /// <param name="data">The data object used to initialize or configure the chunk.</param>
+        /// <param name="onConfigure">A callback executed to set up the chunk if it's newly created or needs refresh.</param>
+        /// <param name="chunk">When this method returns, contains the chunk corresponding to the world position.</param>
+        /// <returns>True if the chunk was successfully retrieved or created; otherwise, false.</returns>
+        public static bool GetOrCreateChunkAtWorldPos<TData>(Vector3 pos, TData data, Action<T, TData> onConfigure, out T chunk)
+            => Instance.GetOrCreateChunkAtWorldPos(pos, data, onConfigure, out chunk);
 
         /// <summary>
         /// Safely removes and destroys a chunk from the grid based on its coordinate.
         /// </summary>
         /// <param name="key">The grid coordinate of the chunk to remove.</param>
         public static void DestroyChunk(Vector3Int key) => Instance.RemoveAndDestroy(key);
+
         #endregion
 
         #region Spatial Queries

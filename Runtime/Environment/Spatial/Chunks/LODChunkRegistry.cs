@@ -17,7 +17,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     {
         #region Fields & Config
 
-        private const string Tag = "[LODRegistry]";
+        private new const string Tag = "[LODRegistry]";
 
         private float[] _lodSqrDistances;
         private float[] _lodDistances;
@@ -156,12 +156,18 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         #region Factory Overrides
 
         /// <summary>
-        /// Overrides the base factory to ensure a valid LOD is set immediately upon creation.
-        /// Prevents visual popping by calculating the LOD before the first frame is rendered.
+        /// Overrides the base factory using a data passthrough pattern to ensure LOD settings 
+        /// are initialized without triggering GC allocations via closures.
         /// </summary>
-        public override bool GetOrCreateChunk(Vector3Int key, Action<T> onConfigure, out T chunk)
+        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
+        /// <param name="key">The 3D grid coordinate for the chunk.</param>
+        /// <param name="data">The data object used to configure the chunk (passed to onConfigure).</param>
+        /// <param name="onConfigure">A callback for additional user-defined configuration, executed before LOD setup.</param>
+        /// <param name="chunk">When this method returns, contains the initialized and LOD-configured chunk instance.</param>
+        /// <returns>True if a brand new chunk was created; otherwise, false.</returns>
+        public override bool GetOrCreateChunk<TData>(Vector3Int key, TData data, Action<T, TData> onConfigure, out T chunk)
         {
-            bool isNew = base.GetOrCreateChunk(key, onConfigure, out chunk);
+            bool isNew = base.GetOrCreateChunk(key, data, onConfigure, out chunk);
             if (isNew)
             {
                 ((ILODReceiver)chunk).ConfigureLODRange(_lodDistances.Length - 1);
@@ -223,7 +229,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public IIterator<Vector3Int> GetKeysInLODLevel(int lodIndex, Vector3 center)
         {
             if (lodIndex < 0 || lodIndex >= LodCount)
-                return Iterator<Vector3Int, GridLodLevelState>.Empty;
+                return IIterator<Vector3Int>.Empty();
 
             float outerRadius = LodDistances[lodIndex];
 
@@ -265,7 +271,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public IIterator<Vector3Int> GetKeysInFullRange(Vector3 center)
         {
             if (LodCount == 0)
-                return Iterator<Vector3Int, GridRadiusState>.Empty;
+                return IIterator<Vector3Int>.Empty();
 
             float maxRadius = LodDistances[LodCount - 1];
             return GetKeysInRadius(center, maxRadius, useEdgeDistance: true);

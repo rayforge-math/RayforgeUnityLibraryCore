@@ -13,6 +13,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         private readonly Vector3Int _max;
         private Vector3Int _current;
         private bool _hasStarted;
+        private bool _isExhausted;
 
         /// <summary>
         /// Initializes the traversal state with a defined min and max boundary.
@@ -22,38 +23,98 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             _min = min;
             _max = max;
             _current = min;
+
             _hasStarted = false;
+            _isExhausted = min.x > max.x || min.y > max.y || min.z > max.z;
         }
 
         /// <summary>
-        /// Executes the next step in the grid traversal.
-        /// Called by the Iterator via 'ref self' to modify the actual state memory.
+        /// Predicts if a successor to the current coordinate exists.
+        /// </summary>
+        public bool HasNext(ref GridRangeState self)
+        {
+            if (self._isExhausted) return false;
+            if (!self._hasStarted) return true;
+
+            Vector3Int next = CalculateNext(self._current, self._min, self._max, out bool exhausted);
+            return !exhausted;
+        }
+
+        /// <summary>
+        /// Returns the next coordinate in the sequence without advancing the internal state.
+        /// </summary>
+        public bool TryPeekNext(ref GridRangeState self, out Vector3Int result)
+        {
+            if (self._isExhausted)
+            {
+                result = default;
+                return false;
+            }
+
+            if (!self._hasStarted)
+            {
+                result = self._min;
+                return true;
+            }
+
+            result = CalculateNext(self._current, self._min, self._max, out bool exhausted);
+            return !exhausted;
+        }
+
+        /// <summary>
+        /// Advances the state and returns the next coordinate.
         /// </summary>
         public bool MoveNext(ref GridRangeState self, out Vector3Int result)
         {
+            if (self._isExhausted)
+            {
+                result = default;
+                return false;
+            }
+
             if (!self._hasStarted)
             {
                 self._hasStarted = true;
-                result = self._current;
-                return self.ValidateInitial();
+                result = self._min;
+                return true;
             }
 
-            self._current.x++;
-            if (self._current.x > self._max.x)
+            self._current = CalculateNext(self._current, self._min, self._max, out self._isExhausted);
+
+            if (!self._isExhausted)
             {
-                self._current.x = self._min.x;
-                self._current.y++;
-                if (self._current.y > self._max.y)
-                {
-                    self._current.y = self._min.y;
-                    self._current.z++;
-                }
+                result = self._current;
+                return true;
             }
 
-            result = self._current;
-            return self._current.z <= self._max.z;
+            result = default;
+            return false;
         }
 
-        private bool ValidateInitial() => _current.x <= _max.x && _current.y <= _max.y && _current.z <= _max.z;
+        /// <summary>
+        /// Pure functional logic to determine the next coordinate in Z-Y-X order.
+        /// </summary>
+        private static Vector3Int CalculateNext(Vector3Int current, Vector3Int min, Vector3Int max, out bool exhausted)
+        {
+            exhausted = false;
+            Vector3Int next = current;
+
+            next.x++;
+            if (next.x > max.x)
+            {
+                next.x = min.x;
+                next.y++;
+                if (next.y > max.y)
+                {
+                    next.y = min.y;
+                    next.z++;
+                    if (next.z > max.z)
+                    {
+                        exhausted = true;
+                    }
+                }
+            }
+            return next;
+        }
     }
 }

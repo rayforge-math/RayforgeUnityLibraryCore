@@ -15,9 +15,21 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T>, ISpatialGridProvider<Vector3Int>
         where T : Chunk<T>
     {
+        #region Internal Structures
+
+        private struct CreateMeta
+        {
+            public GridSize gridSize;
+            public bool isXActive;
+            public bool isYActive;
+            public bool isZActive;
+        }
+
+        #endregion
+
         #region Fields
 
-        private const string Tag = "[ChunkRegistry]";
+        private new const string Tag = "[ChunkRegistry]";
 
         /// <summary> The physical size of one side of a chunk cell. </summary>
         public GridSize GridSize
@@ -210,13 +222,32 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #region Factory Implementation
 
-        public virtual bool GetOrCreateChunk(Vector3Int key, Action<T> onConfigure, out T chunk)
+        /// <summary>
+        /// Retrieves an existing chunk or creates a new one at the specified grid coordinate.
+        /// Applies a coordinate mask to ensure the key fits within valid bounds before processing.
+        /// </summary>
+        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
+        /// <param name="key">The 3D grid coordinate.</param>
+        /// <param name="data">The data object used to initialize or configure the chunk.</param>
+        /// <param name="onConfigure">A callback executed to set up the chunk if it's newly created or needs refresh.</param>
+        /// <param name="chunk">When this method returns, contains the chunk associated with the masked key.</param>
+        /// <returns>True if the chunk was successfully retrieved or created; otherwise, false.</returns>
+        public virtual bool GetOrCreateChunk<TData>(Vector3Int key, TData data, Action<T, TData> onConfigure, out T chunk)
         {
             Vector3Int validKey = MaskKey(key);
-            return CreateInternal(validKey, onConfigure, out chunk);
+            return CreateInternal(validKey, data, onConfigure, out chunk);
         }
 
-        public bool GetOrCreateChunk(Vector2Int key2D, Action<T> onConfigure, out T chunk)
+        /// <summary>
+        /// Maps a 2D grid coordinate to the active 3D axes of the volume and retrieves or creates the corresponding chunk.
+        /// </summary>
+        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
+        /// <param name="key2D">The 2D coordinate to be projected into 3D space.</param>
+        /// <param name="data">The data object used to initialize or configure the chunk.</param>
+        /// <param name="onConfigure">A callback executed to set up the chunk if it's newly created or needs refresh.</param>
+        /// <param name="chunk">When this method returns, contains the chunk at the projected 3D location.</param>
+        /// <returns>True if the chunk was successfully retrieved or created; otherwise, false.</returns>
+        public bool GetOrCreateChunk<TData>(Vector2Int key2D, TData data, Action<T, TData> onConfigure, out T chunk)
         {
             Vector3Int key3d = Vector3Int.zero;
             int currentDimension = 0;
@@ -231,11 +262,20 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 }
             }
 
-            return GetOrCreateChunk(key3d, onConfigure, out chunk);
+            return GetOrCreateChunk(key3d, data, onConfigure, out chunk);
         }
 
-        public bool GetOrCreateChunkAtWorldPos(Vector3 pos, Action<T> onConfigure, out T chunk)
-            => GetOrCreateChunk(WorldToGrid(pos), onConfigure, out chunk);
+        /// <summary>
+        /// Converts a world-space position to a grid coordinate and ensures a chunk exists at that location.
+        /// </summary>
+        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
+        /// <param name="pos">The world-space position.</param>
+        /// <param name="data">The data object used to initialize or configure the chunk.</param>
+        /// <param name="onConfigure">A callback executed to set up the chunk if it's newly created or needs refresh.</param>
+        /// <param name="chunk">When this method returns, contains the chunk corresponding to the calculated grid position.</param>
+        /// <returns>True if the chunk was successfully retrieved or created; otherwise, false.</returns>
+        public bool GetOrCreateChunkAtWorldPos<TData>(Vector3 pos, TData data, Action<T, TData> onConfigure, out T chunk)
+            => GetOrCreateChunk(WorldToGrid(pos), data, onConfigure, out chunk);
 
         /// <summary>
         /// Attempts to retrieve a chunk at a specific world position.
@@ -251,36 +291,55 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         }
 
         /// <summary>
-        /// Centralized logic to create and initialize a chunk.
+        /// Orchestrates the internal creation, naming, and configuration of a chunk.
         /// </summary>
-        private bool CreateInternal(Vector3Int validKey, Action<T> onConfigure, out T chunk)
+        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
+        /// <param name="validKey">The already masked and validated 3D grid coordinate.</param>
+        /// <param name="data">The data object used to initialize or configure the chunk.</param>
+        /// <param name="onConfigure">A callback executed to finalize the chunk's setup after creation or retrieval.</param>
+        /// <param name="chunk">When this method returns, contains the fully initialized chunk instance.</param>
+        /// <returns>True if a brand new chunk was created; false if an existing one was retrieved.</returns>
+        private bool CreateInternal<TData>(Vector3Int validKey, TData data, Action<T, TData> onConfigure, out T chunk)
         {
+            var meta = new CreateMeta
+            {
+                gridSize = GridSize,
+                isXActive = IsXActive,
+                isYActive = IsYActive,
+                isZActive = IsZActive
+            };
+
             bool isNew = GetOrCreate(
                 validKey,
                 $"Chunk_{validKey.x}_{validKey.y}_{validKey.z}",
                 GridToWorld(validKey),
+                meta,
                 InitializeChunk,
                 out chunk
             );
 
-            onConfigure?.Invoke(chunk);
+            onConfigure?.Invoke(chunk, data);
             return isNew;
         }
 
         /// <summary>
-        /// Encapsulates the component setup and initial state.
+        /// Factory method called during chunk instantiation to attach components and define initial bounds.
         /// </summary>
-        private T InitializeChunk(GameObject go, Vector3Int k)
+        /// <param name="key">The grid coordinate assigned to the chunk.</param>
+        /// <param name="go">The GameObject instance representing the chunk.</param>
+        /// <param name="meta">Snapshot of grid settings used for spatial configuration (e.g., extents).</param>
+        /// <returns>The newly attached and initialized component of type T.</returns>
+        private static T InitializeChunk(Vector3Int key, GameObject go, CreateMeta meta)
         {
             T chunk = go.AddComponent<T>();
-            chunk.GridKey = k;
+            chunk.GridKey = key;
 
             // Configure AABB extents based on the global grid size.
-            float half = (int)GridSize * 0.5f;
+            float half = (int)meta.gridSize * 0.5f;
             chunk.localExtent = new Vector3(
-                IsXActive ? half : 0,
-                IsYActive ? half : 0,
-                IsZActive ? half : 0
+                meta.isXActive ? half : 0,
+                meta.isYActive ? half : 0,
+                meta.isZActive ? half : 0
             );
 
             chunk.SuppressTransformDirtyOnce();

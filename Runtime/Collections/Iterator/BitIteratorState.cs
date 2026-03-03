@@ -30,6 +30,35 @@ namespace Rayforge.Core.Collections.Iterator
         }
 
         /// <summary>
+        /// Scans ahead and moves the internal index to the last invalid bit before the next hit.
+        /// This optimizes MoveNext by skipping already evaluated 'false' bits.
+        /// </summary>
+        public bool HasNext(ref BitIteratorState self)
+        {
+            MoveBeforeNext(ref self);
+            return self._currentIndex < self._endIndex - 1;
+        }
+
+        /// <summary>
+        /// Returns the index of the next matching bit without advancing the iterator's consumer state.
+        /// Useful for syncing bit-masks between different GPU update passes.
+        /// </summary>
+        public bool TryPeekNext(ref BitIteratorState self, out int result)
+        {
+            MoveBeforeNext(ref self);
+
+            int nextIndex = self._currentIndex + 1;
+            if (IsValid(ref self, nextIndex))
+            {
+                result = nextIndex;
+                return true;
+            }
+
+            result = default;
+            return false;
+        }
+
+        /// <summary>
         /// Finds the next bit that matches the target state within the configured range.
         /// </summary>
         /// <param name="self">Reference to the current iterator state.</param>
@@ -37,20 +66,48 @@ namespace Rayforge.Core.Collections.Iterator
         /// <returns>True if a matching bit was found; otherwise, false.</returns>
         public bool MoveNext(ref BitIteratorState self, out int result)
         {
+            MoveBeforeNext(ref self);
             self._currentIndex++;
 
-            while (self._currentIndex < self._endIndex)
+            if (IsValid(ref self, self._currentIndex))
             {
-                if (self._bits.Get(self._currentIndex) == self._targetState)
-                {
-                    result = self._currentIndex;
-                    return true;
-                }
-                self._currentIndex++;
+                result = self._currentIndex;
+                return true;
             }
 
             result = default;
             return false;
+        }
+
+        /// <summary>
+        /// Static helper for bounds and null checks to encourage inlining.
+        /// </summary>
+        private static bool IsValid(ref BitIteratorState self, int index)
+        {
+            return self._bits != null && index >= 0 && index < self._endIndex && index < self._bits.Length;
+        }
+
+        /// <summary>
+        /// Core optimization: Fast-forwards the index to the position immediately preceding the next target bit.
+        /// This ensures that the actual data is only scanned once, regardless of HasMore/MoveNext order.
+        /// </summary>
+        private static void MoveBeforeNext(ref BitIteratorState self)
+        {
+            if (self._bits == null) return;
+
+            int search = self._currentIndex + 1;
+
+            while (search < self._endIndex && search < self._bits.Length)
+            {
+                if (self._bits.Get(search) == self._targetState)
+                {
+                    self._currentIndex = search - 1;
+                    return;
+                }
+                search++;
+            }
+
+            self._currentIndex = self._endIndex;
         }
     }
 }

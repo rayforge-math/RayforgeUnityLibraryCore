@@ -1,5 +1,3 @@
-using Rayforge.Core.Rendering.Textures;
-
 namespace Rayforge.Core.Rendering.Abstractions
 {
     /// <summary>

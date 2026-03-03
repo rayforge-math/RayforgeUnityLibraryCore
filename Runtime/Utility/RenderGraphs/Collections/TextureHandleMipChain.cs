@@ -1,7 +1,7 @@
 using System;
 using UnityEngine.Rendering.RenderGraphModule;
 using Rayforge.Core.Common;
-using Rayforge.Core.Rendering.Collections.Graphics;
+using Rayforge.Core.Rendering.Collections;
 
 namespace Rayforge.Core.Utility.RenderGraphs.Collections
 {

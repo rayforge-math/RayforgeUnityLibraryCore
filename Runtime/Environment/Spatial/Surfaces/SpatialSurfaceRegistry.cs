@@ -1,5 +1,5 @@
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Collections.Iterator.Helpers;
+using Rayforge.Core.Collections.Helpers;
 using Rayforge.Core.Environment.Abstractions;
 using System;
 using System.Collections.Generic;
@@ -237,7 +237,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public IIterator<int> GetAllIds()
         {
             if (!IsInitialized)
-                return IIterator<int>.Empty;
+                return IIterator<int>.Empty();
 
             return IteratorExtensions.Combine(
                 _meshRegistry.AllIds,

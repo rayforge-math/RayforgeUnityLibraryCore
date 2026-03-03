@@ -1,12 +1,12 @@
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Collections.Iterator.Helpers;
 using Rayforge.Core.Common.Rendering;
-using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Environment.Abstractions;
-using Rayforge.Core.Rendering.Textures;
+using Rayforge.Core.Rendering.Abstractions;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Rayforge.Core.Collections.Buffered;
+using Rayforge.Core.Collections.Helpers;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering
 {
@@ -35,81 +35,18 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             public float Radius;
         }
 
-        /// <summary>
-        /// Encapsulates both the structural layout and the slot occupancy of a specific LOD level.
-        /// </summary>
-        private class LodLevelManager
-        {
-            public int StartSlice;
-            public int SlotsPerDim;
-            public int TotalCapacity;
-
-            private int m_NextAvailableIndex = 0;
-            private readonly Stack<int> m_FreeSlots = new();
-
-            /// <summary>
-            /// Acquires the next available slot index, either from the free stack or by incrementing the counter.
-            /// </summary>
-            public int Acquire()
-            {
-                if (m_FreeSlots.Count > 0) return m_FreeSlots.Pop();
-                if (m_NextAvailableIndex >= TotalCapacity)
-                    throw new OverflowException("LOD level capacity exceeded.");
-
-                return m_NextAvailableIndex++;
-            }
-
-            /// <summary>
-            /// Returns a slot index to the pool for reuse.
-            /// </summary>
-            public void Release(int index) => m_FreeSlots.Push(index);
-
-            /// <summary>
-            /// Calculates the normalized atlas mapping data for a specific slot.
-            /// </summary>
-            public TextureMappingData GetMapping(int slotIndex)
-            {
-                int slotsPerSlice = SlotsPerDim * SlotsPerDim;
-                int localSlice = slotIndex / slotsPerSlice;
-                int localSlot = slotIndex % slotsPerSlice;
-
-                float scale = 1.0f / SlotsPerDim;
-                int x = localSlot % SlotsPerDim;
-                int y = localSlot / SlotsPerDim;
-
-                return new TextureMappingData
-                {
-                    SliceIndex = StartSlice + localSlice,
-                    RelativeScale = scale,
-                    RelativeOffset = new Vector2(x * scale, y * scale)
-                };
-            }
-
-            /// <summary>
-            /// Resets the occupancy state of this LOD level, effectively freeing all slots.
-            /// Clears the free-slots stack and resets the linear allocation counter.
-            /// </summary>
-            public void Reset()
-            {
-                m_NextAvailableIndex = 0;
-                m_FreeSlots.Clear();
-            }
-        }
-
         #endregion
 
         #region Private State
 
-        private const string Tag = "[AtlasMapper]";
-
+        private LodAtlasLayout m_Layout;
         private SphereMetadataRegistry<TKey, TextureMappingData> m_Registry;
-        private LodLevelManager[] m_LodLevels;
+        private LinearSlotAllocator[] m_Allocators;
+
+        private readonly RequestQueue<TKey, TileUpdateRequest> m_Queue = new();
+
         private readonly Dictionary<TKey, (int lodIndex, int slotIndex)> m_ActiveMappings = new();
-
-        private readonly HashSet<TKey> m_PendingRemovals = new();
-        private readonly Dictionary<TKey, TileUpdateRequest> m_PendingUpdates = new();
-
-        private readonly List<TileMetadata> m_BakeQueue = new();
+        private readonly Dictionary<int, TileMetadata> m_BakeLookup = new();
 
         #endregion
 
@@ -126,19 +63,24 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </summary>
         public PowerOfTwoResolution BaseResolution { get; private set; }
 
-        public bool IsInitialized => m_LodLevels != null && m_LodLevels.Length > 0 && m_Registry != null;
+        public bool IsInitialized => m_Layout != null && m_Registry != null;
 
         /// <summary>
         /// Indicates if there are pending requests (adds or removals) in the queue.
         /// Use this to determine if FlushTileRequests() needs to be executed this frame.
         /// </summary>
-        public bool HasPendingRequests => m_PendingUpdates.Count > 0 || m_PendingRemovals.Count > 0;
+        public bool HasPendingRequests => m_Queue.HasRequests;
 
         /// <summary>
         /// Indicates if new atlas mappings were generated during the last flush.
         /// If true, a bake pass is required to update the texture content.
         /// </summary>
-        public bool HasBakeCommands => m_BakeQueue.Count > 0;
+        public bool HasBakeCommands => m_BakeLookup.Count > 0;
+
+        /// <summary>
+        /// Provides read-only access to the underlying metadata registry.
+        /// </summary>
+        public ISpatialMetadataRegistry Registry => m_Registry; 
 
         #endregion
 
@@ -183,13 +125,12 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             m_Registry?.Clear();
 
             m_ActiveMappings.Clear();
-            m_PendingRemovals.Clear();
-            m_PendingUpdates.Clear();
-            m_BakeQueue.Clear();
+            m_Queue.Clear();
+            m_BakeLookup.Clear();
 
-            if (m_LodLevels != null)
+            if (m_Allocators != null)
             {
-                foreach (var level in m_LodLevels) level.Reset();
+                foreach (var alloc in m_Allocators) alloc.Reset();
             }
         }
 
@@ -230,66 +171,41 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             if (batchSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(batchSize), $"Batch size must be at least 1.");
 
-            bool changed = 
-                !IsInitialized ||
-                m_LodLevels.Length != lodResolutions.Length ||
-                m_Registry.BatchSize != batchSize ||
-                !BaseResolution.Equals(lodResolutions[0]);
-
-            int lodCount = lodResolutions.Length;
-
-            var nextLevels = new LodLevelManager[lodCount];
-            int currentSliceOffset = 0;
-            int totalCapacityNeeded = 0;
-            PowerOfTwoResolution incomingBase = lodResolutions[0];
-
-            for (int i = 0; i < lodCount; i++)
+            if (IsInitialized && m_Layout.IsCompatible(provider.LodCount, batchSize, lodResolutions[0]) && m_Registry.BatchSize == batchSize)
             {
-                int tilesInRing = provider.GetMaxCapacityForLODLevel(i);
-                int slotsPerDim = lodResolutions[i].ToSlotCountPerDim(incomingBase);
-                int slotsPerSlice = slotsPerDim * slotsPerDim;
-
-                if (slotsPerDim <= 0)
-                    throw new InvalidOperationException($"Resolution for LOD {i} is too large for BaseResolution {incomingBase}.");
-
-                int reqSlices = (tilesInRing > 0) ? Mathf.CeilToInt((float)tilesInRing / slotsPerSlice) : 0;
-                int levelCapacity = reqSlices * slotsPerSlice;
-
-                if (!changed)
-                {
-                    var current = m_LodLevels[i];
-                    if (current.StartSlice != currentSliceOffset ||
-                        current.SlotsPerDim != slotsPerDim ||
-                        current.TotalCapacity != levelCapacity)
-                    {
-                        changed = true;
-                    }
-                }
-
-                nextLevels[i] = new LodLevelManager
-                {
-                    StartSlice = currentSliceOffset,
-                    SlotsPerDim = slotsPerDim,
-                    TotalCapacity = levelCapacity
-                };
-
-                totalCapacityNeeded += levelCapacity;
-                currentSliceOffset += reqSlices;
+                return false;
             }
 
-            if (!changed) return false;
+            int[] capacities = new int[provider.LodCount];
+            for (int i = 0; i < provider.LodCount; i++)
+                capacities[i] = provider.GetMaxCapacityForLODLevel(i);
 
-            Clear();
+            if (m_Layout == null)
+                m_Layout = new LodAtlasLayout(provider.LodCount, capacities, lodResolutions);
+            else
+                m_Layout.Reconfigure(provider.LodCount, capacities, lodResolutions);
 
-            m_LodLevels = nextLevels;
-            BaseResolution = incomingBase;
-            RequiredSliceCount = currentSliceOffset;
+            if (m_Allocators == null || m_Allocators.Length != m_Layout.LodCount)
+            {
+                m_Allocators = new LinearSlotAllocator[m_Layout.LodCount];
+            }
+
+            for (int i = 0; i < m_Layout.LodCount; i++)
+            {
+                int levelCap = m_Layout.GetLevelCapacity(i);
+
+                if (m_Allocators[i] == null)
+                    m_Allocators[i] = new LinearSlotAllocator(levelCap);
+                else
+                    m_Allocators[i].Reconfigure(levelCap);
+            }
 
             if (m_Registry == null)
-                m_Registry = new SphereMetadataRegistry<TKey, TextureMappingData>(totalCapacityNeeded, batchSize);
+                m_Registry = new SphereMetadataRegistry<TKey, TextureMappingData>(m_Layout.TotalCombinedCapacity, batchSize);
             else
-                m_Registry.Reconfigure(totalCapacityNeeded, batchSize);
+                m_Registry.Reconfigure(m_Layout.TotalCombinedCapacity, batchSize);
 
+            Clear();
             return true;
         }
 
@@ -310,17 +226,15 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </remarks>
         public void RequestTile(TKey key, int lodIndex, Vector3 worldPos, float radius)
         {
-            if (lodIndex < 0 || lodIndex >= m_LodLevels.Length)
-                return;
+            if (lodIndex < 0 || lodIndex >= m_Allocators.Length) return;
 
-            m_PendingRemovals.Remove(key);
-            m_PendingUpdates[key] = new TileUpdateRequest
+            m_Queue.EnqueueUpdate(key, new TileUpdateRequest
             {
                 Key = key,
                 LodIndex = lodIndex,
                 WorldPos = worldPos,
                 Radius = radius
-            };
+            });
         }
 
         /// <summary>
@@ -331,19 +245,15 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// If an update for this tile was already queued in the same frame, it will be discarded.
         /// The actual slot release happens during <see cref="ApplyChanges"/>.
         /// </remarks>
-        public void ReleaseTile(TKey key)
-        {
-            m_PendingUpdates.Remove(key);
-            m_PendingRemovals.Add(key);
-        }
+        public void ReleaseTile(TKey key) => m_Queue.EnqueueRemoval(key);
 
         #endregion
 
-        #region Execute Queue
+        #region Bake Queue Control
 
         /// <summary>
         /// Executes all queued removals and then all queued updates in a single batch and
-        /// adds mapping updates to the broadcast queue.
+        /// adds mapping updates to the bake queue.
         /// </summary>
         /// <remarks>
         /// Removals are processed first to ensure that released indices are immediately 
@@ -351,66 +261,56 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </remarks>
         public void FlushTileRequests()
         {
-            int removeCount = m_PendingRemovals.Count;
-            int updateCount = m_PendingUpdates.Count;
+            if (!m_Queue.HasRequests) return;
 
-            if (removeCount == 0 && updateCount == 0)
+            var removeIt = m_Queue.GetRemovalIterator();
+            while (removeIt.MoveNext())
             {
-                return;
+                ExecuteRemove(removeIt.Current);
             }
 
-            foreach (var key in m_PendingRemovals)
+            var updateIt = m_Queue.GetUpdateIterator();
+            while (updateIt.MoveNext())
             {
-                ExecuteRemove(key);
+                ExecuteSet(updateIt.Current);
             }
-            m_PendingRemovals.Clear();
 
-            foreach (var request in m_PendingUpdates.Values)
-            {
-                var mapping = ExecuteSet(request);
-                m_BakeQueue.Add(new TileMetadata
-                {
-                    Key = request.Key,
-                    Mapping = mapping
-                });
-            }
-            m_PendingUpdates.Clear();
+            m_Queue.Clear();
         }
 
-        #endregion
-
-        #region Dispatch GPU Updates
+        /// <summary>
+        /// Provides an iterator over all pending tile bakes. 
+        /// Each element contains the tile metadata required for bake.
+        /// </summary>
+        public IIterator<TileMetadata> GetPendingBakes()
+            => m_BakeLookup.Values.GetEnumerator().ToIterator();
 
         /// <summary>
-        /// Broadcast Iterator. 
-        /// Iterates over the cached results. 
-        /// Can be called multiple times for different texture passes.
+        /// Provides a fresh iterator for all segments that need a GPU update (metadata or texture).
         /// </summary>
-        public bool TryGetBakeIterator(out IIterator<TileMetadata> iter)
+        /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
+        public IIterator<BufferSegmentMeta> GetCullingDirtyIterator(bool merge = false)
+            => m_Registry.GetCullingDirtyIterator(merge);
+
+        /// <summary>
+        /// Provides a fresh iterator for all segments that need a GPU update (metadata or texture).
+        /// </summary>
+        /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
+        public IIterator<BufferSegmentMeta> GetRenderDirtyIterator(bool merge = false)
+            => m_Registry.GetRenderDirtyIterator(merge);
+
+        /// <summary>
+        /// Tries to retrieve the metadata for a specific registry index if it's marked for baking.
+        /// </summary>
+        public bool TryGetBakeTile(int registryIndex, out TileMetadata metadata)
         {
-            if (!IsInitialized)
-            {
-                iter = IIterator<TileMetadata>.Empty;
-                return false;
-            }
-
-            iter = m_BakeQueue.GetEnumerator().ToIterator();
-            return true;
+            return m_BakeLookup.TryGetValue(registryIndex, out metadata);
         }
 
         /// <summary>
-        /// Final cleanup of the pending requests. 
-        /// Call this only after ALL atlases have processed the changes.
+        /// Clears the bake lookup. Useful when the whole atlas is invalidated.
         /// </summary>
-        public void ClearBakeQueue()
-        {
-            m_BakeQueue.Clear();
-        }
-
-        /// <summary>
-        /// Grants read-only access to the internal registry.
-        /// </summary>
-        public ISpatialMetadataRegistry Registry => m_Registry;
+        public void ClearBakeQueue() => m_BakeLookup.Clear();
 
         #endregion
 
@@ -424,7 +324,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         {
             if (m_ActiveMappings.Remove(key, out var mapping))
             {
-                m_LodLevels[mapping.lodIndex].Release(mapping.slotIndex);
+                m_Allocators[mapping.lodIndex].Release(mapping.slotIndex);
                 m_Registry.ReleaseAndKill(key);
             }
         }
@@ -433,29 +333,36 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// Performs the actual allocation and metadata update for a tile request.
         /// </summary>
         /// <param name="req">The update request parameters.</param>
-        private TextureMappingData ExecuteSet(TileUpdateRequest req)
+        /// <returns>Returns true if the tile is brand new or changed its LOD level (requires full re-bake).</returns>
+        private bool ExecuteSet(TileUpdateRequest req)
         {
             bool isNew = !m_ActiveMappings.TryGetValue(req.Key, out var mapping);
             bool lodChanged = !isNew && mapping.lodIndex != req.LodIndex;
 
             if (lodChanged)
             {
-                m_LodLevels[mapping.lodIndex].Release(mapping.slotIndex);
+                m_Allocators[mapping.lodIndex].Release(mapping.slotIndex);
                 isNew = true;
             }
 
             if (isNew)
             {
-                int slot = m_LodLevels[req.LodIndex].Acquire();
+                int slot = m_Allocators[req.LodIndex].Acquire();
                 mapping = (req.LodIndex, slot);
                 m_ActiveMappings[req.Key] = mapping;
             }
 
-            var atlasData = m_LodLevels[mapping.lodIndex].GetMapping(mapping.slotIndex);
+            var atlasMapping = m_Layout.GetMapping(mapping.lodIndex, mapping.slotIndex);
             var spatialData = new SphereSpatialData { Position = req.WorldPos, Radius = req.Radius };
 
-            m_Registry.SetMetadata(req.Key, spatialData, atlasData);
-            return atlasData;
+            int bufferIndex = m_Registry.SetMetadata(req.Key, spatialData, atlasMapping);
+            m_BakeLookup[bufferIndex] = new TileMetadata 
+            { 
+                Key = req.Key, 
+                Mapping = atlasMapping 
+            };
+
+            return isNew;
         }
 
         #endregion
