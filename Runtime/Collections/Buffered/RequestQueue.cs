@@ -30,8 +30,8 @@ namespace Rayforge.Core.Collections.Buffered
         /// <summary>
         /// Provides an iterator over the actual update payloads.
         /// </summary>
-        public IIterator<TValue> GetUpdateIterator()
-            => m_PendingUpdates.Values.GetEnumerator().ToIterator();
+        public IIterator<KeyValuePair<TKey, TValue>> GetUpdateIterator()
+            => m_PendingUpdates.GetEnumerator().ToIterator();
 
         /// <summary>
         /// Queues an update or addition. If the key was marked for removal, that removal is cancelled.

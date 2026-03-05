@@ -86,6 +86,21 @@ namespace Rayforge.Core.Environment.Spatial
             => m_RenderStore.GetDirtyBatchIterator(merge);
 
         /// <summary>
+        /// Provides a synchronized iterator that yields dirty segments from both stores.
+        /// Merges culling and render dirty states into unified sync windows.
+        /// </summary>
+        /// <param name="merge">If true, contiguous dirty blocks are merged into larger segments.</param>
+        public IIterator<SyncedBufferSegmentMeta> GetSyncIterator(bool merge = true)
+        {
+            var cullingScanner = m_CullingStore.GetDirtyBatchIterator(merge);
+            var renderScanner = m_RenderStore.GetDirtyBatchIterator(merge);
+
+            var syncState = new SpatialSyncIteratorState(cullingScanner, renderScanner, BatchSize);
+
+            return syncState.ToIterator();
+        }
+
+        /// <summary>
         /// Clears the dirty tracking state for both spatial and visual stores.
         /// English comment: Call this after a full synchronization of both buffers.
         /// </summary>

@@ -28,5 +28,28 @@ namespace Rayforge.Core.Collections.Helpers
             int endElement = Math.Min((endBatch + 1) * batchSize, totalCapacity);
             count = Math.Max(0, endElement - startElement);
         }
+
+        /// <summary>
+        /// Validates that one batch size is a multiple of the other.
+        /// Ensures hierarchical alignment between two different data streams.
+        /// </summary>
+        public static bool IsPowerOfAligned(int batchSizeA, int batchSizeB)
+        {
+            int max = Math.Max(batchSizeA, batchSizeB);
+            int min = Math.Min(batchSizeA, batchSizeB);
+            return min > 0 && max % min == 0;
+        }
+
+        /// <summary>
+        /// Calculates an aligned batch size that is at least the requested size 
+        /// and a multiple of the largest involved batch size.
+        /// </summary>
+        public static int GetAlignedBatchSize(int requestedSize, int batchSizeA, int batchSizeB)
+        {
+            int maxBatch = Math.Max(batchSizeA, batchSizeB);
+            if (maxBatch <= 0) return requestedSize;
+
+            return GetTotalBatches(requestedSize, maxBatch) * maxBatch;
+        }
     }
 }

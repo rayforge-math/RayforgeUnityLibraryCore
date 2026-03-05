@@ -23,6 +23,26 @@ namespace Rayforge.Core.Collections.Buffered
         private bool _hasCachedSegment;
 
         /// <summary>
+        /// The number of elements per dirty bit. 
+        /// </summary>
+        public int BatchSize => _batchSize;
+
+        /// <summary>
+        /// The total capacity of the underlying store.
+        /// </summary>
+        public int TotalCapacity => _totalCapacity;
+
+        /// <summary>
+        /// The raw source array being scanned.
+        /// </summary>
+        public Array SourceArray => _sourceArray;
+
+        /// <summary>
+        /// Indicates if this scanner is configured to merge contiguous dirty blocks.
+        /// </summary>
+        public bool IsMergingEnabled => _mergeContiguous;
+
+        /// <summary>
         /// Initializes a new iterator for scanning dirty segments.
         /// </summary>
         /// <param name="source">The raw data array to be synced.</param>

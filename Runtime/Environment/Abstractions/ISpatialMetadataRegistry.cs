@@ -36,6 +36,13 @@ namespace Rayforge.Core.Environment.Abstractions
         IIterator<BufferSegmentMeta> GetRenderDirtyIterator(bool merge = true);
 
         /// <summary>
+        /// Provides a synchronized iterator that yields dirty segments from both stores simultaneously.
+        /// Use this for unified synchronization where spatial and visual data must stay in sync.
+        /// </summary>
+        /// <param name="merge">If true, uses "Greedy Windowing" to combine adjacent dirty areas into larger sync windows.</param>
+        IIterator<SyncedBufferSegmentMeta> GetSyncIterator(bool merge = true);
+
+        /// <summary>
         /// Clears the dirty tracking state only for the culling store.
         /// Call this after the culling GPU buffer has been synchronized.
         /// </summary>
