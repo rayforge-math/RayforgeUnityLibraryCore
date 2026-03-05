@@ -10,8 +10,9 @@ namespace Rayforge.Core.Collections.Buffered
     /// </summary>
     public class LinearSlotAllocator
     {
-        private int m_NextAvailableIndex = 0;
+        private int m_NextLocalIndex = 0;
         private int m_Capacity;
+        private int m_BaseOffset;
         private readonly Stack<int> m_FreeSlots = new();
 
         /// <summary>
@@ -20,28 +21,35 @@ namespace Rayforge.Core.Collections.Buffered
         public int Capacity => m_Capacity;
 
         /// <summary>
+        /// The global start index for this allocator's range.
+        /// </summary>
+        public int BaseOffset => m_BaseOffset;
+
+        /// <summary>
         /// The number of slots currently available for acquisition (recycled + remaining linear space).
         /// </summary>
-        public int AvailableCount => m_FreeSlots.Count + (m_Capacity - m_NextAvailableIndex);
+        public int AvailableCount => m_FreeSlots.Count + (m_Capacity - m_NextLocalIndex);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="LinearSlotAllocator"/> class.
         /// </summary>
         /// <param name="capacity">The initial maximum number of slots.</param>
-        public LinearSlotAllocator(int capacity)
+        /// <param name="baseOffset">The global starting index for this allocator.</param>
+        public LinearSlotAllocator(int capacity, int baseOffset = 0)
         {
             m_Capacity = capacity;
+            m_BaseOffset = baseOffset;
         }
 
         /// <summary>
-        /// Updates the capacity and resets the allocator state.
-        /// Use this to resize resource pools without re-allocating the allocator instance or 
-        /// triggering Garbage Collection for the internal stack.
+        /// Updates the capacity and base offset, then resets the allocator state.
         /// </summary>
         /// <param name="newCapacity">The new maximum capacity of the allocator.</param>
-        public void Reconfigure(int newCapacity)
+        /// <param name="newBaseOffset">The new global starting index.</param>
+        public void Reconfigure(int newCapacity, int newBaseOffset)
         {
             m_Capacity = newCapacity;
+            m_BaseOffset = newBaseOffset;
             Reset();
         }
 
@@ -56,34 +64,35 @@ namespace Rayforge.Core.Collections.Buffered
             if (m_FreeSlots.Count > 0)
                 return m_FreeSlots.Pop();
 
-            if (m_NextAvailableIndex >= m_Capacity)
+            if (m_NextLocalIndex >= m_Capacity)
                 throw new OverflowException($"[LinearSlotAllocator] Capacity of {m_Capacity} exceeded. No slots available.");
 
-            return m_NextAvailableIndex++;
+            return m_BaseOffset + (m_NextLocalIndex++);
         }
 
         /// <summary>
-        /// Returns an index to the pool, making it available for future <see cref="Acquire"/> calls.
+        /// Returns a global index to the pool.
         /// </summary>
-        /// <param name="index">The slot index to release.</param>
+        /// <param name="globalIndex">The global slot index to release.</param>
         /// <remarks>
-        /// Ensure the index being released was previously acquired and is not already in the free pool.
+        /// The index is stored directly to avoid re-calculation during next acquisition.
         /// </remarks>
-        public void Release(int index)
+        public void Release(int globalIndex)
         {
-            if (index < 0 || index >= m_Capacity)
+            if (globalIndex < m_BaseOffset || globalIndex >= m_BaseOffset + m_Capacity)
+            {
                 return;
+            }
 
-            m_FreeSlots.Push(index);
+            m_FreeSlots.Push(globalIndex);
         }
 
         /// <summary>
         /// Resets the allocator to its initial state.
-        /// All indices are marked as available, and the internal free stack is cleared.
         /// </summary>
         public void Reset()
         {
-            m_NextAvailableIndex = 0;
+            m_NextLocalIndex = 0;
             m_FreeSlots.Clear();
         }
     }

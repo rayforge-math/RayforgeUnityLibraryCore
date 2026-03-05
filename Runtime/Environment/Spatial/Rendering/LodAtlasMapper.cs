@@ -190,14 +190,17 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 m_Allocators = new LinearSlotAllocator[m_Layout.LodCount];
             }
 
+            int currentGlobalOffset = 0;
             for (int i = 0; i < m_Layout.LodCount; i++)
             {
                 int levelCap = m_Layout.GetLevelCapacity(i);
 
                 if (m_Allocators[i] == null)
-                    m_Allocators[i] = new LinearSlotAllocator(levelCap);
+                    m_Allocators[i] = new LinearSlotAllocator(levelCap, currentGlobalOffset);
                 else
-                    m_Allocators[i].Reconfigure(levelCap);
+                    m_Allocators[i].Reconfigure(levelCap, currentGlobalOffset);
+
+                currentGlobalOffset += levelCap;
             }
 
             if (m_Registry == null)
@@ -272,7 +275,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             var updateIt = m_Queue.GetUpdateIterator();
             while (updateIt.MoveNext())
             {
-                ExecuteSet(updateIt.Current);
+                ExecuteSet(updateIt.Current.Value);
             }
 
             m_Queue.Clear();
