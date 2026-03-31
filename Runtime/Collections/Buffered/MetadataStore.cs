@@ -168,6 +168,24 @@ namespace Rayforge.Core.Collections.Buffered
         }
 
         /// <summary>
+        /// Provides the raw scanner state for dirty segments.
+        /// Use this for high-performance composition (e.g., in a Registry) 
+        /// to avoid heap allocations and interface overhead.
+        /// </summary>
+        /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into segments.</param>
+        /// <returns>A stack-allocated state struct ready for iteration.</returns>
+        public DirtySegmentIteratorState GetDirtyBatchScanner(bool mergeContiguous = true)
+        {
+            return new DirtySegmentIteratorState(
+                m_CpuData,
+                m_DirtyBits,
+                m_BatchSize,
+                m_CpuData.Length,
+                mergeContiguous
+            );
+        }
+
+        /// <summary>
         /// Provides a typed iterator over all elements in the store.
         /// Use this for CPU-side processing like validation or serialization.
         /// </summary>

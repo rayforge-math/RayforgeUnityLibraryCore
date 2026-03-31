@@ -118,7 +118,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <summary>
         /// Clears all runtime mappings and releases all slots, but keeps the internal 
         /// LOD structures and registry allocation intact.
-        /// Use this to wipe the current "world state" without re-allocating GPU buffers.
+        /// Use this to wipe the current "world state" without necessity to re-allocate GPU buffers.
         /// </summary>
         public void Clear()
         {
@@ -303,12 +303,21 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             => m_Registry.GetRenderDirtyIterator(merge);
 
         /// <summary>
+        /// Provides a synchronized iterator that yields dirty segments from both stores.
+        /// Aligns dirty streams into windows defined by a fixed number of batches.
+        /// </summary>
+        /// <param name="batchesPerWindow">
+        /// How many dirty batches to process in one sync window. 
+        /// Higher values reduce SetData calls, lower values improve time-slicing granularity.
+        /// </param>
+        public IIterator<SyncedBufferSegmentMeta> GetSyncedDirtyIterator(int batchesPerWindow = 1)
+            => m_Registry.GetSyncedDirtyIterator(batchesPerWindow);
+
+        /// <summary>
         /// Tries to retrieve the metadata for a specific registry index if it's marked for baking.
         /// </summary>
         public bool TryGetBakeTile(int registryIndex, out TileMetadata metadata)
-        {
-            return m_BakeLookup.TryGetValue(registryIndex, out metadata);
-        }
+            => m_BakeLookup.TryGetValue(registryIndex, out metadata);
 
         /// <summary>
         /// Clears the bake lookup. Useful when the whole atlas is invalidated.

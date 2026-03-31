@@ -101,7 +101,7 @@ namespace Rayforge.Core.Collections.Helpers
         public static IIterator<T> Combine<T>(params IIterator<T>[] sources)
         {
             if (sources == null || sources.Length == 0)
-                return IIterator<T>.Empty;
+                return IIterator<T>.Empty();
 
             int validCount = 0;
             for (int i = 0; i < sources.Length; i++)

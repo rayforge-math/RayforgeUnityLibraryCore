@@ -1,6 +1,8 @@
-float Hash01(float x)
+float Hash01(float p)
 {
-    x = frac(x * 12345.6789);
-    x += dot(x, x + 45.32);
-    return frac(x);
+    uint x = asuint(p);
+    x = x * 747796405u + 2891336453u;
+    uint word = ((x >> ((x >> 28u) + 4u)) ^ x) * 277803737u;
+    uint result = (word >> 22u) ^ word;
+    return float(result) * 2.3283064365386963e-10;
 }

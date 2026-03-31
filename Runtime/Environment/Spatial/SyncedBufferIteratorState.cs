@@ -1,6 +1,7 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Buffered;
 using Rayforge.Core.Collections.Helpers;
+using Rayforge.Core.Environment.Abstractions;
 using System;
 
 namespace Rayforge.Core.Environment.Spatial
@@ -22,7 +23,7 @@ namespace Rayforge.Core.Environment.Spatial
         private SyncedBufferSegmentMeta _peekCache;
         private bool _hasPeeked;
 
-        private readonly int _maxSyncWindow;
+        private readonly int _syncWindow;
         private readonly int _totalCapacity;
 
         /// <summary>
@@ -47,7 +48,7 @@ namespace Rayforge.Core.Environment.Spatial
             }
 
             int effectiveRequest = Math.Max(1, requestedWindowSize);
-            _maxSyncWindow = BufferMath.GetAlignedBatchSize(effectiveRequest, a.BatchSize, b.BatchSize);
+            _syncWindow = BufferMath.GetAlignedBatchSize(effectiveRequest, a.BatchSize, b.BatchSize);
             _totalCapacity = Math.Max(a.TotalCapacity, b.TotalCapacity);
 
             _scannerA = a;
@@ -129,7 +130,7 @@ namespace Rayforge.Core.Environment.Spatial
 
             while (self._currentWindowStart < self._totalCapacity)
             {
-                int windowEnd = self._currentWindowStart + self._maxSyncWindow;
+                int windowEnd = self._currentWindowStart + self._syncWindow;
 
                 SpanWindowForScanner(ref self._scannerA, ref self._resumeA, windowEnd, ref result.SegmentA);
                 SpanWindowForScanner(ref self._scannerB, ref self._resumeB, windowEnd, ref result.SegmentB);

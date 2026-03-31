@@ -330,18 +330,22 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
             try
             {
-                _mapper
+                /*
+                //_mapper
                 if(_mapper.TryGetBakeIterator(out var iter))
                 {
                     foreach(var entry in iter)
                     {
                         if (_chunkRegistry.TryGetEntry(entry.Key, out var chunk))
+
                         {
                             chunk.SetTextureMapping(entry.Mapping);
                             onBakeTile?.Invoke(entry.Key, entry.Mapping);
+
                         }
                     }
                 }
+                */
             }
             catch (Exception e)
             {

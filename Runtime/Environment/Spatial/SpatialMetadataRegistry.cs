@@ -1,5 +1,6 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Buffered;
+using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Environment.Abstractions;
 using System;
 
@@ -87,17 +88,28 @@ namespace Rayforge.Core.Environment.Spatial
 
         /// <summary>
         /// Provides a synchronized iterator that yields dirty segments from both stores.
-        /// Merges culling and render dirty states into unified sync windows.
+        /// Aligns dirty streams into windows defined by a fixed number of batches.
         /// </summary>
-        /// <param name="merge">If true, contiguous dirty blocks are merged into larger segments.</param>
-        public IIterator<SyncedBufferSegmentMeta> GetSyncIterator(bool merge = true)
+        /// <param name="batchesPerWindow">
+        /// How many dirty batches to process in one sync window. 
+        /// Higher values reduce SetData calls, lower values improve time-slicing granularity.
+        /// </param>
+        public IIterator<SyncedBufferSegmentMeta> GetSyncedDirtyIterator(int batchesPerWindow = 1)
         {
-            var cullingScanner = m_CullingStore.GetDirtyBatchIterator(merge);
-            var renderScanner = m_RenderStore.GetDirtyBatchIterator(merge);
+            int effectiveBatchCount = Math.Max(1, batchesPerWindow);
 
-            var syncState = new SpatialSyncIteratorState(cullingScanner, renderScanner, BatchSize);
+            var cullingScanner = m_CullingStore.GetDirtyBatchScanner(false);
+            var renderScanner = m_RenderStore.GetDirtyBatchScanner(false);
 
-            return syncState.ToIterator();
+            int windowSizeInElements = effectiveBatchCount * BatchSize;
+
+            var syncState = new SyncedBufferIteratorState(
+                cullingScanner,
+                renderScanner,
+                windowSizeInElements
+            );
+
+            return new Iterator<SyncedBufferSegmentMeta, SyncedBufferIteratorState>(syncState);
         }
 
         /// <summary>

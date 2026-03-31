@@ -36,11 +36,14 @@ namespace Rayforge.Core.Environment.Abstractions
         IIterator<BufferSegmentMeta> GetRenderDirtyIterator(bool merge = true);
 
         /// <summary>
-        /// Provides a synchronized iterator that yields dirty segments from both stores simultaneously.
-        /// Use this for unified synchronization where spatial and visual data must stay in sync.
+        /// Provides a synchronized iterator that yields dirty segments from both stores.
+        /// Aligns dirty streams into windows defined by a fixed number of batches.
         /// </summary>
-        /// <param name="merge">If true, uses "Greedy Windowing" to combine adjacent dirty areas into larger sync windows.</param>
-        IIterator<SyncedBufferSegmentMeta> GetSyncIterator(bool merge = true);
+        /// <param name="batchesPerWindow">
+        /// How many dirty batches to process in one sync window. 
+        /// Higher values reduce SetData calls, lower values improve time-slicing granularity.
+        /// </param>
+        IIterator<SyncedBufferSegmentMeta> GetSyncedDirtyIterator(int batchesPerWindow = 1);
 
         /// <summary>
         /// Clears the dirty tracking state only for the culling store.

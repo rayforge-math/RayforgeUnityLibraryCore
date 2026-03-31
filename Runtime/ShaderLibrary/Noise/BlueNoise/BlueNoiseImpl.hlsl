@@ -35,7 +35,8 @@ float SampleBlueNoiseTimeOffset(float2 screenUV, float2 screenSize)
 {
     screenUV.x *= screenSize.x / screenSize.y;
 
-    float offset = Hash01(_Time.x);
+    float seed = _Time.y + dot(screenUV.x, screenUV.y);
+    float offset = Hash01(seed);
     screenUV += offset;
     screenUV = frac(screenUV);
 
