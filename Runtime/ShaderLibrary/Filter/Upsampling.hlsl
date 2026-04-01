@@ -65,20 +65,16 @@ static const float2 OffsetsStar[9] = {
     #define SAMPLER_L_C sampler_LinearClamp
 #endif
 
-#ifndef UPSAMPLE_TYPE
-    #define UPSAMPLE_TYPE float4
-#endif
-
 // ============================================================================
 // 1. Core Logic Macro
 // ============================================================================
 
-#define CORE_BILATERAL_UPSAMPLE_LOGIC(TYPE, SAMPLE_SRC, SAMPLE_DEPTH, COUNT) \
-    float rawRefDepth = SAMPLE_DEPTH(fDepth, SAMPLER_P_C, uv, 0).r; \
+#define CORE_BILATERAL_UPSAMPLE_LOGIC(TYPE, SAMPLE_SRC_FUNC, SAMPLE_DEPTH_FUNC, COUNT) \
+    float rawRefDepth = SAMPLE_DEPTH_FUNC(fDepth, SAMPLER_P_C, uv); \
     float referenceDepth = LinearEyeDepth(rawRefDepth, _ZBufferParams); \
     float finalFalloff = GetFinalFalloff(referenceDepth, falloff); \
     \
-    TYPE bilinearFallback = (TYPE)SAMPLE_SRC(src, SAMPLER_L_C, uv, 0); \
+    TYPE bilinearFallback = (TYPE)SAMPLE_SRC_FUNC(src, SAMPLER_L_C, uv); \
     \
     TYPE combinedColor = (TYPE)0; \
     float combinedWeight = 0; \
@@ -87,16 +83,15 @@ static const float2 OffsetsStar[9] = {
     for(int i = 0; i < COUNT; i++) { \
         float2 sampleUV = uv + offsets[i] * texSize.xy; \
         \
-        float rawSampleDepth = SAMPLE_DEPTH(lDepth, SAMPLER_P_C, sampleUV, 0).r; \
+        float rawSampleDepth = SAMPLE_DEPTH_FUNC(lDepth, SAMPLER_P_C, sampleUV); \
         float sampleDepth = LinearEyeDepth(rawSampleDepth, _ZBufferParams); \
         \
-        TYPE sampleData = (TYPE)SAMPLE_SRC(src, srcSmp, sampleUV, 0); \
+        TYPE sampleData = (TYPE)SAMPLE_SRC_FUNC(src, srcSmp, sampleUV); \
         \
         float w = GetBilateralWeight(referenceDepth, sampleDepth, finalFalloff); \
         \
         float distSq = dot(offsets[i], offsets[i]); \
         float spatial = exp(-distSq * 0.5); \
-        \
         if(i == 0) spatial *= 2.0; \
         \
         float finalW = w * spatial; \
@@ -107,7 +102,23 @@ static const float2 OffsetsStar[9] = {
     float confidence = saturate(combinedWeight * 10.0); \
     TYPE upsampledResult = combinedColor / max(combinedWeight, 0.00001); \
     \
-    return lerp(bilinearFallback, upsampledResult, confidence);
+    return lerp(bilinearFallback, upsampledResult, (TYPE)confidence);
+
+#if !defined(SAMPLE_DEPTH_XR)
+    #define SAMPLE_DEPTH_XR(tex, smp, uv) SAMPLE_TEXTURE2D_X_LOD(tex, smp, uv, 0).r
+#endif
+
+#if !defined(SAMPLE_SRC_XR)
+    #define SAMPLE_SRC_XR(tex, smp, uv)   SAMPLE_TEXTURE2D_X_LOD(tex, smp, uv, 0)
+#endif
+
+#if !defined(SAMPLE_DEPTH)
+    #define SAMPLE_DEPTH(tex, smp, uv) SAMPLE_TEXTURE2D_LOD(tex, smp, uv, 0).r
+#endif
+
+#if !defined(SAMPLE_SRC)
+    #define SAMPLE_SRC(tex, smp, uv)   SAMPLE_TEXTURE2D_LOD(tex, smp, uv, 0)
+#endif
 
 // ============================================================================
 // 2. Execution Layer (Internal)
@@ -116,23 +127,23 @@ static const float2 OffsetsStar[9] = {
 // --- 5-Tap (XR & Standard) ---
 float4 ExecuteBilateralFilter5XR(TEXTURE2D_X_PARAM( src, srcSmp), TEXTURE2D_X(lDepth), TEXTURE2D_X(fDepth), float2 texSize, float2 uv, float2 offsets[5], float falloff)
 {
-    CORE_BILATERAL_UPSAMPLE_LOGIC(float4, SAMPLE_TEXTURE2D_X_LOD, SAMPLE_TEXTURE2D_X_LOD, 5)
+    CORE_BILATERAL_UPSAMPLE_LOGIC(float4, SAMPLE_SRC_XR, SAMPLE_DEPTH_XR, 5)
 }
 
 float4 ExecuteBilateralFilter5(TEXTURE2D_PARAM( src, srcSmp), TEXTURE2D(lDepth), TEXTURE2D(fDepth), float2 texSize, float2 uv, float2 offsets[5], float falloff)
 {
-    CORE_BILATERAL_UPSAMPLE_LOGIC(float4, SAMPLE_TEXTURE2D_LOD, SAMPLE_TEXTURE2D_LOD, 5)
+    CORE_BILATERAL_UPSAMPLE_LOGIC(float4, SAMPLE_SRC, SAMPLE_DEPTH, 5)
 }
 
 // --- 9-Tap (XR & Standard) ---
 float4 ExecuteBilateralFilter9XR(TEXTURE2D_X_PARAM( src, srcSmp), TEXTURE2D_X(lDepth), TEXTURE2D_X(fDepth), float2 texSize, float2 uv, float2 offsets[9], float falloff)
 {
-    CORE_BILATERAL_UPSAMPLE_LOGIC(float4, SAMPLE_TEXTURE2D_X_LOD, SAMPLE_TEXTURE2D_X_LOD, 9)
+    CORE_BILATERAL_UPSAMPLE_LOGIC(float4, SAMPLE_SRC_XR, SAMPLE_DEPTH_XR, 9)
 }
 
 float4 ExecuteBilateralFilter9(TEXTURE2D_PARAM( src, srcSmp), TEXTURE2D(lDepth), TEXTURE2D(fDepth), float2 texSize, float2 uv, float2 offsets[9], float falloff)
 {
-    CORE_BILATERAL_UPSAMPLE_LOGIC(float4, SAMPLE_TEXTURE2D_LOD, SAMPLE_TEXTURE2D_LOD, 9)
+    CORE_BILATERAL_UPSAMPLE_LOGIC(float4, SAMPLE_SRC, SAMPLE_DEPTH, 9)
 }
 
 // ============================================================================
