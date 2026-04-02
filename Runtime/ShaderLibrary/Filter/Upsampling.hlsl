@@ -1,7 +1,7 @@
 // ============================================================================
 // Rayforge Unity Library Core - Bilateral Filter Shader Include
 // Author: Matthew
-// Description: pipeline independant HLSL blur functions
+// Description: pipeline independant HLSL upsampling functions
 // ============================================================================
 
 // ============================================================================
@@ -44,7 +44,7 @@ static const float2 OffsetsStar[9] = {
 /**
  * @brief Core logic for bilateral upsampling and filtering.
  * Processes a variable number of samples comparing depth differences to preserve edges.
- * * @param ARGS_MACRO     Texture argument macro (TEXTURE2D_X_ARGS or TEXTURE2D_ARGS).
+ * @param ARGS_MACRO     Texture argument macro (TEXTURE2D_X_ARGS or TEXTURE2D_ARGS).
  * @param SAMPLE_MACRO   Texture sampling macro (SAMPLE_TEXTURE2D_X_LOD or SAMPLE_TEXTURE2D_LOD).
  * @param srcTex         The low-resolution source texture to be filtered.
  * @param srcSmp         Sampler state for the source texture.
@@ -74,7 +74,7 @@ static const float2 OffsetsStar[9] = {
     float referenceDepth = LinearEyeDepth(rawRefDepth, _ZBufferParams); \
     float finalFalloff = GetFinalFalloff(referenceDepth, falloff); \
     \
-    TYPE bilinearFallback = (TYPE)SAMPLE_SRC_FUNC(src, SAMPLER_L_C, uv); \
+    TYPE centreSample = (TYPE)SAMPLE_SRC_FUNC(src, SAMPLER_L_C, uv); \
     \
     TYPE combinedColor = (TYPE)0; \
     float combinedWeight = 0; \
@@ -86,23 +86,23 @@ static const float2 OffsetsStar[9] = {
         float rawSampleDepth = SAMPLE_DEPTH_FUNC(lDepth, SAMPLER_P_C, sampleUV); \
         float sampleDepth = LinearEyeDepth(rawSampleDepth, _ZBufferParams); \
         \
-        TYPE sampleData = (TYPE)SAMPLE_SRC_FUNC(src, srcSmp, sampleUV); \
+        TYPE currentSample = (TYPE)SAMPLE_SRC_FUNC(src, srcSmp, sampleUV); \
         \
-        float w = GetBilateralWeight(referenceDepth, sampleDepth, finalFalloff); \
+        float w = GetBilateralWeight(referenceDepth, sampleDepth, centreSample, currentSample, finalFalloff); \
         \
         float distSq = dot(offsets[i], offsets[i]); \
         float spatial = exp(-distSq * 0.5); \
         if(i == 0) spatial *= 2.0; \
         \
         float finalW = w * spatial; \
-        combinedColor += sampleData * finalW; \
+        combinedColor += currentSample * finalW; \
         combinedWeight += finalW; \
     } \
     \
     float confidence = saturate(combinedWeight * 10.0); \
     TYPE upsampledResult = combinedColor / max(combinedWeight, 0.00001); \
     \
-    return lerp(bilinearFallback, upsampledResult, (TYPE)confidence);
+    return lerp(centreSample, upsampledResult, (TYPE)confidence);
 
 #if !defined(SAMPLE_DEPTH_XR)
     #define SAMPLE_DEPTH_XR(tex, smp, uv) SAMPLE_TEXTURE2D_X_LOD(tex, smp, uv, 0).r
