@@ -2,13 +2,16 @@ using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Helpers;
+using Rayforge.Core.Execution.Abstractions;
+using Rayforge.Core.Execution.Handler;
 using System;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Chunks
 {
     /// <summary>
-    /// A specialized registry for fixed-grid WorldChunk3D instances.
+    /// A specialized registry for fixed-grid Chunk instances.
     /// Implements spatial indexing, factory logic, and Floating Origin support.
     /// </summary>
     /// <typeparam name="T">The specific chunk type.</typeparam>
@@ -27,11 +30,33 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #endregion
 
-        #region Fields
+        #region Events & State
 
-        private new const string Tag = "[ChunkRegistry]";
+        /// <summary>
+        /// Triggered when the grid's scale or fundamental structure changes 
+        /// (e.g., GridSize change). Requires a full rebuild of dependent systems.
+        /// </summary>
+        public event Action<ISpatialGridProvider<Vector3Int>> OnGridStructureChanged;
 
-        /// <summary> The physical size of one side of a chunk cell. </summary>
+        /// <summary> 
+        /// Triggered when the grid origin shifts. 
+        /// Passes the provider and the delta movement.
+        /// </summary>
+        public event Action<ISpatialGridProvider<Vector3Int>, Vector3> OnAnchorChanged;
+
+        /// <summary> Gets the total number of cells currently tracked in the registry. </summary>
+        public int TotalCellCount => Count;
+
+        #endregion
+
+        #region Configuration Fields
+
+        private GridSize _gridSize;
+        private string _baseName;
+        private Vector3 _anchor;
+        private SpatialAxes _axes;
+
+        /// <summary> The physical size of one side of a grid cell. </summary>
         public GridSize GridSize
         {
             get => _gridSize;
@@ -43,39 +68,17 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 _gridSize = value;
                 Clear();
                 RegistryName = _baseName;
-
                 OnGridStructureChanged?.Invoke(this);
             }
         }
-        private GridSize _gridSize;
 
-        /// <summary> 
-        /// The unique identification string of this registry instance.
-        /// Useful for logging and identifying the container in the hierarchy.
-        /// </summary>
-        public override string RegistryName
-        {
-            get => base.RegistryName;
-            protected set
-            {
-                _baseName = value;
-                base.RegistryName = $"{_baseName}_{GridSize}";
-            }
-        }
-
-        private string _baseName;
-
-        /// <summary> 
-        /// The world-space origin offset for the grid calculation.
-        /// Treated as a full 3D point to allow vertical offsets even for 2D grids.
-        /// </summary>
+        /// <summary> The world-space origin offset for the grid calculation. </summary>
         public Vector3 Anchor
         {
             get => _anchor;
             protected set
             {
                 if (_anchor == value) return;
-
                 if (float.IsNaN(value.x) || float.IsNaN(value.y) || float.IsNaN(value.z))
                     throw new ArgumentException($"{Tag} Anchor cannot contain NaN values.");
 
@@ -88,12 +91,20 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 OnAnchorChanged?.Invoke(this, delta);
             }
         }
-        private Vector3 _anchor;
 
-        /// <summary> 
-        /// The total number of tracked cells. 
-        /// </summary>
-        public int TotalCellCount => Count;
+        public override string RegistryName
+        {
+            get => base.RegistryName;
+            protected set
+            {
+                _baseName = value;
+                base.RegistryName = $"{_baseName}_{GridSize}";
+            }
+        }
+
+        #endregion
+
+        #region Public Configuration API
 
         /// <summary>
         /// Updates the grid resolution and returns whether a change occurred.
@@ -124,20 +135,9 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return true;
         }
 
-        /// <summary>
-        /// Triggered when the grid's scale or fundamental structure changes 
-        /// (e.g., GridSize change). Requires a full rebuild of dependent systems.
-        /// </summary>
-        public event Action<ISpatialGridProvider<Vector3Int>> OnGridStructureChanged;
+        #endregion
 
-        /// <summary> 
-        /// Triggered when the grid origin shifts. 
-        /// Passes the provider and the delta movement.
-        /// </summary>
-        public event Action<ISpatialGridProvider<Vector3Int>, Vector3> OnAnchorChanged;
-
-        /// <summary> Cached mask to determine which axes are handled by this registry's indexing. </summary>
-        private SpatialAxes _axes;
+        #region Axis Management
 
         public bool IsXActive => (_axes & SpatialAxes.X) != 0;
         public bool IsYActive => (_axes & SpatialAxes.Y) != 0;
@@ -220,34 +220,46 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #endregion
 
-        #region Factory Implementation
+        #region Factory & Public Access API
 
         /// <summary>
-        /// Retrieves an existing chunk or creates a new one at the specified grid coordinate.
-        /// Applies a coordinate mask to ensure the key fits within valid bounds before processing.
+        /// Retrieves an existing chunk or creates a new one. 
+        /// The provided handler is used to configure the chunk without heap allocations.
         /// </summary>
-        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
+        /// <typeparam name="THandler">The struct handler used to configure the chunk.</typeparam>
         /// <param name="key">The 3D grid coordinate.</param>
-        /// <param name="data">The data object used to initialize or configure the chunk.</param>
-        /// <param name="onConfigure">A callback executed to set up the chunk if it's newly created or needs refresh.</param>
-        /// <param name="chunk">When this method returns, contains the chunk associated with the masked key.</param>
-        /// <returns>True if the chunk was successfully retrieved or created; otherwise, false.</returns>
-        public virtual bool GetOrCreateChunk<TData>(Vector3Int key, TData data, Action<T, TData> onConfigure, out T chunk)
+        /// <param name="onConfigure">A struct handler executed to set up the chunk.</param>
+        /// <param name="chunk">The retrieved or newly created chunk.</param>
+        /// <returns>True if a new chunk was created; false if an existing one was returned.</returns>
+        public virtual bool GetOrCreateChunk<THandler>(Vector3Int key, ref THandler onConfigure, out T chunk)
+            where THandler : struct, IExecutionHandler<T>
         {
             Vector3Int validKey = MaskKey(key);
-            return CreateInternal(validKey, data, onConfigure, out chunk);
+            return CreateInternal(validKey, ref onConfigure, out chunk);
         }
+
+        /// <summary>
+        /// Converts a world-space position to a grid coordinate and ensures a chunk exists at that location.
+        /// </summary>
+        /// <typeparam name="THandler">The struct handler used to configure the chunk.</typeparam>
+        /// <param name="pos">The world-space position.</param>
+        /// <param name="onConfigure">A struct handler executed to set up the chunk if it's newly created or needs refresh.</param>
+        /// <param name="chunk">When this method returns, contains the chunk corresponding to the calculated grid position.</param>
+        /// <returns>True if the chunk was successfully retrieved or created; otherwise, false.</returns>
+        public bool GetOrCreateChunkAtWorldPos<THandler>(Vector3 pos, ref THandler onConfigure, out T chunk)
+            where THandler : struct, IExecutionHandler<T>
+            => GetOrCreateChunk(WorldToGrid(pos), ref onConfigure, out chunk);
 
         /// <summary>
         /// Maps a 2D grid coordinate to the active 3D axes of the volume and retrieves or creates the corresponding chunk.
         /// </summary>
-        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
+        /// <typeparam name="THandler">The struct handler used to configure the chunk.</typeparam>
         /// <param name="key2D">The 2D coordinate to be projected into 3D space.</param>
-        /// <param name="data">The data object used to initialize or configure the chunk.</param>
-        /// <param name="onConfigure">A callback executed to set up the chunk if it's newly created or needs refresh.</param>
+        /// <param name="onConfigure">A struct handler executed to set up the chunk if it's newly created or needs refresh.</param>
         /// <param name="chunk">When this method returns, contains the chunk at the projected 3D location.</param>
         /// <returns>True if the chunk was successfully retrieved or created; otherwise, false.</returns>
-        public bool GetOrCreateChunk<TData>(Vector2Int key2D, TData data, Action<T, TData> onConfigure, out T chunk)
+        public bool GetOrCreateChunk<THandler>(Vector2Int key2D, ref THandler onConfigure, out T chunk)
+            where THandler : struct, IExecutionHandler<T>
         {
             Vector3Int key3d = Vector3Int.zero;
             int currentDimension = 0;
@@ -262,20 +274,19 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 }
             }
 
-            return GetOrCreateChunk(key3d, data, onConfigure, out chunk);
+            return GetOrCreateChunk(key3d, ref onConfigure, out chunk);
         }
 
         /// <summary>
-        /// Converts a world-space position to a grid coordinate and ensures a chunk exists at that location.
+        /// Attempts to retrieve a chunk for a specific key.
         /// </summary>
-        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
-        /// <param name="pos">The world-space position.</param>
-        /// <param name="data">The data object used to initialize or configure the chunk.</param>
-        /// <param name="onConfigure">A callback executed to set up the chunk if it's newly created or needs refresh.</param>
-        /// <param name="chunk">When this method returns, contains the chunk corresponding to the calculated grid position.</param>
-        /// <returns>True if the chunk was successfully retrieved or created; otherwise, false.</returns>
-        public bool GetOrCreateChunkAtWorldPos<TData>(Vector3 pos, TData data, Action<T, TData> onConfigure, out T chunk)
-            => GetOrCreateChunk(WorldToGrid(pos), data, onConfigure, out chunk);
+        /// <param name="key">The key used by the registry.</param>
+        /// <param name="chunk">The resulting chunk or null.</param>
+        /// <returns>True if a chunk exists at this location, false otherwise.</returns>
+        public bool TryGetChunk(Vector3Int key, out T chunk)
+        {
+            return TryGetEntry(key, out chunk);
+        }
 
         /// <summary>
         /// Attempts to retrieve a chunk at a specific world position.
@@ -293,62 +304,77 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <summary>
         /// Orchestrates the internal creation, naming, and configuration of a chunk.
         /// </summary>
-        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
+        /// <typeparam name="THandler">The struct handler used to configure the chunk.</typeparam>
         /// <param name="validKey">The already masked and validated 3D grid coordinate.</param>
-        /// <param name="data">The data object used to initialize or configure the chunk.</param>
-        /// <param name="onConfigure">A callback executed to finalize the chunk's setup after creation or retrieval.</param>
+        /// <param name="onConfigure">A struct handler executed to finalize the chunk's setup after creation or retrieval.</param>
         /// <param name="chunk">When this method returns, contains the fully initialized chunk instance.</param>
         /// <returns>True if a brand new chunk was created; false if an existing one was retrieved.</returns>
-        private bool CreateInternal<TData>(Vector3Int validKey, TData data, Action<T, TData> onConfigure, out T chunk)
+        private bool CreateInternal<THandler>(Vector3Int validKey, ref THandler onConfigure, out T chunk)
+            where THandler : struct, IExecutionHandler<T>
         {
-            var meta = new CreateMeta
-            {
-                gridSize = GridSize,
-                isXActive = IsXActive,
-                isYActive = IsYActive,
-                isZActive = IsZActive
-            };
+            var factory = new LambdaFunction<ChunkCreateData, ChunkRegistry<T>, T>(
+                this,
+                static (data, coord) =>
+                {
+                    T newChunk = data.gameObject.AddComponent<T>();
+                    newChunk.GridKey = data.key;
+
+                    float half = (int)coord.GridSize * 0.5f;
+                    newChunk.localExtent = new Vector3(
+                        coord.IsXActive ? half : 0,
+                        coord.IsYActive ? half : 0,
+                        coord.IsZActive ? half : 0
+                    );
+
+                    newChunk.SuppressTransformDirtyOnce();
+                    return newChunk;
+                }
+            );
 
             bool isNew = GetOrCreate(
                 validKey,
                 $"Chunk_{validKey.x}_{validKey.y}_{validKey.z}",
                 GridToWorld(validKey),
-                meta,
-                InitializeChunk,
+                ref factory,
                 out chunk
             );
 
-            onConfigure?.Invoke(chunk, data);
+            onConfigure.Execute(chunk);
+
             return isNew;
-        }
-
-        /// <summary>
-        /// Factory method called during chunk instantiation to attach components and define initial bounds.
-        /// </summary>
-        /// <param name="key">The grid coordinate assigned to the chunk.</param>
-        /// <param name="go">The GameObject instance representing the chunk.</param>
-        /// <param name="meta">Snapshot of grid settings used for spatial configuration (e.g., extents).</param>
-        /// <returns>The newly attached and initialized component of type T.</returns>
-        private static T InitializeChunk(Vector3Int key, GameObject go, CreateMeta meta)
-        {
-            T chunk = go.AddComponent<T>();
-            chunk.GridKey = key;
-
-            // Configure AABB extents based on the global grid size.
-            float half = (int)meta.gridSize * 0.5f;
-            chunk.localExtent = new Vector3(
-                meta.isXActive ? half : 0,
-                meta.isYActive ? half : 0,
-                meta.isZActive ? half : 0
-            );
-
-            chunk.SuppressTransformDirtyOnce();
-            return chunk;
         }
 
         #endregion
 
-        #region Spatial Mapping & ISpatialGridProvider
+        #region Coordinate Mapping
+
+        /// <summary>
+        /// Returns the world-space center of a specific grid cell key.
+        /// </summary>
+        /// <param name="key">The grid coordinate.</param>
+        /// <returns>The world-space center position.</returns>
+        public Vector3 GetCellCenter(Vector3Int key) => GridToWorld(key);
+
+        /// <summary>
+        /// Returns the world-space center of the grid cell that contains the given world position.
+        /// </summary>
+        /// <param name="worldPos">A position within the desired cell.</param>
+        /// <returns>The world-space center of the identified cell.</returns>
+        public Vector3 GetCellCenter(Vector3 worldPos) => GridToWorld(WorldToGrid(worldPos));
+
+        /// <summary>
+        /// Returns the world-space axis-aligned bounding box (AABB) of a specific grid cell.
+        /// </summary>
+        /// <param name="key">The grid coordinate.</param>
+        /// <returns>The world-space Bounds of the cell.</returns>
+        public Bounds GetCellBounds(Vector3Int key) => GetBoundsForKey(key);
+
+        /// <summary>
+        /// Returns the world-space axis-aligned bounding box (AABB) of the cell containing the given world position.
+        /// </summary>
+        /// <param name="worldPos">A position within the desired cell.</param>
+        /// <returns>The world-space Bounds of the identified cell.</returns>
+        public Bounds GetCellBounds(Vector3 worldPos) => GetBoundsForKey(WorldToGrid(worldPos));
 
         /// <summary>
         /// Maps a world position to a grid key, masking out inactive axes.
@@ -395,100 +421,20 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return new Bounds(center, size);
         }
 
-        // --- Key Discovery (Bounds) ---
+        #endregion
 
-        /// <summary>
-        /// Returns all grid coordinates (keys) that are touched by the given world-space bounds.
-        /// </summary>
-        /// <param name="worldBounds">The bounding box in world space to check against.</param>
-        /// <returns>An enumerable of grid keys intersected by the bounds.</returns>
-        public IIterator<Vector3Int> GetKeysInBounds(Bounds worldBounds)
-        {
-            Vector3Int minKey = WorldToGrid(worldBounds.min);
-            Vector3Int maxKey = WorldToGrid(worldBounds.max);
-            var state = new GridRangeState(minKey, maxKey);
-            return new Iterator<Vector3Int, GridRangeState>(state);
-        }
-
-        /// <summary>
-        /// Returns all grid coordinates (keys) that are touched by the given local-space bounds (relative to Anchor).
-        /// </summary>
-        /// <param name="relativeBounds">The bounding box relative to the grid anchor.</param>
-        /// <returns>An enumerable of grid keys intersected by the relative bounds.</returns>
-        public IIterator<Vector3Int> GetKeysInRelativeBounds(Bounds relativeBounds)
-        {
-            Vector3Int minKey = LocalToGrid(relativeBounds.min);
-            Vector3Int maxKey = LocalToGrid(relativeBounds.max);
-            var state = new GridRangeState(minKey, maxKey);
-            return new Iterator<Vector3Int, GridRangeState>(state);
-        }
-
-        // --- Key Discovery (Radius) ---
-
-        /// <summary>
-        /// Returns all grid keys within a specified world-space radius.
-        /// </summary>
-        /// <param name="worldCenter">The center point of the search in world space.</param>
-        /// <param name="radius">The search radius in meters.</param>
-        /// <param name="useEdgeDistance">If true, calculates distance to the cell's closest edge. If false, uses cell center.</param>
-        /// <returns>An enumerable of keys within the given range.</returns>
-        public IIterator<Vector3Int> GetKeysInRadius(Vector3 worldCenter, float radius, bool useEdgeDistance = true)
-        {
-            Bounds searchBounds = new Bounds(worldCenter, Vector3.one * radius * 2f);
-            Vector3Int minKey = WorldToGrid(searchBounds.min);
-            Vector3Int maxKey = WorldToGrid(searchBounds.max);
-
-            var rangeState = new GridRangeState(minKey, maxKey);
-            var radiusState = new GridRadiusState(rangeState, worldCenter, radius, useEdgeDistance, this);
-            return new Iterator<Vector3Int, GridRadiusState>(radiusState);
-        }
-
-        /// <summary>
-        /// Returns all grid keys within a specified radius relative to the Anchor.
-        /// </summary>
-        /// <param name="relativeCenter">The center point relative to the grid anchor.</param>
-        /// <param name="radius">The search radius in meters.</param>
-        /// <param name="useEdgeDistance">If true, calculates distance to the cell's closest edge. If false, uses cell center.</param>
-        /// <returns>An enumerable of keys within the given range.</returns>
-        public IIterator<Vector3Int> GetKeysInRelativeRadius(Vector3 relativeCenter, float radius, bool useEdgeDistance = true)
-        {
-            return GetKeysInRadius(relativeCenter + Anchor, radius, useEdgeDistance);
-        }
-
-        // --- Distance Metrics ---
+        #region Distance Metrics
 
         /// <summary>
         /// Calculates the squared distance from a world position to the closest edge/point of a grid cell (AABB distance).
+        /// Respects the active axes of this registry.
         /// </summary>
         /// <param name="key">The grid coordinate of the cell.</param>
         /// <param name="worldPos">The reference position in world space.</param>
         /// <returns>The squared distance to the cell edge. Returns 0 if the position is inside the cell.</returns>
         public float GetSqrDistanceToClosestEdge(Vector3Int key, Vector3 worldPos)
         {
-            Vector3 center = GridToWorld(key);
-            float halfSize = (int)GridSize * 0.5f;
-            float sqrDist = 0;
-
-            // X-Axis
-            if (IsXActive)
-            {
-                float delta = Mathf.Max(0, Mathf.Abs(worldPos.x - center.x) - halfSize);
-                sqrDist += delta * delta;
-            }
-            // Y-Axis
-            if (IsYActive)
-            {
-                float delta = Mathf.Max(0, Mathf.Abs(worldPos.y - center.y) - halfSize);
-                sqrDist += delta * delta;
-            }
-            // Z-Axis
-            if (IsZActive)
-            {
-                float delta = Mathf.Max(0, Mathf.Abs(worldPos.z - center.z) - halfSize);
-                sqrDist += delta * delta;
-            }
-
-            return sqrDist;
+            return GetSqrDistanceToClosestEdgeStatic(worldPos, GridToWorld(key), (float)GridSize, IsXActive, IsYActive, IsZActive);
         }
 
         /// <summary>
@@ -504,48 +450,80 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         /// <summary>
         /// Calculates the squared distance from a world position to the exact center of a grid cell.
+        /// Respects the active axes of this registry.
         /// </summary>
         /// <param name="key">The grid coordinate of the cell.</param>
         /// <param name="worldPos">The reference position in world space.</param>
         /// <returns>The squared Euclidean distance to the cell center.</returns>
         public float GetSqrDistanceToCenter(Vector3Int key, Vector3 worldPos)
         {
-            return Vector3.SqrMagnitude(worldPos - GridToWorld(key));
+            return GetSqrDistanceToCenterStatic(worldPos, GridToWorld(key), IsXActive, IsYActive, IsZActive);
         }
 
-        // --- Transformation & Bounds ---
-
         /// <summary>
-        /// Returns the world-space center of a specific grid cell key.
+        /// Calculates the squared distance from a world position to the center of the cell containing the target position.
         /// </summary>
-        /// <param name="key">The grid coordinate.</param>
-        /// <returns>The world-space center position.</returns>
-        public Vector3 GetCellCenter(Vector3Int key) => GridToWorld(key);
-
-        /// <summary>
-        /// Returns the world-space center of the grid cell that contains the given world position.
-        /// </summary>
-        /// <param name="worldPos">A position within the desired cell.</param>
-        /// <returns>The world-space center of the identified cell.</returns>
-        public Vector3 GetCellCenter(Vector3 worldPos) => GridToWorld(WorldToGrid(worldPos));
-
-        /// <summary>
-        /// Returns the world-space axis-aligned bounding box (AABB) of a specific grid cell.
-        /// </summary>
-        /// <param name="key">The grid coordinate.</param>
-        /// <returns>The world-space Bounds of the cell.</returns>
-        public Bounds GetCellBounds(Vector3Int key) => GetBoundsForKey(key);
-
-        /// <summary>
-        /// Returns the world-space axis-aligned bounding box (AABB) of the cell containing the given world position.
-        /// </summary>
-        /// <param name="worldPos">A position within the desired cell.</param>
-        /// <returns>The world-space Bounds of the identified cell.</returns>
-        public Bounds GetCellBounds(Vector3 worldPos) => GetBoundsForKey(WorldToGrid(worldPos));
+        /// <param name="targetPos">World position used to identify the target cell.</param>
+        /// <param name="worldPos">The reference position in world space.</param>
+        /// <returns>The squared distance to the identified cell's center.</returns>
+        public float GetSqrDistanceToCenter(Vector3 targetPos, Vector3 worldPos)
+        {
+            return GetSqrDistanceToCenter(WorldToGrid(targetPos), worldPos);
+        }
 
         #endregion
 
-        #region Origin Shift
+        #region Static Distance Logic
+
+        /// <summary>
+        /// Static implementation to calculate squared distance to a cell's closest edge. 
+        /// Useful for passing as a delegate or lambda to avoid closure allocations.
+        /// </summary>
+        /// <param name="worldPos">The reference position in world space.</param>
+        /// <param name="cellCenter">The calculated world space center of the cell.</param>
+        /// <param name="gridSize">The physical size of the grid cell.</param>
+        /// <param name="xActive">Whether the X-axis distance should be included.</param>
+        /// <param name="yActive">Whether the Y-axis distance should be included.</param>
+        /// <param name="zActive">Whether the Z-axis distance should be included.</param>
+        /// <returns>The squared distance to the AABB edge.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float GetSqrDistanceToClosestEdgeStatic(Vector3 worldPos, Vector3 cellCenter, float gridSize, bool xActive, bool yActive, bool zActive)
+        {
+            float halfSize = gridSize * 0.5f;
+            float sqrDist = 0;
+
+            if (xActive) sqrDist += SpatialUtils.GetSqrDistanceToClosestEdge1D(worldPos.x, cellCenter.x, halfSize);
+            if (yActive) sqrDist += SpatialUtils.GetSqrDistanceToClosestEdge1D(worldPos.y, cellCenter.y, halfSize);
+            if (zActive) sqrDist += SpatialUtils.GetSqrDistanceToClosestEdge1D(worldPos.z, cellCenter.z, halfSize);
+
+            return sqrDist;
+        }
+
+        /// <summary>
+        /// Static implementation to calculate squared distance to a cell's center.
+        /// Useful for high-performance callbacks and multithreaded contexts.
+        /// </summary>
+        /// <param name="worldPos">The reference position in world space.</param>
+        /// <param name="cellCenter">The calculated world space center of the cell.</param>
+        /// <param name="xActive">Whether the X-axis distance should be included.</param>
+        /// <param name="yActive">Whether the Y-axis distance should be included.</param>
+        /// <param name="zActive">Whether the Z-axis distance should be included.</param>
+        /// <returns>The squared Euclidean distance to the center.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float GetSqrDistanceToCenterStatic(Vector3 worldPos, Vector3 cellCenter, bool xActive, bool yActive, bool zActive)
+        {
+            float sqrDist = 0;
+
+            if (xActive) sqrDist += SpatialUtils.GetSqrDistance1D(worldPos.x, cellCenter.x);
+            if (yActive) sqrDist += SpatialUtils.GetSqrDistance1D(worldPos.y, cellCenter.y);
+            if (zActive) sqrDist += SpatialUtils.GetSqrDistance1D(worldPos.z, cellCenter.z);
+
+            return sqrDist;
+        }
+
+        #endregion
+
+        #region Floating Origin Support
 
         /// <summary> 
         /// Synchronizes the anchor and all chunks with a world origin shift. 
@@ -554,6 +532,97 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public void NotifyOriginShift(Vector3 delta)
         {
             Anchor += delta;
+        }
+
+        #endregion
+
+        #region Flexible Iteration (Boxing)
+
+        /// <inheritdoc />
+        public IIterator<Vector3Int> GetKeysInBounds(Bounds worldBounds)
+        {
+            Vector3Int minKey = WorldToGrid(worldBounds.min);
+            Vector3Int maxKey = WorldToGrid(worldBounds.max);
+            return new Iterator<Vector3Int, GridRangeState>(new GridRangeState(minKey, maxKey));
+        }
+
+        /// <inheritdoc />
+        public IIterator<Vector3Int> GetKeysInRelativeBounds(Bounds relativeBounds)
+        {
+            Vector3Int minKey = LocalToGrid(relativeBounds.min);
+            Vector3Int maxKey = LocalToGrid(relativeBounds.max);
+            return new Iterator<Vector3Int, GridRangeState>(new GridRangeState(minKey, maxKey));
+        }
+
+        /// <inheritdoc />
+        public IIterator<Vector3Int> GetKeysInRadius(Vector3 worldCenter, float radius, bool useEdgeDistance = true)
+        {
+            Bounds searchBounds = new Bounds(worldCenter, Vector3.one * radius * 2f);
+            Vector3Int minKey = WorldToGrid(searchBounds.min);
+            Vector3Int maxKey = WorldToGrid(searchBounds.max);
+            float gridSize = (float)GridSize;
+            var radiusState = new GridRadiusState(minKey, maxKey, Anchor, worldCenter, radius, useEdgeDistance, gridSize, IsXActive, IsYActive, IsZActive);
+            return new Iterator<Vector3Int, GridRadiusState>(radiusState);
+        }
+
+        /// <inheritdoc />
+        public IIterator<Vector3Int> GetKeysInRelativeRadius(Vector3 relativeCenter, float radius, bool useEdgeDistance = true)
+        {
+            return GetKeysInRadius(relativeCenter + Anchor, radius, useEdgeDistance);
+        }
+
+        #endregion
+
+        #region High-Performance Iteration (Zero-Allocation)
+
+        /// <inheritdoc />
+        public void ForEachKeyInBounds<TAction>(Bounds worldBounds, ref TAction action)
+            where TAction : struct, IExecutionHandler<Vector3Int>
+        {
+            var state = new GridRangeState(WorldToGrid(worldBounds.min), WorldToGrid(worldBounds.max));
+            var iterator = new Iterator<Vector3Int, GridRangeState>(state);
+
+            while (iterator.MoveNext())
+            {
+                action.Execute(iterator.Current);
+            }
+        }
+
+        /// <inheritdoc />
+        public void ForEachKeyInRelativeBounds<TAction>(Bounds relativeBounds, ref TAction action)
+            where TAction : struct, IExecutionHandler<Vector3Int>
+        {
+            var state = new GridRangeState(LocalToGrid(relativeBounds.min), LocalToGrid(relativeBounds.max));
+            var iterator = new Iterator<Vector3Int, GridRangeState>(state);
+
+            while (iterator.MoveNext())
+            {
+                action.Execute(iterator.Current);
+            }
+        }
+
+        /// <inheritdoc />
+        public void ForEachKeyInRadius<TAction>(Vector3 worldCenter, float radius, ref TAction action, bool useEdgeDistance = true)
+            where TAction : struct, IExecutionHandler<Vector3Int>
+        {
+            Bounds searchBounds = new Bounds(worldCenter, Vector3.one * radius * 2f);
+            Vector3Int minKey = WorldToGrid(searchBounds.min);
+            Vector3Int maxKey = WorldToGrid(searchBounds.max);
+            float gridSize = (float)GridSize;
+            var radiusState = new GridRadiusState(minKey, maxKey, Anchor, worldCenter, radius, useEdgeDistance, gridSize, IsXActive, IsYActive, IsZActive);
+            var iterator = new Iterator<Vector3Int, GridRadiusState>(radiusState);
+
+            while (iterator.MoveNext())
+            {
+                action.Execute(iterator.Current);
+            }
+        }
+
+        /// <inheritdoc />
+        public void ForEachKeyInRelativeRadius<TAction>(Vector3 relativeCenter, float radius, ref TAction action, bool useEdgeDistance = true)
+            where TAction : struct, IExecutionHandler<Vector3Int>
+        {
+            ForEachKeyInRadius(relativeCenter + Anchor, radius, ref action, useEdgeDistance);
         }
 
         #endregion

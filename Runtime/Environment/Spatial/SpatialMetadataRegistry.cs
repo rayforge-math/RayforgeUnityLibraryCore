@@ -2,6 +2,7 @@ using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Buffered;
 using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Environment.Abstractions;
+using Rayforge.Core.Execution.Abstractions;
 using System;
 
 namespace Rayforge.Core.Environment.Spatial
@@ -18,8 +19,22 @@ namespace Rayforge.Core.Environment.Spatial
         where TCulling : unmanaged
         where TRender : unmanaged
     {
+        #region Members
+
         private MetadataStore<TCulling> m_CullingStore;
         private MetadataStore<TRender> m_RenderStore;
+
+        #endregion
+
+        #region ISpatialMetadataRegistry Properties
+
+        /// <inheritdoc />
+        public IMetadataStore CullingMetadata => m_CullingStore;
+
+        /// <inheritdoc />
+        public IMetadataStore RenderMetadata => m_RenderStore;
+
+        #endregion
 
         #region Lifecycle & Configuration
 
@@ -53,85 +68,6 @@ namespace Rayforge.Core.Environment.Spatial
             m_CullingStore = AddStore<TCulling>();
             m_RenderStore = AddStore<TRender>();
         }
-
-        #endregion
-
-        #region ISpatialMetadataRegistry Implementation
-
-        /// <summary>
-        /// Access to the culling metadata (Position, Radius). 
-        /// Usually synchronized instantly via a merged iterator.
-        /// </summary>
-        public IMetadataStore CullingMetadata => m_CullingStore;
-
-        /// <summary>
-        /// Access to the rendering metadata (UVs, Slices, ...).
-        /// Usually synchronized staggered via a fragmented iterator.
-        /// </summary>
-        public IMetadataStore RenderMetadata => m_RenderStore;
-
-        /// <summary>
-        /// Provides an iterator for modified spatial metadata (Position, Radius).
-        /// Use this for GPU culling updates. 'merge' optimizes for fewer SetData calls.
-        /// </summary>
-        /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
-        public IIterator<BufferSegmentMeta> GetCullingDirtyIterator(bool merge = true)
-            => m_CullingStore.GetDirtyBatchIterator(merge);
-
-        /// <summary>
-        /// Provides an iterator for modified visual metadata (Atlas Slices, UV Offsets).
-        /// Use this for GPU rendering updates. Set 'merge' to false for staggered baking.
-        /// </summary>
-        /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
-        public IIterator<BufferSegmentMeta> GetRenderDirtyIterator(bool merge = true)
-            => m_RenderStore.GetDirtyBatchIterator(merge);
-
-        /// <summary>
-        /// Provides a synchronized iterator that yields dirty segments from both stores.
-        /// Aligns dirty streams into windows defined by a fixed number of batches.
-        /// </summary>
-        /// <param name="batchesPerWindow">
-        /// How many dirty batches to process in one sync window. 
-        /// Higher values reduce SetData calls, lower values improve time-slicing granularity.
-        /// </param>
-        public IIterator<SyncedBufferSegmentMeta> GetSyncedDirtyIterator(int batchesPerWindow = 1)
-        {
-            int effectiveBatchCount = Math.Max(1, batchesPerWindow);
-
-            var cullingScanner = m_CullingStore.GetDirtyBatchScanner(false);
-            var renderScanner = m_RenderStore.GetDirtyBatchScanner(false);
-
-            int windowSizeInElements = effectiveBatchCount * BatchSize;
-
-            var syncState = new SyncedBufferIteratorState(
-                cullingScanner,
-                renderScanner,
-                windowSizeInElements
-            );
-
-            return new Iterator<SyncedBufferSegmentMeta, SyncedBufferIteratorState>(syncState);
-        }
-
-        /// <summary>
-        /// Clears the dirty tracking state for both spatial and visual stores.
-        /// English comment: Call this after a full synchronization of both buffers.
-        /// </summary>
-        public void ClearAllDirty()
-        {
-            m_CullingStore.ClearDirty();
-            m_RenderStore.ClearDirty();
-        }
-
-        /// <summary>
-        /// Clears the dirty tracking state only for the spatial store.
-        /// English comment: Useful if you sync buffers at different frequencies.
-        /// </summary>
-        public void ClearCullingDirty() => m_CullingStore.ClearDirty();
-
-        /// <summary>
-        /// Clears the dirty tracking state only for the visual store.
-        /// </summary>
-        public void ClearRenderDirty() => m_RenderStore.ClearDirty();
 
         #endregion
 
@@ -258,6 +194,98 @@ namespace Rayforge.Core.Environment.Spatial
         /// Must be implemented by child classes to define what "inactive" means for TSpatial.
         /// </summary>
         protected abstract TCulling GetInvalidCullingData();
+
+        #endregion
+
+        #region ISpatialMetadataRegistry Implementation
+
+        #region High-Performance Sync (Zero-Allocation)
+
+        /// <inheritdoc />
+        public void ForEachCullingDirty<TAction>(ref TAction action, bool merge = true)
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta>
+        {
+            m_CullingStore.ForEachDirtySegment(ref action, merge);
+        }
+
+        /// <inheritdoc />
+        public void ForEachRenderDirty<TAction>(ref TAction action, bool merge = true)
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta>
+        {
+            m_RenderStore.ForEachDirtySegment(ref action, merge);
+        }
+
+        /// <inheritdoc />
+        public void ForEachSyncedDirty<TAction>(ref TAction action, int batchesPerWindow = 1)
+            where TAction : struct, IExecutionHandler<SyncedBufferSegmentMeta>
+        {
+            int effectiveBatchCount = Math.Max(1, batchesPerWindow);
+            int windowSizeInElements = effectiveBatchCount * BatchSize;
+
+            var cullingScanner = m_CullingStore.GetDirtySegmentScanner(false);
+            var renderScanner = m_RenderStore.GetDirtySegmentScanner(false);
+
+            var syncState = new SyncedBufferIteratorState(
+                cullingScanner,
+                renderScanner,
+                windowSizeInElements
+            );
+
+            var it = new Iterator<SyncedBufferSegmentMeta, SyncedBufferIteratorState>(syncState);
+            while (it.MoveNext())
+            {
+                action.Execute(it.Current);
+            }
+        }
+
+        #endregion
+
+        #region Flexible Iteration (Boxing)
+
+        /// <inheritdoc />
+        public IIterator<BufferSegmentMeta> GetCullingDirtyIterator(bool merge = true)
+            => m_CullingStore.GetDirtySegmentIterator(merge);
+
+        /// <inheritdoc />
+        public IIterator<BufferSegmentMeta> GetRenderDirtyIterator(bool merge = true)
+            => m_RenderStore.GetDirtySegmentIterator(merge);
+
+        /// <inheritdoc />
+        public IIterator<SyncedBufferSegmentMeta> GetSyncedDirtyIterator(int batchesPerWindow = 1)
+        {
+            int effectiveBatchCount = Math.Max(1, batchesPerWindow);
+            int windowSizeInElements = effectiveBatchCount * BatchSize;
+
+            var cullingScanner = m_CullingStore.GetDirtySegmentScanner(false);
+            var renderScanner = m_RenderStore.GetDirtySegmentScanner(false);
+
+            var syncState = new SyncedBufferIteratorState(
+                cullingScanner,
+                renderScanner,
+                windowSizeInElements
+            );
+
+            return new Iterator<SyncedBufferSegmentMeta, SyncedBufferIteratorState>(syncState);
+        }
+
+        #endregion
+
+        #region Dirty State Management
+
+        /// <inheritdoc />
+        public void ClearCullingDirty() => m_CullingStore.ClearDirty();
+
+        /// <inheritdoc />
+        public void ClearRenderDirty() => m_RenderStore.ClearDirty();
+
+        /// <inheritdoc />
+        public void ClearAllDirty()
+        {
+            m_CullingStore.ClearDirty();
+            m_RenderStore.ClearDirty();
+        }
+
+        #endregion
 
         #endregion
     }

@@ -1,6 +1,7 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Helpers;
 using Rayforge.Core.Environment.Abstractions;
+using Rayforge.Core.Execution.Abstractions;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -8,32 +9,34 @@ using UnityEngine;
 namespace Rayforge.Core.Environment.Spatial.Surfaces
 {
     /// <summary>
-    /// Manages registration and spatial partitioning by orchestrating multiple typed registries.
-    /// Acts as a facade for MeshRenderer and Terrain spatial data.
-    /// Now manages the lifecycle of the grid provider events and a shared dirty tracker.
+    /// A high-level facade that orchestrates multiple typed registries (MeshRenderer and Terrain).
+    /// Provides component-based spatial access while encapsulating internal SpatialState management.
     /// </summary>
-    public class SpatialSurfaceRegistry : ISpatialCollection<Vector3Int>
+    public class SpatialSurfaceRegistry :
+        ISpatialRegistry<Vector3Int, MeshRenderer>,
+        ISpatialRegistry<Vector3Int, Terrain>
     {
-        private const string Tag = "[SurfaceRegistry]";
-
         #region Fields
 
-        /// <summary> Specialized registry for MeshRenderers. </summary>
+        /// <summary> Internal registry for MeshRenderer components. </summary>
         private SpatialObjectRegistry<Vector3Int, MeshRenderer> _meshRegistry;
 
-        /// <summary> Specialized registry for Terrains. </summary>
+        /// <summary> Internal registry for Terrain components. </summary>
         private SpatialObjectRegistry<Vector3Int, Terrain> _terrainRegistry;
 
         /// <summary> 
-        /// Centralized tracker shared between sub-registries. 
-        /// Ensures that changes in any sub-registry mark the same spatial cell as dirty.
+        /// Shared tracker that ensures cell changes in any sub-registry 
+        /// mark the same spatial cell as dirty for the orchestrator. 
         /// </summary>
         private readonly HashSet<Vector3Int> _sharedDirtyBuckets = new();
 
-        /// <summary> The current grid provider used for coordinate translation. </summary>
+        /// <summary> The provider used for translating world positions to grid coordinates. </summary>
         private ISpatialGridProvider<Vector3Int> _gridProvider;
 
-        /// <summary> Gets whether the registry has been initialized with a grid provider. </summary>
+        /// <summary> 
+        /// Gets whether the registry and all its sub-registries are initialized 
+        /// and ready for spatial operations. 
+        /// </summary>
         public bool IsInitialized =>
             _gridProvider != null &&
             _meshRegistry != null && _meshRegistry.IsInitialized &&
@@ -41,13 +44,20 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         #endregion
 
+        #region Metadata Access (Expert API)
+
+        /// <summary> Provides access to MeshRenderer metadata including precomputed bounds. </summary>
+        public ISpatialRegistry<Vector3Int, MeshRenderer> MeshRegistry => _meshRegistry;
+
+        /// <summary> Provides access to Terrain metadata including precomputed bounds. </summary>
+        public ISpatialRegistry<Vector3Int, Terrain> TerrainRegistry => _terrainRegistry;
+
+        #endregion
+
         #region Lifecycle
 
         /// <summary>
         /// Initializes the orchestrator and sub-registries with the given grid provider.
-        /// The provider serves as the master source for the coordinate system; the registry 
-        /// automatically subscribes to structural changes (like GridSize) to keep its internal 
-        /// buckets synchronized.
         /// </summary>
         /// <param name="gridProvider">The master provider for coordinate and bucket mapping.</param>
         public void Initialize(ISpatialGridProvider<Vector3Int> gridProvider)
@@ -55,11 +65,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             try
             {
                 Reset();
-
-                if (gridProvider == null)
-                    throw new ArgumentNullException(nameof(gridProvider), "Cannot initialize SurfaceRegistry with a null grid provider.");
-
-                _gridProvider = gridProvider;
+                _gridProvider = gridProvider ?? throw new ArgumentNullException(nameof(gridProvider));
                 _gridProvider.OnGridStructureChanged += HandleGridStructureChanged;
 
                 _meshRegistry = new SpatialObjectRegistry<Vector3Int, MeshRenderer>();
@@ -70,15 +76,15 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             }
             catch (Exception e)
             {
-                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
+                throw new Exception($"SurfaceRegistry initialization failed: {e.Message}", e);
             }
         }
 
         /// <summary>
-        /// Handles the grid structure change event by triggering a full remap of all sub-registries.
-        /// Central event handler that triggers a rebuild for all sub-registries.
+        /// Handles structural grid updates (e.g., origin shifts) 
+        /// by remapping all registered objects to their new grid coordinates.
         /// </summary>
-        /// <param name="provider">The provider that triggered the change.</param>
+        /// <param name="provider">The grid provider that triggered the change.</param>
         private void HandleGridStructureChanged(ISpatialGridProvider<Vector3Int> provider)
         {
             _meshRegistry?.FullRemap();
@@ -86,18 +92,17 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         }
 
         /// <summary>
-        /// Clears all managed registries and the shared dirty tracker.
+        /// Clears all registered objects from the sub-registries and resets the shared dirty state.
         /// </summary>
         public void Clear()
         {
             _meshRegistry?.Clear();
             _terrainRegistry?.Clear();
-            _sharedDirtyBuckets?.Clear();
+            _sharedDirtyBuckets.Clear();
         }
 
         /// <summary>
-        /// Fully de-initializes the registry, detaches events, and nulls out sub-registries.
-        /// Use this for a "hard reset" or during teardown.
+        /// Shuts down the registry, unhooking from grid events and releasing all internal references.
         /// </summary>
         public void Reset()
         {
@@ -106,37 +111,33 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 _gridProvider.OnGridStructureChanged -= HandleGridStructureChanged;
                 _gridProvider = null;
             }
-
             Clear();
-
             _meshRegistry = null;
             _terrainRegistry = null;
         }
 
-        /// <summary>
-        /// Clears the list of modified spatial cells.
-        /// Since it's shared, clearing this set clears it for both registries.
-        /// </summary>
-        public void ClearDirtyCells()
-        {
-            _sharedDirtyBuckets.Clear();
-        }
+        /// <inheritdoc />
+        /// <remarks>
+        /// This implementation clears the shared dirty bucket set used by all sub-registries.
+        /// </remarks>
+        public void ClearDirtyCells() => _sharedDirtyBuckets.Clear();
 
         #endregion
 
         #region Registration Logic
 
         /// <summary>
-        /// Identifies relevant components on a GameObject and registers them.
+        /// Attempts to identify and register valid spatial components (MeshRenderer, Terrain) from the provided GameObject.
         /// </summary>
-        /// <param name="obj">The GameObject to scan for spatial components.</param>
-        /// <returns>True if any registration resulted in a spatial change.</returns>
+        /// <param name="obj">The GameObject to inspect and register.</param>
+        /// <returns>True if at least one component was successfully added or updated in the registry.</returns>
+        /// <remarks>
+        /// MeshRenderers are only registered if a valid MeshFilter with assigned mesh is present.
+        /// Terrains require valid TerrainData to be considered for registration.
+        /// </remarks>
         public bool TryRegister(GameObject obj)
         {
-            if (obj == null) return false;
-
-            if (!IsInitialized)
-                throw new InvalidOperationException($"{Tag} Registry not initialized!");
+            if (obj == null || !IsInitialized) return false;
 
             int id = obj.GetInstanceID();
             bool changed = false;
@@ -145,104 +146,104 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             {
                 if (obj.TryGetComponent<MeshFilter>(out var filter) && filter.sharedMesh != null)
                 {
-                    var newState = SpatialState<MeshRenderer>.Create(_gridProvider.Anchor, renderer);
-                    if (_meshRegistry.TryRegister(id, newState)) changed = true;
+                    var state = SpatialState<MeshRenderer>.Create(_gridProvider.Anchor, renderer);
+                    if (_meshRegistry.TryRegister(id, state)) changed = true;
                 }
             }
 
             if (obj.TryGetComponent<Terrain>(out var terrain) && terrain.terrainData != null)
             {
-                var newState = SpatialState<Terrain>.Create(_gridProvider.Anchor, terrain);
-                if (_terrainRegistry.TryRegister(id, newState)) changed = true;
+                var state = SpatialState<Terrain>.Create(_gridProvider.Anchor, terrain);
+                if (_terrainRegistry.TryRegister(id, state)) changed = true;
             }
 
             return changed;
         }
 
         /// <summary>
-        /// Removes an object from all internal registries.
+        /// Removes an object from all internal sub-registries using its unique Instance ID.
         /// </summary>
-        /// <param name="id">The InstanceID of the object.</param>
-        /// <returns>True if the object was removed from at least one registry.</returns>
+        /// <param name="id">The Unity InstanceID of the GameObject to unregister.</param>
+        /// <returns>True if the object was found and removed from any sub-registry.</returns>
         public bool Unregister(int id)
         {
             if (!IsInitialized) return false;
-
-            bool removedMesh = _meshRegistry.Unregister(id);
-            bool removedTerrain = _terrainRegistry.Unregister(id);
-
-            return removedMesh || removedTerrain;
+            return _meshRegistry.Unregister(id) || _terrainRegistry.Unregister(id);
         }
 
         #endregion
 
-        #region ISpatialCollection Implementation
+        #region ISpatialCollection<Vector3Int> Implementation
 
-        /// <summary>
-        /// Dispatches the iterator request to the correct sub-registry based on type T.
-        /// Direct type dispatching for better performance and clarity.
-        /// </summary>
-        public bool TryGetIterator<T>(Vector3Int key, out IIterator<T> iterator) where T : Component
+        /// <inheritdoc />
+        public bool IsCellActive(Vector3Int key)
         {
-            iterator = null;
-            if (!IsInitialized) return false;
-
-
-            if (typeof(T) == typeof(MeshRenderer))
-            {
-                if (_meshRegistry.TryGetIterator(key, out var meshIter))
-                {
-                    iterator = meshIter as IIterator<T>;
-                    return true;
-                }
-            }
-
-            else if (typeof(T) == typeof(Terrain))
-            {
-                if (_terrainRegistry.TryGetIterator(key, out var terrainIter))
-                {
-                    iterator = terrainIter as IIterator<T>;
-                    return true;
-                }
-            }
-
-            return false;
+            return (_meshRegistry != null && _meshRegistry.IsCellActive(key)) ||
+                   (_terrainRegistry != null && _terrainRegistry.IsCellActive(key));
         }
 
-        /// <summary>
-        /// Checks if a cell contains any objects, regardless of their component type.
-        /// </summary>
-        /// <param name="key">The spatial cell coordinate.</param>
-        /// <returns>True if at least one registry has entries in this cell.</returns>
-        public bool HasEntriesInCell(Vector3Int key)
+        /// <inheritdoc />
+        public void ForEachCell<TAction>(ref TAction action) 
+            where TAction : struct, IExecutionHandler<Vector3Int>
         {
-            if (!IsInitialized) return false;
-            return _meshRegistry.HasEntriesInCell(key) || _terrainRegistry.HasEntriesInCell(key);
+            if (!IsInitialized) return;
+            _meshRegistry.ForEachCell(ref action);
+            _terrainRegistry.ForEachCell(ref action);
         }
 
-        /// <summary>
-        /// Returns an iterator over all modified cells.
-        /// Returns an iterator over the unified shared dirty tracker.
-        /// </summary>
-        /// <returns>An iterator of modified spatial keys.</returns>
-        public IIterator<Vector3Int> GetDirtyCells()
+        /// <inheritdoc />
+        public IIterator<Vector3Int> GetCellIterator()
+        {
+            if (!IsInitialized) return IIterator<Vector3Int>.Empty();
+            return IteratorExtensions.Combine(_meshRegistry.GetCellIterator(), _terrainRegistry.GetCellIterator());
+        }
+
+        /// <inheritdoc />
+        public void ForEachDirtyCell<TAction>(ref TAction action) 
+            where TAction : struct, IExecutionHandler<Vector3Int>
+        {
+            foreach (var key in _sharedDirtyBuckets)
+                action.Execute(key);
+        }
+
+        /// <inheritdoc />
+        public IIterator<Vector3Int> GetDirtyCellIterator()
         {
             return _sharedDirtyBuckets.GetEnumerator().ToIterator();
         }
 
-        /// <summary>
-        /// Collects all registered IDs from all sub-registries.
-        /// </summary>
-        /// <returns>A collection of all unique InstanceIDs currently managed.</returns>
-        public IIterator<int> GetAllIds()
-        {
-            if (!IsInitialized)
-                return IIterator<int>.Empty();
+        #endregion
 
-            return IteratorExtensions.Combine(
-                _meshRegistry.AllIds,
-                _terrainRegistry.AllIds
-            );
+        #region Explicit ISpatialRegistry Implementations
+
+        // --- MeshRenderer Implementation ---
+
+        /// <inheritdoc />
+        bool ISpatialRegistry<Vector3Int, MeshRenderer>.TryForEachInCell<TAction>(Vector3Int key, ref TAction action)
+        {
+            return _meshRegistry != null && _meshRegistry.TryForEachInCell(key, ref action);
+        }
+
+        /// <inheritdoc />
+        bool ISpatialRegistry<Vector3Int, MeshRenderer>.TryGetEntryIterator(Vector3Int key, out IIterator<MeshRenderer> iterator)
+        {
+            iterator = null;
+            return _meshRegistry != null && _meshRegistry.TryGetEntryIterator(key, out iterator);
+        }
+
+        // --- Terrain Implementation ---
+
+        /// <inheritdoc />
+        bool ISpatialRegistry<Vector3Int, Terrain>.TryForEachInCell<TAction>(Vector3Int key, ref TAction action)
+        {
+            return _terrainRegistry != null && _terrainRegistry.TryForEachInCell(key, ref action);
+        }
+
+        /// <inheritdoc />
+        bool ISpatialRegistry<Vector3Int, Terrain>.TryGetEntryIterator(Vector3Int key, out IIterator<Terrain> iterator)
+        {
+            iterator = null;
+            return _terrainRegistry != null && _terrainRegistry.TryGetEntryIterator(key, out iterator);
         }
 
         #endregion

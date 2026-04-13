@@ -1,7 +1,8 @@
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Collections.Helpers;
+using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Environment.Abstractions;
+using Rayforge.Core.Execution.Abstractions;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -19,8 +20,6 @@ namespace Rayforge.Core.Environment.Spatial
         where TKey : struct, IEquatable<TKey>
     {
         #region Fields
-
-        private string Tag => $"[ObjectRegistry<{typeof(TType).Name}>]";
 
         /// <summary> Primary storage: InstanceID -> State. </summary>
         private readonly Dictionary<int, SpatialState<TType>> _registry = new();
@@ -70,7 +69,7 @@ namespace Rayforge.Core.Environment.Spatial
             }
             catch (Exception e)
             {
-                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
+                throw new Exception($"Initialization failed: {e.Message}", e);
             }
         }
 
@@ -93,7 +92,7 @@ namespace Rayforge.Core.Environment.Spatial
             }
             catch (Exception e)
             {
-                throw new Exception($"{Tag} FullRemap failed: {e.Message}", e);
+                throw new Exception($"FullRemap failed: {e.Message}", e);
             }
         }
 
@@ -135,7 +134,7 @@ namespace Rayforge.Core.Environment.Spatial
         public bool TryRegister(int id, SpatialState<TType> newState)
         {
             if (!IsInitialized)
-                throw new InvalidOperationException($"{Tag} Not initialized!");
+                throw new InvalidOperationException($"Registry not initialized!");
 
             if (_registry.TryGetValue(id, out var oldState))
             {
@@ -165,34 +164,88 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
-        #region ISpatialRegistry & Dispatcher Implementation
+        #region ISpatialCollection<TKey> Implementation
 
-        /// <summary>
-        /// Unified generic entry point. Dispatches to the internal engine if T matches TType.
-        /// </summary>
-        /// <param name="key">The spatial cell coordinate.</param>
-        /// <param name="iterator">The resulting iterator if the type matches.</param>
-        /// <returns>True if the requested type T is managed by this registry.</returns>
-        public bool TryGetIterator(TKey key, out IIterator<TType> iterator)
+        /// <inheritdoc />
+        public void ForEachCell<TAction>(ref TAction action)
+            where TAction : struct, IExecutionHandler<TKey>
+        {
+            foreach (var key in _buckets.Keys)
+            {
+                action.Execute(key);
+            }
+        }
+
+        /// <inheritdoc />
+        public IIterator<TKey> GetCellIterator()
+        {
+            return _buckets.Keys.GetEnumerator().ToIterator();
+        }
+
+        #endregion
+
+        #region ISpatialRegistry<TKey, TType> Implementation
+
+        /// <inheritdoc />
+        public bool IsCellActive(TKey key) => _buckets.TryGetValue(key, out var b) && b.Count > 0;
+
+        /// <inheritdoc />
+        public bool TryForEachInCell<TAction>(TKey key, ref TAction action)
+            where TAction : struct, IExecutionHandler<TType>
+        {
+            if (_buckets.TryGetValue(key, out var bucket))
+            {
+                foreach (int id in bucket)
+                {
+                    if (_registry.TryGetValue(id, out var state))
+                    {
+                        action.Execute(state.component);
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+
+        /// <inheritdoc />
+        public void ForEachDirtyCell<TAction>(ref TAction action)
+            where TAction : struct, IExecutionHandler<TKey>
+        {
+            if (_dirtyBuckets == null) return;
+            foreach (var key in _dirtyBuckets)
+            {
+                action.Execute(key);
+            }
+        }
+
+        /// <inheritdoc />
+        public bool TryGetEntryIterator(TKey key, out IIterator<TType> iterator)
         {
             iterator = null;
 
             if (_buckets.TryGetValue(key, out var bucket))
             {
-                var state = new SpatialIteratorState<TKey, TType>(
+                var state = new SpatialIteratorState<int, TType, HashSet<int>.Enumerator>(
                     bucket.GetEnumerator(),
                     _registry
                 );
 
-                iterator = new Iterator<TType, SpatialIteratorState<TKey, TType>>(state);
+                iterator = new Iterator<TType, SpatialIteratorState<int, TType, HashSet<int>.Enumerator>>(state);
                 return true;
             }
 
             return false;
         }
 
-        /// <summary> Checks if a specific cell contains any objects of type TType. </summary>
-        public bool HasEntriesInCell(TKey key) => _buckets.TryGetValue(key, out var b) && b.Count > 0;
+        /// <inheritdoc />
+        public IIterator<TKey> GetDirtyCellIterator()
+        {
+            return _dirtyBuckets.GetEnumerator().ToIterator();
+        }
+
+        #endregion
+
+        #region te
 
         /// <summary> Returns an iterator over all cells that have been modified since the last clear. </summary>
         public IIterator<TKey> GetDirtyCells()

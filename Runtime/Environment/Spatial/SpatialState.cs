@@ -9,7 +9,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// </summary>
     /// <typeparam name="T">The type of Component being tracked.</typeparam>
     [Serializable]
-    public struct SpatialState<T> : IEquatable<SpatialState<T>> where T : Component
+    public struct SpatialState<T> : IEquatable<SpatialState<T>>
     {
         [Header("Relative Spatial Data")]
         public Bounds anchorBounds;

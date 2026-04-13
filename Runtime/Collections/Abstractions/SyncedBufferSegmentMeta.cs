@@ -1,7 +1,6 @@
-using Rayforge.Core.Collections.Abstractions;
 using System;
 
-namespace Rayforge.Core.Environment.Abstractions
+namespace Rayforge.Core.Collections.Abstractions
 {
     /// <summary>
     /// A composite container that synchronizes dirty segments from two related data streams.

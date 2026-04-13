@@ -15,7 +15,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
     /// Optional user-defined context passed to the allocation function. Useful for providing external resources,
     /// a render graph context, or any other data required during allocation without capturing from the surrounding scope.
     /// </typeparam>
-    public class HistoryRTHandles<TData> : HistoryHandles<RTHandle>, IDisposable
+    public sealed class HistoryRTHandles<TData> : HistoryBuffer<RTHandle>, IDisposable
     {
         /// <summary>
         /// Function signature for creating or reallocating a texture handle.
@@ -72,9 +72,9 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// </summary>
         public void Dispose()
         {
-            if (m_Handles == null) return;
+            if (m_Resources == null) return;
 
-            for (int i = 0; i < m_Handles.Length; i++)
+            for (int i = 0; i < m_Resources.Length; i++)
             {
                 ReleaseAtIndex(i);
             }
@@ -86,10 +86,10 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// <param name="index">The internal index to release.</param>
         private void ReleaseAtIndex(int index)
         {
-            if (m_Handles[index] != null)
+            if (m_Resources[index] != null)
             {
-                m_Handles[index].Release();
-                m_Handles[index] = null;
+                m_Resources[index].Release();
+                m_Resources[index] = null;
             }
         }
 
@@ -111,7 +111,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// <param name="data">Optional user-defined context passed to the allocation function.</param>
         /// <returns><c>true</c> if the handle at the specified index was reallocated; otherwise, <c>false</c>.</returns>
         private bool ReAllocateAtIndex(int index, RenderTextureDescriptor descriptor, TData data)
-            => m_ReAllocFunc.Invoke(ref m_Handles[index], descriptor, m_HandleNames[index], data);
+            => m_ReAllocFunc.Invoke(ref m_Resources[index], descriptor, m_HandleNames[index], data);
 
         /// <summary>
         /// Reallocates only the current Target handle if needed based on the provided descriptor.
@@ -150,53 +150,5 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
             if (swap) Swap();
             return changed;
         }
-    }
-
-    /// <summary>
-    /// Manages a pair of persistent render targets (history handles) for frame-over-frame operations.
-    /// One handle represents the current target (write), the other holds the previous frame's data (read).
-    /// Suitable for temporal effects like reprojection, motion blur, or any frame-history dependent process.
-    /// </summary>
-    /// <typeparam name="TData">
-    /// Optional user-defined context passed to the allocation function. Useful for providing external resources,
-    /// a render graph context, or any other data required during allocation without capturing from the surrounding scope.
-    /// </typeparam>
-    public class HistoryRTHandles : HistoryRTHandles<NoData>
-    {
-        /// <summary>
-        /// Function signature for creating or reallocating a texture handle.
-        /// </summary>
-        /// <param name="handle">The handle to create or reallocate.</param>
-        /// <param name="descriptor">The render texture descriptor used for allocation.</param>
-        /// <param name="name">Optional name for debugging/profiling.</param>
-        /// <returns><c>true</c> if a handle was allocated/reallocated, <c>false</c> otherwise.</returns>
-        public delegate bool TextureReAllocFunctionNoParam(ref RTHandle handle, RenderTextureDescriptor descriptor, string name);
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="HistoryRTHandles"/>.
-        /// </summary>
-        /// <param name="reAllocFunc">Delegate used to create or reallocate handles.</param>
-        /// <param name="initial0">Initial first handle (current).</param>
-        /// <param name="initial1">Initial second handle (history).</param>
-        /// <param name="handleName">Optional base name for debugging/profiling.</param>
-        public HistoryRTHandles(TextureReAllocFunctionNoParam reAllocFunc, RTHandle initial0, RTHandle initial1, string handleName = null)
-            : base((ref RTHandle handle, RenderTextureDescriptor descriptor, string name, NoData _) =>
-            {
-                return reAllocFunc.Invoke(ref handle, descriptor, name);
-            },
-            initial0, 
-            initial1, 
-            handleName)
-        { }
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="HistoryRTHandles"/>.
-        /// The handles are initially null; allocation is expected to be done later via <see cref="ReAllocateHandlesIfNeeded"/>.
-        /// </summary>
-        /// <param name="reAllocFunc">Delegate used to create or reallocate handles.</param>
-        /// <param name="handleName">Optional base name for debugging/profiling.</param>
-        public HistoryRTHandles(TextureReAllocFunctionNoParam reAllocFunc, string handleName)
-            : this(reAllocFunc, null, null, handleName)
-        { }
     }
 }

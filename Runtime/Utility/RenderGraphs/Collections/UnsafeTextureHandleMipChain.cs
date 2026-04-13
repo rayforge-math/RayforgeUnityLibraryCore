@@ -6,29 +6,25 @@ using Rayforge.Core.Rendering.Collections;
 namespace Rayforge.Core.Utility.RenderGraphs.Collections
 {
     /// <summary>
-    /// Represents an "unsafe" variant of <see cref="TextureHandleMipChain{TData}"/>.
+    /// Represents an "unsafe" variant of <see cref="TextureHandleMipChain"/>.
     /// 
-    /// This class inherits from <see cref="UnsafeMipChain{THandle,TData}"/> and exposes 
-    /// advanced functionality not available in the safe <see cref="TextureHandleMipChain{TData}"/>:
+    /// This class inherits from <see cref="UnsafeMipChain{THandle}"/> and exposes 
+    /// advanced functionality not available in the safe <see cref="TextureHandleMipChain"/>:
     /// - Checking ranges of mip handles for validity.
     /// - Copying subsets of chains or stacking multiple chains into one array.
     /// - Explicit control over handle array resizing and layout.
     ///
     /// Use this class only when you need these low-level capabilities and accept responsibility 
     /// for maintaining consistency. For most scenarios, prefer the safe 
-    /// <see cref="TextureHandleMipChain{TData}"/> which provides the same basic functionality 
+    /// <see cref="TextureHandleMipChain"/> which provides the same basic functionality 
     /// without exposing unsafe operations.
     ///
     /// Redundant <see cref="IsValid()"/> methods are provided for API consistency with the safe variant.
     /// </summary>
-    /// <typeparam name="TData">
-    /// Optional user data passed to the texture creation function, useful for passing context
-    /// or resources needed during RenderGraph allocation.
-    /// </typeparam>
-    public class UnsafeTextureHandleMipChain<TData> : UnsafeMipChain<TextureHandle, TData>
+    public sealed class UnsafeTextureHandleMipChain : UnsafeMipChain<TextureHandle>
     {
         /// <summary>
-        /// Initializes a new instance of <see cref="UnsafeTextureHandleMipChain{TData}"/> with a texture creation function.
+        /// Initializes a new instance of <see cref="UnsafeTextureHandleMipChain"/> with a texture creation function.
         /// </summary>
         /// <param name="createFunc">Function invoked to create each mip level.</param>
         public UnsafeTextureHandleMipChain(CreateFunction createFunc)
@@ -54,7 +50,7 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// </summary>
         /// <param name="mip">Zero-based index of the mip level to check.</param>
         /// <returns><c>true</c> if the mip handle is valid; otherwise, <c>false</c>.</returns>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="mip"/> is out of range [0-<see cref="UnsafeMipChain{THandle,TData}.Handles"/>.Count).</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="mip"/> is out of range [0-<see cref="UnsafeMipChain{THandle}.Handles"/>.Count).</exception>
         public bool IsValid(int mip)
         {
             if (mip < 0 || mip >= Handles.Count)
@@ -83,35 +79,5 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
             }
             return true;
         }
-    }
-
-    /// <summary>
-    /// Represents an "unsafe" variant of <see cref="TextureHandleMipChain{TData}"/>.
-    /// 
-    /// This class inherits from <see cref="UnsafeMipChain{THandle,TData}"/> and exposes 
-    /// advanced functionality not available in the safe <see cref="TextureHandleMipChain{TData}"/>:
-    /// - Checking ranges of mip handles for validity.
-    /// - Copying subsets of chains or stacking multiple chains into one array.
-    /// - Explicit control over handle array resizing and layout.
-    ///
-    /// Use this class only when you need these low-level capabilities and accept responsibility 
-    /// for maintaining consistency. For most scenarios, prefer the safe 
-    /// <see cref="TextureHandleMipChain{TData}"/> which provides the same basic functionality 
-    /// without exposing unsafe operations.
-    ///
-    /// Redundant <see cref="IsValid()"/> methods are provided for API consistency with the safe variant.
-    /// </summary>
-    public class UnsafeTextureHandleMipChain : UnsafeTextureHandleMipChain<NoData>
-    {
-        /// <summary>
-        /// Initializes a new instance of <see cref="UnsafeTextureHandleMipChain{TData}"/> with a texture creation function.
-        /// </summary>
-        /// <param name="createFunc">Function invoked to create each mip level.</param>
-        /// <exception cref="ArgumentNullException">
-        /// Thrown if <paramref name="createFunc"/> is <c>null</c>.
-        /// </exception>
-        public UnsafeTextureHandleMipChain(CreateFunction createFunc)
-            : base(createFunc)
-        { }
     }
 }

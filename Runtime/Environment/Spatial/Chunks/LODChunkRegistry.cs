@@ -1,6 +1,7 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Environment.Abstractions;
+using Rayforge.Core.Execution.Abstractions;
 using System;
 using UnityEngine;
 
@@ -156,23 +157,24 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         #region Factory Overrides
 
         /// <summary>
-        /// Overrides the base factory using a data passthrough pattern to ensure LOD settings 
-        /// are initialized without triggering GC allocations via closures.
+        /// Overrides the base factory using the <see cref="IExecutionHandler{T}"/> pattern.
         /// </summary>
-        /// <typeparam name="TData">The type of the configuration data passed to the setup action.</typeparam>
+        /// <typeparam name="THandler">The struct handler used to configure the chunk.</typeparam>
         /// <param name="key">The 3D grid coordinate for the chunk.</param>
-        /// <param name="data">The data object used to configure the chunk (passed to onConfigure).</param>
-        /// <param name="onConfigure">A callback for additional user-defined configuration, executed before LOD setup.</param>
+        /// <param name="onConfigure">A struct handler containing the state and logic for chunk setup.</param>
         /// <param name="chunk">When this method returns, contains the initialized and LOD-configured chunk instance.</param>
         /// <returns>True if a brand new chunk was created; otherwise, false.</returns>
-        public override bool GetOrCreateChunk<TData>(Vector3Int key, TData data, Action<T, TData> onConfigure, out T chunk)
+        public override bool GetOrCreateChunk<THandler>(Vector3Int key, ref THandler onConfigure, out T chunk)
         {
-            bool isNew = base.GetOrCreateChunk(key, data, onConfigure, out chunk);
+            bool isNew = base.GetOrCreateChunk(key, ref onConfigure, out chunk);
+
             if (isNew)
             {
                 ((ILODReceiver)chunk).ConfigureLODRange(_lodDistances.Length - 1);
+
                 chunk.OnLODChanged += HandleChunkLODChanged;
                 chunk.OnCleanup += HandleChunkDestroyed;
+
                 UpdateChunkLOD(chunk, ViewerPos);
             }
 
@@ -209,10 +211,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #region ILODGridProvider Implementation
 
-        /// <summary>
-        /// Maps a squared distance to an LOD index.
-        /// Implements the core logic for both internal updates and external provider queries.
-        /// </summary>
+        /// <inheritdoc />
         public int CalculateTargetLOD(float sqrDistance)
         {
             ReadOnlySpan<float> thresholds = LodSqrDistances;
@@ -223,9 +222,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return -1;
         }
 
-        /// <summary>
-        /// Returns all grid keys that fall exactly into a specific LOD level.
-        /// </summary>
+        /// <inheritdoc />
         public IIterator<Vector3Int> GetKeysInLODLevel(int lodIndex, Vector3 center)
         {
             if (lodIndex < 0 || lodIndex >= LodCount)
@@ -242,10 +239,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return new Iterator<Vector3Int, GridLodLevelState>(lodState);
         }
 
-        /// <summary>
-        /// Returns the exact count of cells in an LOD level without allocations.
-        /// Perfect for atlas memory planning.
-        /// </summary>
+        /// <inheritdoc />
         public int GetKeyCountInLODLevel(int lodIndex, Vector3 center)
         {
             if (lodIndex < 0 || lodIndex >= LodCount) return 0;
@@ -265,9 +259,27 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return count;
         }
 
-        /// <summary>
-        /// Returns all keys within the maximum visibility range.
-        /// </summary>
+        /// <inheritdoc />
+        public void ForEachKeyInLOD<TAction>(int lodIndex, Vector3 center, ref TAction action)
+            where TAction : struct, IExecutionHandler<Vector3Int>
+        {
+            if (lodIndex < 0 || lodIndex >= LodCount) return;
+
+            float outerRadius = LodDistances[lodIndex];
+            Bounds searchBounds = new Bounds(center, Vector3.one * outerRadius * 2f);
+
+            foreach (var key in GetKeysInBounds(searchBounds))
+            {
+                float sqrDist = GetSqrDistanceToClosestEdge(key, center);
+
+                if (CalculateTargetLOD(sqrDist) == lodIndex)
+                {
+                    action.Execute(key);
+                }
+            }
+        }
+
+        /// <inheritdoc />
         public IIterator<Vector3Int> GetKeysInFullRange(Vector3 center)
         {
             if (LodCount == 0)
@@ -277,9 +289,21 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return GetKeysInRadius(center, maxRadius, useEdgeDistance: true);
         }
 
-        /// <summary>
-        /// Returns the total count of all cells within maximum range.
-        /// </summary>
+        /// <inheritdoc />
+        public void ForEachKeyInRange<TAction>(Vector3 center, ref TAction action)
+            where TAction : struct, IExecutionHandler<Vector3Int>
+        {
+            if (LodCount == 0) return;
+
+            float maxRadius = LodDistances[LodCount - 1];
+
+            foreach (var key in GetKeysInRadius(center, maxRadius, useEdgeDistance: true))
+            {
+                action.Execute(key);
+            }
+        }
+
+        /// <inheritdoc />
         public int GetKeyCountInFullRange(Vector3 center)
         {
             if (LodCount == 0) return 0;
@@ -295,10 +319,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return count;
         }
 
-        /// <summary>
-        /// Implements ILODGridProvider.GetMaxCapacityForLODLevel.
-        /// Ensures the Atlas has enough slices even in the worst-case grid alignment.
-        /// </summary>
+        /// <inheritdoc />
         public int GetMaxCapacityForLODLevel(int lodIndex)
         {
             if (lodIndex < 0 || lodIndex >= LodCount) return 0;

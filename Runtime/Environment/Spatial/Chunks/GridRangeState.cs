@@ -17,15 +17,28 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         /// <summary>
         /// Initializes the traversal state with a defined min and max boundary.
+        /// Automatically ensures that min is less than or equal to max for all axes.
         /// </summary>
-        public GridRangeState(Vector3Int min, Vector3Int max)
+        /// <param name="v1">First boundary corner.</param>
+        /// <param name="v2">Second boundary corner (can be smaller than v1).</param>
+        public GridRangeState(Vector3Int v1, Vector3Int v2)
         {
-            _min = min;
-            _max = max;
-            _current = min;
+            _min = new Vector3Int(
+                Mathf.Min(v1.x, v2.x),
+                Mathf.Min(v1.y, v2.y),
+                Mathf.Min(v1.z, v2.z)
+            );
 
+            _max = new Vector3Int(
+                Mathf.Max(v1.x, v2.x),
+                Mathf.Max(v1.y, v2.y),
+                Mathf.Max(v1.z, v2.z)
+            );
+
+            _current = _min;
             _hasStarted = false;
-            _isExhausted = min.x > max.x || min.y > max.y || min.z > max.z;
+
+            _isExhausted = false;
         }
 
         /// <summary>

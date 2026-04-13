@@ -2,6 +2,7 @@ using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Rendering;
+using Rayforge.Core.Execution.Handler;
 using Rayforge.Core.Rendering.Abstractions;
 using Rayforge.Core.Rendering.EditorStructures;
 using System;
@@ -293,24 +294,32 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// Phase 1: Update Mapping State.
         /// Feeds registry changes into the mapper. Call this when the external SpatialCollection has changed entries.
         /// </summary>
-        public void UpdateTopology(ISpatialCollection<Vector3Int> masterSource)
+        public void UpdateTopology<TCollection>(TCollection masterSource)
+            where TCollection : ISpatialCollection<Vector3Int>
         {
             if (!IsInitialized) return;
 
             try
             {
-                ChunkSyncUtility.Synchronize(
-                    masterSource,
-                    _chunkRegistry,
-                    this,
-                    static (chunk, @this) => {
-                        @this.SetupChunk(chunk);
-                        if (chunk.IsVisible) @this.RequestChunkTile(chunk);
-                    },
-                    static (chunk, @this) => {
-                        if (chunk.IsVisible) @this.RequestChunkTile(chunk);
+                foreach (var key in masterSource.GetDirtyCellIterator())
+                {
+                    bool hasData = masterSource.IsCellActive(key);
+                    bool exists = _chunkRegistry.TryGetEntry(key, out TextureLodChunk chunk);
+
+                    if (hasData)
+                    {
+                        var handler = new LambdaAction<TextureLodChunk, TextureChunkCoordinator>(this, static (chunk, coord) =>
+                        {
+                            coord.SetupChunk(chunk);
+                        });
+
+                        _chunkRegistry.GetOrCreateChunk(key, ref handler, out chunk);
                     }
-                );
+                    else if (exists)
+                    {
+                        _chunkRegistry.RemoveAndDestroy(key);
+                    }
+                }
 
                 _mapper.FlushTileRequests();
             }

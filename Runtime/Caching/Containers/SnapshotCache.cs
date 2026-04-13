@@ -12,6 +12,7 @@ namespace Rayforge.Core.Caching.Containers
     public class SnapshotCache<T> where T : struct, IEquatable<T>
     {
         private T[] _cache = Array.Empty<T>();
+        private readonly List<T> _reusableList = new List<T>(16);
 
         /// <summary>
         /// Gets the current cached snapshot as a ReadOnlySpan.
@@ -46,14 +47,14 @@ namespace Rayforge.Core.Caching.Containers
         /// </summary>
         /// <param name="iterator">The iterator providing the new data set.</param>
         /// <returns>True if the iterated data differs from the current cache.</returns>
-        public bool Apply(IIterator<T> iterator)
+        public bool Apply<TIterator>(TIterator iterator)
+            where TIterator : struct, IIterator<T>
         {
-            if (iterator == null) return HandleEmpty();
-
-            List<T> temp = new List<T>(_cache.Length);
+            _reusableList.Clear();
             bool mismatchFound = false;
             int index = 0;
 
+            // Durch das struct-Constraint wird dieser Loop vom JIT komplett ge-inlined.
             foreach (var item in iterator)
             {
                 if (!mismatchFound)
@@ -63,15 +64,16 @@ namespace Rayforge.Core.Caching.Containers
                         mismatchFound = true;
                     }
                 }
-                temp.Add(item);
+                _reusableList.Add(item);
                 index++;
             }
 
-            if (!mismatchFound && index != _cache.Length) mismatchFound = true;
+            if (!mismatchFound && index != _cache.Length)
+                mismatchFound = true;
 
             if (mismatchFound)
             {
-                _cache = temp.ToArray();
+                _cache = _reusableList.ToArray();
                 return true;
             }
 
@@ -95,6 +97,7 @@ namespace Rayforge.Core.Caching.Containers
         public void Clear()
         {
             _cache = Array.Empty<T>();
+            _reusableList.Clear();
         }
     }
 }

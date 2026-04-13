@@ -120,6 +120,6 @@ namespace Rayforge.Core.Collections.Iterator
         /// The _isInitialized flag ensures MoveNext immediately returns false without allocation.
         /// </summary>
         /// <returns>A default, uninitialized iterator.</returns>
-        public IIterator<TType> Empty() => default;
+        public static Iterator<TType, TState> Empty() => default;
     }
 }

@@ -1,7 +1,9 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Helpers;
+using Rayforge.Core.Execution.Abstractions;
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 namespace Rayforge.Core.Collections.Buffered
 {
@@ -13,6 +15,8 @@ namespace Rayforge.Core.Collections.Buffered
     /// <typeparam name="TValue">The data payload for updates (preferably a struct).</typeparam>
     public class RequestQueue<TKey, TValue> where TKey : struct, IEquatable<TKey>
     {
+        #region Properties
+
         private readonly HashSet<TKey> m_PendingRemovals = new();
         private readonly Dictionary<TKey, TValue> m_PendingUpdates = new();
 
@@ -22,16 +26,18 @@ namespace Rayforge.Core.Collections.Buffered
         public bool HasRequests => m_PendingRemovals.Count > 0 || m_PendingUpdates.Count > 0;
 
         /// <summary>
-        /// Provides an iterator over the keys marked for removal.
+        /// The number of pending removal requests.
         /// </summary>
-        public IIterator<TKey> GetRemovalIterator()
-            => m_PendingRemovals.GetEnumerator().ToIterator();
+        public int RemovalCount => m_PendingRemovals.Count;
 
         /// <summary>
-        /// Provides an iterator over the actual update payloads.
+        /// The number of pending update/addition requests.
         /// </summary>
-        public IIterator<KeyValuePair<TKey, TValue>> GetUpdateIterator()
-            => m_PendingUpdates.GetEnumerator().ToIterator();
+        public int UpdateCount => m_PendingUpdates.Count;
+
+        #endregion
+
+        #region Queue Logic
 
         /// <summary>
         /// Queues an update or addition. If the key was marked for removal, that removal is cancelled.
@@ -60,14 +66,58 @@ namespace Rayforge.Core.Collections.Buffered
             m_PendingUpdates.Clear();
         }
 
-        /// <summary>
-        /// The number of pending removal requests.
-        /// </summary>
-        public int RemovalCount => m_PendingRemovals.Count;
+        #endregion
+
+        #region High-Performance Execution
 
         /// <summary>
-        /// The number of pending update/addition requests.
+        /// Executes an action for each pending removal. 
+        /// Using a struct action avoids boxing of the underlying HashSet enumerator.
         /// </summary>
-        public int UpdateCount => m_PendingUpdates.Count;
+        /// <typeparam name="TAction">A struct implementing IIterationAction for keys.</typeparam>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ForEachRemoval<TAction>(ref TAction action)
+            where TAction : struct, IExecutionHandler<TKey>
+        {
+            foreach (var key in m_PendingRemovals)
+            {
+                action.Execute(key);
+            }
+        }
+
+        /// <summary>
+        /// Executes an action for each pending update.
+        /// Using a struct action avoids boxing of the underlying Dictionary enumerator.
+        /// </summary>
+        /// <typeparam name="TAction">A struct implementing IIterationAction for KeyValuePairs.</typeparam>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ForEachUpdate<TAction>(ref TAction action)
+            where TAction : struct, IExecutionHandler<KeyValuePair<TKey, TValue>>
+        {
+            foreach (var kvp in m_PendingUpdates)
+            {
+                action.Execute(kvp);
+            }
+        }
+
+        #endregion
+
+        #region Flexible Iteration
+
+        /// <summary>
+        /// Provides an iterator over the keys marked for removal.
+        /// CAUTION: This causes boxing of the internal enumerator. Use ForEachRemoval for performance.
+        /// </summary>
+        public IIterator<TKey> GetRemovalIterator()
+            => m_PendingRemovals.GetEnumerator().ToIterator();
+
+        /// <summary>
+        /// Provides an iterator over the actual update payloads.
+        /// CAUTION: This causes boxing of the internal enumerator. Use ForEachUpdate for performance.
+        /// </summary>
+        public IIterator<KeyValuePair<TKey, TValue>> GetUpdateIterator()
+            => m_PendingUpdates.GetEnumerator().ToIterator();
+
+        #endregion
     }
 }

@@ -1,3 +1,4 @@
+using Rayforge.Core.Execution.Abstractions;
 using System;
 
 namespace Rayforge.Core.Collections.Abstractions
@@ -8,6 +9,8 @@ namespace Rayforge.Core.Collections.Abstractions
     /// </summary>
     public interface IMetadataStore
     {
+        #region General Properties
+
         /// <summary>
         /// Gets the total number of elements the store can hold.
         /// </summary>
@@ -40,6 +43,10 @@ namespace Rayforge.Core.Collections.Abstractions
         /// </summary>
         Array RawData { get; }
 
+        #endregion
+
+        #region State Management
+
         /// <summary>
         /// Resets the store to its initial state, clearing all data and dirty flags.
         /// Essential for full scene reloads or clearing the registry.
@@ -58,18 +65,79 @@ namespace Rayforge.Core.Collections.Abstractions
         /// </summary>
         void MarkAllDirty();
 
+        #endregion
+
+        #region Dirty Iteration (Optimized)
+
         /// <summary>
-        /// Provides an iterator over contiguous dirty element ranges.
+        /// Executes a specialized action for each dirty segment range.
+        /// <para>
+        /// RECOMMENDED: This is the fastest way to iterate. By using a struct constraint and ref parameter,
+        /// the JIT compiler can inline the action, resulting in zero-allocation, stack-only execution.
+        /// </para>
+        /// </summary>
+        /// <typeparam name="TAction">A struct implementing the <see cref="IExecutionHandler{T}"/> contract.</typeparam>
+        /// <param name="action">The action to execute for each dirty segment.</param>
+        /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into a single segment.</param>
+        void ForEachDirtySegment<TAction>(ref TAction action, bool mergeContiguous = true)
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta>;//, allows ref struct;
+
+        /// <summary>
+        /// Executes a specialized action for each dirty batch index.
+        /// <para>
+        /// RECOMMENDED: Optimized for high-frequency calls. Avoids boxing and ensures the iteration
+        /// state remains on the stack.
+        /// </para>
+        /// </summary>
+        /// <typeparam name="TAction">A struct implementing the <see cref="IExecutionHandler{T}"/> contract.</typeparam>
+        /// <param name="action">The action to execute for each dirty index.</param>
+        void ForEachDirtyIndex<TAction>(ref TAction action)
+            where TAction : struct, IExecutionHandler<int>;//, allows ref struct;
+
+        /// <summary>
+        /// Provides a specialized iterator over contiguous dirty element ranges.
+        /// <para>
+        /// CAUTION: Returning the iterator as an interface type causes BOXING of the internal struct state.
+        /// Use <see cref="ForEachDirtySegment{TAction}"/> for performance-critical synchronization loops.
+        /// </para>
         /// </summary>
         /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into a single segment.</param>
-        /// <returns>An iterator yielding <see cref="BufferSegmentMeta"/> segments.</returns>
-        public IIterator<BufferSegmentMeta> GetDirtyBatchIterator(bool mergeContiguous = true);
+        /// <returns>A boxed iterator instance.</returns>
+        IIterator<BufferSegmentMeta> GetDirtySegmentIterator(bool mergeContiguous = true);
 
         /// <summary>
         /// Returns an iterator over the indices of all segments marked as modified.
-        /// Allows external systems to inspect changes for custom logic or compute dispatching.
+        /// <para>
+        /// CAUTION: This method causes the internal iterator struct to be BOXED onto the heap.
+        /// Use <see cref="ForEachDirtyIndex{TAction}"/> to keep the operation on the stack.
+        /// </para>
         /// </summary>
-        /// <returns>An enumerable of dirty batch indices.</returns>
-        IIterator<int> GetDirtyBatchIndices();
+        /// <returns>A boxed iterator instance.</returns>
+        IIterator<int> GetDirtySegmentIndices();
+
+        #endregion
+
+        #region Full Iteration (Ignores Dirty State)
+
+        /// <summary>
+        /// Executes a specialized action for every batch segment in the store, regardless of its dirty state.
+        /// <para>
+        /// PERFORMANCE: Zero-allocation, stack-only execution via struct inlining. 
+        /// Ideal for full-buffer uploads or validation.
+        /// </para>
+        /// </summary>
+        /// <typeparam name="TAction">A struct implementing <see cref="IExecutionHandler{BufferSegmentMeta}"/>.</typeparam>
+        /// <param name="action">The action to execute for each batch segment.</param>
+        void ForEachSegment<TAction>(ref TAction action)
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta>;
+
+        /// <summary>
+        /// Provides a specialized iterator over all batch segments, ignoring dirty flags.
+        /// <para>CAUTION: Causes BOXING of the internal struct state.</para>
+        /// </summary>
+        /// <returns>A boxed iterator instance.</returns>
+        IIterator<BufferSegmentMeta> GetSegmentIterator();
+
+        #endregion
     }
 }

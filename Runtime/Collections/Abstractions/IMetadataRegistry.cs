@@ -1,3 +1,5 @@
+using Rayforge.Core.Execution.Abstractions;
+
 namespace Rayforge.Core.Collections.Abstractions
 {
     /// <summary>
@@ -33,26 +35,57 @@ namespace Rayforge.Core.Collections.Abstractions
         int HighestIndex { get; }
 
         /// <summary>
-        /// Provides a direct sync iterator for a specific metadata type.
-        /// Use this to target a specific ComputeBuffer for a specific data stream.
+        /// Executes a specialized action for each dirty segment range of a specific metadata type.
+        /// <para>
+        /// RECOMMENDED: This is the fastest way to iterate. By using a struct constraint and ref parameter,
+        /// the JIT compiler can inline the action, resulting in zero-allocation, stack-only execution.
+        /// </para>
         /// </summary>
-        /// <typeparam name="T">The metadata struct type.</typeparam>
-        public IIterator<BufferSegmentMeta> GetDirtyBatchIterator<T>() where T : unmanaged;
+        /// <typeparam name="T">The unmanaged metadata type (e.g., SpatialData).</typeparam>
+        /// <typeparam name="TAction">A struct implementing the <see cref="IExecutionHandler{BufferSegmentMeta}"/> contract.</typeparam>
+        /// <param name="action">The action to execute for each dirty segment.</param>
+        /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into a single segment.</param>
+        void ForEachDirtySegment<T, TAction>(ref TAction action, bool mergeContiguous = true)
+            where T : unmanaged
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta>;
 
         /// <summary>
-        /// Provides a direct, element-wise iterator for a specific metadata type.
-        /// Use this for CPU-side logic that requires reading all stored data sequentially,
-        /// such as serialization, validation, or global data analysis.
+        /// Executes a specialized action for each dirty batch index of a specific metadata type.
+        /// <para>
+        /// RECOMMENDED: Optimized for high-frequency calls. Avoids boxing and ensures the iteration
+        /// state remains on the stack.
+        /// </para>
         /// </summary>
-        /// <typeparam name="T">The unmanaged metadata struct type (e.g., SpatialData).</typeparam>
-        /// <returns>
-        /// An <see cref="IIterator{T}"/> over the underlying CPU array. 
-        /// Returns an empty iterator if no store is registered for the specified type.
-        /// </returns>
-        /// <remarks>
-        /// Unlike the Batch-Iterator, this does not group changes and ignores the dirty state. 
-        /// It performs a full sweep over the allocated capacity.
-        /// </remarks>
-        public IIterator<T> GetIterator<T>() where T : unmanaged;
+        /// <typeparam name="T">The unmanaged metadata type.</typeparam>
+        /// <typeparam name="TAction">A struct implementing the <see cref="IExecutionHandler{int}"/> contract.</typeparam>
+        /// <param name="action">The action to execute for each dirty index.</param>
+        void ForEachDirtyIndex<T, TAction>(ref TAction action)
+            where T : unmanaged
+            where TAction : struct, IExecutionHandler<int>;
+
+        /// <summary>
+        /// Provides a specialized iterator over contiguous dirty element ranges for a specific metadata type.
+        /// <para>
+        /// CAUTION: Returning the iterator as an interface type causes BOXING of the internal struct state.
+        /// Use <see cref="ForEachDirtySegment{T, TAction}"/> for performance-critical synchronization loops.
+        /// </para>
+        /// </summary>
+        /// <typeparam name="T">The unmanaged metadata type.</typeparam>
+        /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into a single segment.</param>
+        /// <returns>A boxed iterator instance.</returns>
+        IIterator<BufferSegmentMeta> GetDirtySegmentIterator<T>(bool mergeContiguous = true)
+            where T : unmanaged;
+
+        /// <summary>
+        /// Returns an iterator over the indices of all segments marked as modified for a specific metadata type.
+        /// <para>
+        /// CAUTION: This method causes the internal iterator struct to be BOXED onto the heap.
+        /// Use <see cref="ForEachDirtyIndex{T, TAction}"/> to keep the operation on the stack.
+        /// </para>
+        /// </summary>
+        /// <typeparam name="T">The unmanaged metadata type.</typeparam>
+        /// <returns>A boxed iterator instance.</returns>
+        IIterator<int> GetDirtySegmentIndices<T>()
+            where T : unmanaged;
     }
 }

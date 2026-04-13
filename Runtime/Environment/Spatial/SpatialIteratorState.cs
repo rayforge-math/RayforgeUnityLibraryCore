@@ -6,72 +6,72 @@ using System.Collections.Generic;
 namespace Rayforge.Core.Environment.Spatial
 {
     /// <summary>
-    /// A specialized, zero-allocation state container that resolves internal IDs from a spatial bucket 
-    /// into actual component instances by accessing the storage dictionary directly.
+    /// A generic, zero-allocation state container that resolves keys from any struct-based enumerator
+    /// into actual values by accessing a storage dictionary directly.
     /// </summary>
-    /// <typeparam name="TKey">The spatial identifier type (e.g., Vector3Int).</typeparam>
-    /// <typeparam name="TType">The component type being iterated.</typeparam>
-    public struct SpatialIteratorState<TKey, TType> : IIterationLogic<TType, SpatialIteratorState<TKey, TType>>
+    /// <typeparam name="TKey">The identifier type (e.g., int for InstanceID).</typeparam>
+    /// <typeparam name="TValue">The resolved value type (e.g., MeshRenderer).</typeparam>
+    /// <typeparam name="TEnumerator">The specific enumerator type to avoid boxing.</typeparam>
+    public struct SpatialIteratorState<TKey, TValue, TEnumerator> : IIterationLogic<TValue, SpatialIteratorState<TKey, TValue, TEnumerator>>
         where TKey : struct, IEquatable<TKey>
-        where TType : Component
+        where TEnumerator : struct, IEnumerator<TKey>
     {
-        /// <summary>
-        /// The internal enumerator for the ID collection (bucket).
-        /// Public field to allow the Iterator to modify the struct's internal state via ref.
-        /// </summary>
-        public HashSet<int>.Enumerator _bucket;
+        #region Fields
 
         /// <summary>
-        /// Direct reference to the registry's storage dictionary.
-        /// Stored directly to eliminate one layer of indirection (Registry -> Dictionary).
+        /// The internal enumerator for the keys. 
+        /// Must be public for the Iterator-Wrapper to access it via reference.
         /// </summary>
-        private readonly Dictionary<int, SpatialState<TType>> _storage;
+        public TEnumerator _bucketEnumerator;
 
-        private TType _cachedValue;
+        /// <summary>
+        /// Reference to the storage dictionary for O(1) resolution.
+        /// </summary>
+        private readonly Dictionary<TKey, SpatialState<TValue>> _storage;
+
+        private TValue _cachedValue;
         private bool _hasCachedValue;
         private bool _isExhausted;
 
+        #endregion
+
+        #region Constructor
+
         /// <summary>
-        /// Initializes a new instance of the <see cref="SpatialIteratorState{TKey, TType}"/> struct.
+        /// Initializes a new instance of the iterator state.
         /// </summary>
-        /// <param name="bucket">The struct-based enumerator for the specific spatial cell.</param>
-        /// <param name="storage">The internal dictionary used for O(1) ID-to-Object resolution.</param>
-        public SpatialIteratorState(HashSet<int>.Enumerator bucket, Dictionary<int, SpatialState<TType>> storage)
+        /// <param name="bucketEnumerator">The specific enumerator (e.g. HashSet{int}.Enumerator).</param>
+        /// <param name="storage">The dictionary used to resolve keys to values.</param>
+        public SpatialIteratorState(TEnumerator bucketEnumerator, Dictionary<TKey, SpatialState<TValue>> storage)
         {
-            _bucket = bucket;
+            _bucketEnumerator = bucketEnumerator;
             _storage = storage;
             _cachedValue = default;
             _hasCachedValue = false;
             _isExhausted = false;
         }
 
-        /// <summary>
-        /// Checks if a next valid component exists by pre-resolving the next ID from the bucket.
-        /// </summary>
-        public bool HasNext(ref SpatialIteratorState<TKey, TType> self)
+        #endregion
+
+        #region IIterationLogic Implementation
+
+        /// <inheritdoc />
+        public bool HasNext(ref SpatialIteratorState<TKey, TValue, TEnumerator> self)
         {
             MoveBeforeNext(ref self);
             return self._hasCachedValue;
         }
 
-        /// <summary>
-        /// Returns the already resolved component without consuming it.
-        /// Useful for comparing spatial objects with other data streams before processing.
-        /// </summary>
-        public bool TryPeekNext(ref SpatialIteratorState<TKey, TType> self, out TType result)
+        /// <inheritdoc />
+        public bool TryPeekNext(ref SpatialIteratorState<TKey, TValue, TEnumerator> self, out TValue result)
         {
             MoveBeforeNext(ref self);
             result = self._cachedValue;
             return self._hasCachedValue;
         }
 
-        /// <summary>
-        /// Advances the bucket enumerator and resolves the found ID to its component instance.
-        /// </summary>
-        /// <param name="self">Reference to the current state to allow in-place modification.</param>
-        /// <param name="result">The resolved component instance if found; otherwise default.</param>
-        /// <returns>True if a valid component was found and resolved; false otherwise.</returns>
-        public bool MoveNext(ref SpatialIteratorState<TKey, TType> self, out TType result)
+        /// <inheritdoc />
+        public bool MoveNext(ref SpatialIteratorState<TKey, TValue, TEnumerator> self, out TValue result)
         {
             MoveBeforeNext(ref self);
 
@@ -87,20 +87,23 @@ namespace Rayforge.Core.Environment.Spatial
             return false;
         }
 
+        #endregion
+
+        #region Internal Logic
+
         /// <summary>
-        /// Core optimization: Advances the bucket enumerator until a valid storage entry is found.
-        /// Pre-fetches the component into the cache so that both HasNext and MoveNext 
-        /// operate on the same pre-validated data.
+        /// Advances the generic enumerator and pre-resolves the value from storage.
         /// </summary>
-        private static void MoveBeforeNext(ref SpatialIteratorState<TKey, TType> self)
+        private static void MoveBeforeNext(ref SpatialIteratorState<TKey, TValue, TEnumerator> self)
         {
             if (self._hasCachedValue || self._isExhausted) return;
 
-            while (self._bucket.MoveNext())
+            while (self._bucketEnumerator.MoveNext())
             {
-                if (self._storage != null && self._storage.TryGetValue(self._bucket.Current, out var state))
+                TKey currentKey = self._bucketEnumerator.Current;
+                if (self._storage != null && self._storage.TryGetValue(currentKey, out var value))
                 {
-                    self._cachedValue = state.component;
+                    self._cachedValue = value.component;
                     self._hasCachedValue = true;
                     return;
                 }
@@ -108,5 +111,7 @@ namespace Rayforge.Core.Environment.Spatial
 
             self._isExhausted = true;
         }
+
+        #endregion
     }
 }

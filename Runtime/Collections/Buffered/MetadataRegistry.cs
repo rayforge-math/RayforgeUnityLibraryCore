@@ -1,6 +1,8 @@
 using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Execution.Abstractions;
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 namespace Rayforge.Core.Collections.Buffered
 {
@@ -12,6 +14,8 @@ namespace Rayforge.Core.Collections.Buffered
     public class MetadataRegistry<TKey> : IMetadataRegistry
         where TKey : struct, IEquatable<TKey>
     {
+        #region Properties
+
         private const string Tag = "[MetadataRegistry]";
 
         private readonly KeyedSlotMapper<TKey> m_Mapper = new();
@@ -39,6 +43,10 @@ namespace Rayforge.Core.Collections.Buffered
         /// Gets the highest allocated index. Useful for limiting the range of GPU compute dispatches.
         /// </summary>
         public int HighestIndex => m_Mapper.HighestActiveIndex;
+
+        #endregion
+
+        #region Init
 
         /// <summary>
         /// Initializes a new registry with a fixed capacity and batch size for all its stores.
@@ -83,52 +91,9 @@ namespace Rayforge.Core.Collections.Buffered
             return true;
         }
 
-        /// <summary>
-        /// Resizes all registered stores and the internal mapper to a new capacity.
-        /// </summary>
-        /// <param name="newCapacity">The new maximum number of slots.</param>
-        /// <returns>True if the capacity changed and data was reset; false if already at target capacity.</returns>
-        public bool Resize(int newCapacity)
-        {
-            if (newCapacity <= 0)
-                throw new ArgumentOutOfRangeException(nameof(newCapacity), $"{Tag} Capacity must be greater than zero.");
+        #endregion
 
-            if (m_Capacity == newCapacity)
-                return false;
-
-            m_Capacity = newCapacity;
-            m_Mapper.Initialize(newCapacity);
-            foreach (var store in m_Stores.Values)
-            {
-                store.Resize(newCapacity);
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Updates the dirty-tracking granularity for all registered stores.
-        /// This is a non-destructive operation. Metadata values are preserved.
-        /// </summary>
-        /// <param name="newBatchSize">The new size for tracking segments.</param>
-        /// <returns>True if the batch size was changed and migrated; false if already at target size.</returns>
-        public bool UpdateBatchSize(int newBatchSize)
-        {
-            if (newBatchSize <= 0)
-                throw new ArgumentOutOfRangeException(nameof(newBatchSize), $"{Tag} BatchSize must be at least 1.");
-
-            if (m_BatchSize == newBatchSize)
-                return false;
-
-            m_BatchSize = newBatchSize;
-
-            foreach (var store in m_Stores.Values)
-            {
-                store.UpdateBatchSize(newBatchSize);
-            }
-
-            return true;
-        }
+        #region Public Management API
 
         /// <summary>
         /// Resets the registry by clearing the key-to-slot mapping and resetting all registered data stores.
@@ -144,42 +109,6 @@ namespace Rayforge.Core.Collections.Buffered
         }
 
         /// <summary>
-        /// Provides a direct sync iterator for a specific metadata type.
-        /// Use this to target a specific ComputeBuffer for a specific data stream.
-        /// </summary>
-        /// <typeparam name="T">The metadata struct type.</typeparam>
-        public IIterator<BufferSegmentMeta> GetDirtyBatchIterator<T>() where T : unmanaged
-        {
-            var store = GetStoreInternal<T>();
-            if (store == null || !store.AnyDirty)
-                return IIterator<BufferSegmentMeta>.Empty();
-
-            return store.GetDirtyBatchIterator();
-        }
-
-        /// <summary>
-        /// Provides a direct, element-wise iterator for a specific metadata type.
-        /// Use this for CPU-side logic that requires reading all stored data sequentially,
-        /// such as serialization, validation, or global data analysis.
-        /// </summary>
-        /// <typeparam name="T">The unmanaged metadata struct type (e.g., SpatialData).</typeparam>
-        /// <returns>
-        /// An <see cref="IIterator{T}"/> over the underlying CPU array. 
-        /// Returns an empty iterator if no store is registered for the specified type.
-        /// </returns>
-        /// <remarks>
-        /// Unlike the Batch-Iterator, this does not group changes and ignores the dirty state. 
-        /// It performs a full sweep over the allocated capacity.
-        /// </remarks>
-        public IIterator<T> GetIterator<T>() where T : unmanaged
-        {
-            var store = GetStoreInternal<T>();
-            if (store == null) return IIterator<T>.Empty();
-
-            return store.GetIterator();
-        }
-
-        /// <summary>
         /// Resets the dirty tracking state for all registered stores.
         /// Call this after a successful SyncAllStores to acknowledge processed data.
         /// </summary>
@@ -189,43 +118,6 @@ namespace Rayforge.Core.Collections.Buffered
             {
                 store.ClearDirty();
             }
-        }
-
-        /// <summary>
-        /// Registers a new data stream for a specific type. 
-        /// Returns the existing store if it was already registered.
-        /// </summary>
-        protected MetadataStore<T> AddStore<T>() where T : unmanaged
-        {
-            var type = typeof(T);
-            if (m_Stores.TryGetValue(type, out var existing))
-                return (MetadataStore<T>)existing;
-
-            var store = new MetadataStore<T>(m_Capacity, m_BatchSize);
-            m_Stores[type] = store;
-            return store;
-        }
-
-        /// <summary>
-        /// Retrieves an existing store as a read-only interface.
-        /// Use this for external systems like renderers that should not 
-        /// be able to call Resize or UpdateBatchSize.
-        /// </summary>
-        protected MetadataStore<T> GetStoreInternal<T>() where T : unmanaged
-        {
-            if (m_Stores.TryGetValue(typeof(T), out var storeObj))
-                return (MetadataStore<T>)storeObj;
-            return null;
-        }
-
-        /// <summary>
-        /// Retrieves an existing store as a read-only interface.
-        /// Use this for external systems like renderers that should not 
-        /// be able to call Resize or UpdateBatchSize.
-        /// </summary>
-        protected IMetadataStore GetStore<T>() where T : unmanaged
-        {
-            return GetStoreInternal<T>();
         }
 
         /// <summary>
@@ -294,5 +186,156 @@ namespace Rayforge.Core.Collections.Buffered
         /// Useful for high-performance manual updates across multiple cached stores.
         /// </summary>
         public int GetOrAllocateIndex(TKey key) => m_Mapper.GetOrAllocate(key);
+
+        #endregion
+
+        #region IMetadataStoreController Implementation
+
+        /// <summary>
+        /// Resizes all registered stores and the internal mapper to a new capacity.
+        /// </summary>
+        /// <param name="newCapacity">The new maximum number of slots.</param>
+        /// <returns>True if the capacity changed and data was reset; false if already at target capacity.</returns>
+        public bool Resize(int newCapacity)
+        {
+            if (newCapacity <= 0)
+                throw new ArgumentOutOfRangeException(nameof(newCapacity), $"{Tag} Capacity must be greater than zero.");
+
+            if (m_Capacity == newCapacity)
+                return false;
+
+            m_Capacity = newCapacity;
+            m_Mapper.Initialize(newCapacity);
+            foreach (var store in m_Stores.Values)
+            {
+                store.Resize(newCapacity);
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Updates the dirty-tracking granularity for all registered stores.
+        /// This is a non-destructive operation. Metadata values are preserved.
+        /// </summary>
+        /// <param name="newBatchSize">The new size for tracking segments.</param>
+        /// <returns>True if the batch size was changed and migrated; false if already at target size.</returns>
+        public bool UpdateBatchSize(int newBatchSize)
+        {
+            if (newBatchSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(newBatchSize), $"{Tag} BatchSize must be at least 1.");
+
+            if (m_BatchSize == newBatchSize)
+                return false;
+
+            m_BatchSize = newBatchSize;
+
+            foreach (var store in m_Stores.Values)
+            {
+                store.UpdateBatchSize(newBatchSize);
+            }
+
+            return true;
+        }
+
+        #endregion
+
+        #region Iteration (Implementation of IMetadataRegistry)
+
+        /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ForEachDirtySegment<T, TAction>(ref TAction action, bool mergeContiguous = true)
+            where T : unmanaged
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta>
+        {
+            var store = GetStoreInternal<T>();
+            if (store != null && store.AnyDirty)
+            {
+                // Wir delegieren den ref call direkt an den Store, 
+                // damit der JIT-Compiler die Schleife inlinen kann.
+                store.ForEachDirtySegment(ref action, mergeContiguous);
+            }
+        }
+
+        /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ForEachDirtyIndex<T, TAction>(ref TAction action)
+            where T : unmanaged
+            where TAction : struct, IExecutionHandler<int>
+        {
+            var store = GetStoreInternal<T>();
+            if (store != null && store.AnyDirty)
+            {
+                store.ForEachDirtyIndex(ref action);
+            }
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// CAUTION: This implementation boxes the internal iterator. 
+        /// Use <see cref="ForEachDirtySegment{T, TAction}"/> for performance-critical paths.
+        /// </remarks>
+        public IIterator<BufferSegmentMeta> GetDirtySegmentIterator<T>(bool mergeContiguous = true)
+            where T : unmanaged
+        {
+            var store = GetStoreInternal<T>();
+            // Falls kein Store oder keine Änderungen vorhanden, geben wir einen leeren/default Iterator zurück.
+            // Das Interface erzwingt hier leider das Boxing.
+            return store?.GetDirtySegmentIterator(mergeContiguous) ?? default;
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// CAUTION: This implementation boxes the internal iterator.
+        /// </remarks>
+        public IIterator<int> GetDirtySegmentIndices<T>()
+            where T : unmanaged
+        {
+            var store = GetStoreInternal<T>();
+            return store?.GetDirtySegmentIndices() ?? default;
+        }
+
+        #endregion
+
+        #region Internal Management
+
+        /// <summary>
+        /// Registers a new data stream for a specific type. 
+        /// Returns the existing store if it was already registered.
+        /// </summary>
+        protected MetadataStore<T> AddStore<T>() where T : unmanaged
+        {
+            var type = typeof(T);
+            if (m_Stores.TryGetValue(type, out var existing))
+                return (MetadataStore<T>)existing;
+
+            var store = new MetadataStore<T>(m_Capacity, m_BatchSize);
+            m_Stores[type] = store;
+            return store;
+        }
+
+        /// <summary>
+        /// Retrieves an existing store as a read-only interface.
+        /// Use this for external systems like renderers that should not 
+        /// be able to call Resize or UpdateBatchSize.
+        /// </summary>
+        protected MetadataStore<T> GetStoreInternal<T>() where T : unmanaged
+        {
+            if (m_Stores.TryGetValue(typeof(T), out var storeObj))
+                return (MetadataStore<T>)storeObj;
+            return null;
+        }
+
+        /// <summary>
+        /// Retrieves an existing store as a read-only interface.
+        /// Use this for external systems like renderers that should not 
+        /// be able to call Resize or UpdateBatchSize.
+        /// </summary>
+        protected IMetadataStore GetStore<T>() where T : unmanaged
+        {
+            return GetStoreInternal<T>();
+        }
+
+        #endregion
     }
 }
