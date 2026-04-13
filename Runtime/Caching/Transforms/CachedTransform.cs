@@ -16,7 +16,9 @@ namespace Rayforge.Core.Caching.Transforms
     /// </summary>
     public class CachedTransform : ICachedTransform
     {
-        private readonly GameObject m_GameObject;
+        private const string Tag = "CachedTransform";
+
+        private GameObject m_GameObject;
         private ICachedTransform m_Parent;
 
         private Vector3 m_CachedPosition;
@@ -27,18 +29,18 @@ namespace Rayforge.Core.Caching.Transforms
         /// Gets the underlying Unity <see cref="Transform"/> instance associated with this cached transform.
         /// Use this property only when direct Unity API access is required.
         /// </summary>
-        public virtual Transform Self => m_GameObject.transform;
+        public virtual Transform Self => m_GameObject != null ? m_GameObject.transform : null;
 
         /// <summary>
         /// Initializes a new <see cref="CachedTransform"/> that wraps the specified <see cref="GameObject"/>.
         /// </summary>
         /// <param name="gameObject">The GameObject to wrap and cache transform data from.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the provided <paramref name="gameObject"/> is null.</exception>
         public CachedTransform(GameObject gameObject)
         {
             if (gameObject == null)
             {
-                Debug.LogError("CachedTransform: GameObject is null.");
-                return;
+                throw new ArgumentNullException(nameof(gameObject), $"{Tag}: GameObject cannot be null.");
             }
 
             m_GameObject = gameObject;
@@ -68,17 +70,24 @@ namespace Rayforge.Core.Caching.Transforms
         }
 
         /// <summary>
-        /// Creates a new <see cref="CachedTransform"/> with a new <see cref="GameObject"/> that is immediately parented.
+        /// Creates a new <see cref="CachedTransform"/> by instantiating a new <see cref="GameObject"/> 
+        /// and linking it to a parent <see cref="ICachedTransform"/>.
         /// </summary>
+        /// <typeparam name="TParent">The type of the parent, which must implement <see cref="ICachedTransform"/>.</typeparam>
         /// <param name="name">The name of the new GameObject.</param>
-        /// <param name="parent">The parent transform to attach to.</param>
-        /// <returns>A new <see cref="CachedTransform"/> instance.</returns>
-        public static CachedTransform Create(string name, ICachedTransform parent)
+        /// <param name="parent">The parent instance to attach to. If not null, the GameObject's transform is parented in Unity.</param>
+        /// <returns>A new <see cref="CachedTransform"/> instance with the specified parent.</returns>
+        public static CachedTransform Create<TParent>(string name, TParent parent)
+            where TParent : ICachedTransform
         {
             var gameObject = new GameObject(name);
             var t = gameObject.transform;
+
             if (parent != null)
+            {
                 t.SetParent(parent.Self);
+            }
+
             return new CachedTransform(gameObject) { m_Parent = parent };
         }
 
@@ -130,7 +139,6 @@ namespace Rayforge.Core.Caching.Transforms
             get => m_Parent;
             set
             {
-                // Allow unparenting
                 Self.SetParent(value?.Self);
                 m_Parent = value;
             }
@@ -166,7 +174,8 @@ namespace Rayforge.Core.Caching.Transforms
         {
             if (m_GameObject != null)
             {
-                UnityEngine.Object.Destroy(m_GameObject);
+                UnityEngine.Object.DestroyImmediate(m_GameObject);
+                m_GameObject = null;
                 GC.SuppressFinalize(this);
             }
         }

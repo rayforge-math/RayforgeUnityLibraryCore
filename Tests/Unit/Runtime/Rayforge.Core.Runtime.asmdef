@@ -1,0 +1,24 @@
+{
+    "name": "Rayforge.Core.Tests.Unit.Runtime",
+    "rootNamespace": "Rayforge.Core.Tests",
+    "references": [
+        "Unity.RenderPipelines.Core.Runtime",
+        "UnityEngine.TestRunner",
+        "Unity.Mathematics",
+        "Unity.Burst",
+        "Rayforge.Core.Runtime"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

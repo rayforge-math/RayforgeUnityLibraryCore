@@ -1,4 +1,5 @@
 using Rayforge.Core.Common;
+using Rayforge.Core.Execution.Abstractions;
 using Rayforge.Core.Rendering.Collections;
 using System;
 using UnityEngine;
@@ -11,43 +12,35 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
     /// One handle represents the current target (write), the other holds the previous frame's data (read).
     /// Suitable for temporal effects like reprojection, motion blur, or any frame-history dependent process.
     /// </summary>
-    /// <typeparam name="TData">
-    /// Optional user-defined context passed to the allocation function. Useful for providing external resources,
-    /// a render graph context, or any other data required during allocation without capturing from the surrounding scope.
-    /// </typeparam>
-    public sealed class HistoryRTHandles<TData> : HistoryBuffer<RTHandle>, IDisposable
+    public sealed class HistoryRTHandles : HistoryBuffer<RTHandle>, IDisposable
     {
         /// <summary>
-        /// Function signature for creating or reallocating a texture handle.
+        /// Container for data required to allocate or reallocate an RTHandle.
         /// </summary>
-        /// <param name="handle">The handle to create or reallocate.</param>
-        /// <param name="descriptor">The render texture descriptor used for allocation.</param>
-        /// <param name="name">Optional name for debugging/profiling.</param>
-        /// <param name="data">Optional user-provided context for allocation logic.</param>
-        /// <returns><c>true</c> if a handle was allocated/reallocated, <c>false</c> otherwise.</returns>
-        public delegate bool TextureReAllocFunction(ref RTHandle handle, RenderTextureDescriptor descriptor, string name, TData data = default);
+        public struct RTAllocData
+        {
+            public RenderTextureDescriptor descriptor;
+            public string name;
+
+            internal RTHandle[] sourceArray;
+            internal int index;
+
+            public ref RTHandle Handle => ref sourceArray[index];
+        }
 
         private string[] m_HandleNames;
-        private TextureReAllocFunction m_ReAllocFunc;
-
         private const string k_DefaultHandleName = "HistoryHandle";
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="HistoryRTHandles{TData}"/>.
+        /// Initializes a new instance of the <see cref="HistoryRTHandles"/>.
         /// </summary>
-        /// <param name="reAllocFunc">Delegate used to create or reallocate handles.</param>
         /// <param name="initial0">Initial first handle (current).</param>
         /// <param name="initial1">Initial second handle (history).</param>
         /// <param name="handleName">Optional base name for debugging/profiling.</param>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="reAllocFunc"/> is <c>null</c>.</exception>
-        public HistoryRTHandles(TextureReAllocFunction reAllocFunc, RTHandle initial0, RTHandle initial1, string handleName = null)
+        public HistoryRTHandles(RTHandle initial0, RTHandle initial1, string handleName = null)
             : base(initial0, initial1)
         {
-            if (reAllocFunc == null)
-                throw new ArgumentNullException(nameof(reAllocFunc));
-
-            m_ReAllocFunc = reAllocFunc;
-
             m_HandleNames = new string[2];
             for (int i = 0; i < 2; ++i)
             {
@@ -56,14 +49,13 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="HistoryRTHandles{TData}"/>.
+        /// Initializes a new instance of the <see cref="HistoryRTHandles"/>.
         /// The handles are initially null; allocation is expected to be done later via <see cref="ReAllocateHandlesIfNeeded"/>.
         /// </summary>
-        /// <param name="reAllocFunc">Delegate used to create or reallocate handles.</param>
         /// <param name="handleName">Optional base name for debugging/profiling.</param>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="reAllocFunc"/> is <c>null</c>.</exception>
-        public HistoryRTHandles(TextureReAllocFunction reAllocFunc, string handleName)
-            : this(reAllocFunc, null, null, handleName)
+        public HistoryRTHandles(string handleName)
+            : this(null, null, handleName)
         { }
 
         /// <summary>
@@ -106,12 +98,24 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// <summary>
         /// Internal helper to reallocate a specific slot by its index.
         /// </summary>
+        /// <typeparam name="THandler">The struct handler type providing allocation logic.</typeparam>
         /// <param name="index">The internal array index to check (0 or 1).</param>
-        /// <param name="descriptor">The render texture descriptor used for the allocation check.</param>
-        /// <param name="data">Optional user-defined context passed to the allocation function.</param>
-        /// <returns><c>true</c> if the handle at the specified index was reallocated; otherwise, <c>false</c>.</returns>
-        private bool ReAllocateAtIndex(int index, RenderTextureDescriptor descriptor, TData data)
-            => m_ReAllocFunc.Invoke(ref m_Resources[index], descriptor, m_HandleNames[index], data);
+        /// <param name="descriptor">The render texture descriptor for the allocation check.</param>
+        /// <param name="allocator">A reference to the struct handler.</param>
+        /// <returns><c>true</c> if the handle was reallocated; otherwise, <c>false</c>.</returns>
+        private bool ReAllocateAtIndex<THandler>(int index, RenderTextureDescriptor descriptor, ref THandler allocator)
+            where THandler : struct, IFunctionHandler<RTAllocData, bool>
+        {
+            var allocData = new RTAllocData
+            {
+                descriptor = descriptor,
+                name = m_HandleNames[index],
+                sourceArray = m_Resources,
+                index = index
+            };
+
+            return allocator.Execute(allocData);
+        }
 
         /// <summary>
         /// Reallocates only the current Target handle if needed based on the provided descriptor.
@@ -119,8 +123,9 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// <param name="descriptor">The render texture descriptor for the target.</param>
         /// <param name="data">Optional user-defined context for the allocation logic.</param>
         /// <returns><c>true</c> if the target handle was reallocated; otherwise, <c>false</c>.</returns>
-        public bool ReAllocateTargetIfNeeded(RenderTextureDescriptor descriptor, TData data = default)
-            => ReAllocateAtIndex(TargetIndex, descriptor, data);
+        public bool ReAllocateTargetIfNeeded<THandler>(RenderTextureDescriptor descriptor, ref THandler allocator)
+            where THandler : struct, IFunctionHandler<RTAllocData, bool>
+            => ReAllocateAtIndex(TargetIndex, descriptor, ref allocator);
 
         /// <summary>
         /// Reallocates only the History handle if needed based on the provided descriptor.
@@ -128,8 +133,9 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// <param name="descriptor">The render texture descriptor for the history.</param>
         /// <param name="data">Optional user-defined context for the allocation logic.</param>
         /// <returns><c>true</c> if the history handle was reallocated; otherwise, <c>false</c>.</returns>
-        public bool ReAllocateHistoryIfNeeded(RenderTextureDescriptor descriptor, TData data = default)
-            => ReAllocateAtIndex(HistoryIndex, descriptor, data);
+        public bool ReAllocateHistoryIfNeeded<THandler>(RenderTextureDescriptor descriptor, ref THandler allocator)
+            where THandler : struct, IFunctionHandler<RTAllocData, bool>
+            => ReAllocateAtIndex(HistoryIndex, descriptor, ref allocator);
 
         /// <summary>
         /// Orchestrates the reallocation of both handles and optionally swaps their roles.
@@ -139,13 +145,14 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// <param name="data">Optional user-defined context passed to the allocation function.</param>
         /// <returns><c>true</c> if at least one of the handles was reallocated; otherwise, <c>false</c>.</returns>
         /// <exception cref="ArgumentException">Thrown if descriptor has non-positive dimensions.</exception>
-        public bool ReAllocateHandlesIfNeeded(RenderTextureDescriptor descriptor, bool swap = false, TData data = default)
+        public bool ReAllocateHandlesIfNeeded<THandler>(RenderTextureDescriptor descriptor, ref THandler allocator, bool swap = false)
+            where THandler : struct, IFunctionHandler<RTAllocData, bool>
         {
             if (descriptor.width <= 0 || descriptor.height <= 0)
                 throw new ArgumentException("Descriptor must have positive dimensions.", nameof(descriptor));
 
-            bool changed = ReAllocateTargetIfNeeded(descriptor, data);
-            changed |= ReAllocateHistoryIfNeeded(descriptor, data);
+            bool changed = ReAllocateTargetIfNeeded(descriptor, ref allocator);
+            changed |= ReAllocateHistoryIfNeeded(descriptor, ref allocator);
 
             if (swap) Swap();
             return changed;
