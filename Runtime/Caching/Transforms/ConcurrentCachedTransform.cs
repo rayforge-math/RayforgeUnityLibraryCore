@@ -1,8 +1,7 @@
 using Rayforge.Core.Caching.Abstractions;
-using Rayforge.Core.Caching.Transforms;
 using UnityEngine;
 
-namespace Rayforge.Core.Caching.Concurrent
+namespace Rayforge.Core.Caching.Transforms
 {
     /// <summary>
     /// Thread-safe variant of <see cref="CachedTransform"/>.
@@ -27,6 +26,39 @@ namespace Rayforge.Core.Caching.Concurrent
         public ConcurrentCachedTransform(GameObject gameObject)
             : base(gameObject)
         { }
+
+        /// <summary>
+        /// Creates a new <see cref="CachedTransform"/> by instantiating a new <see cref="GameObject"/> with the given name.
+        /// </summary>
+        /// <param name="name">The name of the new GameObject.</param>
+        /// <returns>A new <see cref="CachedTransform"/> instance.</returns>
+        public new static ConcurrentCachedTransform Create(string name)
+        {
+            var gameObject = new GameObject(name);
+            return new ConcurrentCachedTransform(gameObject);
+        }
+
+        /// <summary>
+        /// Creates a new <see cref="CachedTransform"/> by instantiating a new <see cref="GameObject"/> 
+        /// and linking it to a parent <see cref="ICachedTransform"/>.
+        /// </summary>
+        /// <typeparam name="TParent">The type of the parent, which must implement <see cref="ICachedTransform"/>.</typeparam>
+        /// <param name="name">The name of the new GameObject.</param>
+        /// <param name="parent">The parent instance to attach to. If not null, the GameObject's transform is parented in Unity.</param>
+        /// <returns>A new <see cref="CachedTransform"/> instance with the specified parent.</returns>
+        public new static ConcurrentCachedTransform Create<TParent>(string name, TParent parent)
+            where TParent : ICachedTransform
+        {
+            var gameObject = new GameObject(name);
+            var t = gameObject.transform;
+
+            if (parent != null)
+            {
+                t.SetParent(parent.Self);
+            }
+
+            return new ConcurrentCachedTransform(gameObject) { m_Parent = parent };
+        }
 
         /// <inheritdoc/>
         public override Vector3 Position
@@ -74,42 +106,15 @@ namespace Rayforge.Core.Caching.Concurrent
         }
 
         /// <inheritdoc/>
-        public override ICachedTransform Parent
-        {
-            get
-            {
-                lock (m_Lock)
-                    return base.Parent;
-            }
-            set
-            {
-                lock (m_Lock)
-                    base.Parent = value;
-            }
-        }
-
-        /// <inheritdoc/>
-        public override void SetParent(ICachedTransform parent, bool worldPositionStays = false)
-        {
-            lock (m_Lock)
-                base.SetParent(parent, worldPositionStays);
-        }
-
-        /// <summary>
-        /// Refreshes the cached data from the Unity Transform in a thread-safe way.
-        /// Note: Still must be called on the main thread to access Unity objects safely.
-        /// </summary>
         public override void Refresh()
         {
+            var t = Self;
             lock (m_Lock)
-                base.Refresh();
-        }
-
-        /// <inheritdoc/>
-        public override void Dispose()
-        {
-            lock (m_Lock)
-                base.Dispose();
+            {
+                m_CachedPosition = t.position;
+                m_CachedRotation = t.rotation;
+                m_CachedScale = t.localScale;
+            }
         }
     }
 }

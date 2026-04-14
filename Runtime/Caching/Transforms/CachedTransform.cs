@@ -19,17 +19,17 @@ namespace Rayforge.Core.Caching.Transforms
         private const string Tag = "CachedTransform";
 
         private GameObject m_GameObject;
-        private ICachedTransform m_Parent;
+        protected ICachedTransform m_Parent;
 
-        private Vector3 m_CachedPosition;
-        private Quaternion m_CachedRotation;
-        private Vector3 m_CachedScale;
+        protected Vector3 m_CachedPosition;
+        protected Quaternion m_CachedRotation;
+        protected Vector3 m_CachedScale;
 
         /// <summary>
         /// Gets the underlying Unity <see cref="Transform"/> instance associated with this cached transform.
         /// Use this property only when direct Unity API access is required.
         /// </summary>
-        public virtual Transform Self => m_GameObject != null ? m_GameObject.transform : null;
+        public Transform Self => m_GameObject != null ? m_GameObject.transform : null;
 
         /// <summary>
         /// Initializes a new <see cref="CachedTransform"/> that wraps the specified <see cref="GameObject"/>.
@@ -92,6 +92,7 @@ namespace Rayforge.Core.Caching.Transforms
         }
 
         /// <inheritdoc/>
+        /// <remarks>Set can only be called from Main Thread.</remarks>
         public virtual Vector3 Position
         {
             get => m_CachedPosition;
@@ -106,6 +107,7 @@ namespace Rayforge.Core.Caching.Transforms
         }
 
         /// <inheritdoc/>
+        /// <remarks>Set can only be called from Main Thread.</remarks>
         public virtual Quaternion Rotation
         {
             get => m_CachedRotation;
@@ -120,6 +122,7 @@ namespace Rayforge.Core.Caching.Transforms
         }
 
         /// <inheritdoc/>
+        /// <remarks>Set can only be called from Main Thread.</remarks>
         public virtual Vector3 Scale
         {
             get => m_CachedScale;
@@ -134,30 +137,29 @@ namespace Rayforge.Core.Caching.Transforms
         }
 
         /// <inheritdoc/>
-        public virtual ICachedTransform Parent
+        /// <remarks>Set can only be called from Main Thread.</remarks>
+        public ICachedTransform Parent
         {
             get => m_Parent;
             set
             {
-                Self.SetParent(value?.Self);
-                m_Parent = value;
+                SetParent(value);
             }
         }
 
         /// <inheritdoc/>
-        public virtual void SetParent(ICachedTransform parent, bool worldPositionStays = false)
+        /// <remarks>Only call from Main Thread.</remarks>
+        public void SetParent(ICachedTransform parent, bool worldPositionStays = false)
         {
             Self.SetParent(parent?.Self, worldPositionStays);
             m_Parent = parent;
+            Refresh();
         }
-
-        /// <inheritdoc/>
-        public Tcomp AddComponent<Tcomp>() where Tcomp : Component
-            => m_GameObject.AddComponent<Tcomp>();
 
         /// <summary>
         /// Updates the cached position, rotation, and scale from the underlying Unity transform.
         /// Call this if the transform was externally modified.
+        /// Only call from Main Thread.
         /// </summary>
         public virtual void Refresh()
         {
@@ -167,10 +169,16 @@ namespace Rayforge.Core.Caching.Transforms
             m_CachedScale = t.localScale;
         }
 
+        /// <inheritdoc/>
+        /// <remarks>Only call from Main Thread.</remarks>
+        public Tcomp AddComponent<Tcomp>() where Tcomp : Component
+            => m_GameObject.AddComponent<Tcomp>();
+
         /// <summary>
         /// Destroys the underlying GameObject and releases references.
+        /// Only call from Main Thread.
         /// </summary>
-        public virtual void Dispose()
+        public void Dispose()
         {
             if (m_GameObject != null)
             {
