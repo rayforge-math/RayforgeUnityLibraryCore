@@ -1,6 +1,5 @@
 using NUnit.Framework;
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Collections.Iterator;
 using System.Linq;
 
 namespace Rayforge.Core.Tests.Collections.Abstractions

@@ -38,19 +38,21 @@ namespace Rayforge.Core.Collections.Abstractions
         /// <summary>
         /// Helper property to determine if either of the segments contains pending changes.
         /// </summary>
-        public bool HasWork => SegmentA.Count > 0 || SegmentB.Count > 0;
+        public readonly bool HasWork => !SegmentA.IsEmpty || !SegmentB.IsEmpty;
 
         /// <summary>
         /// Returns the absolute minimum start index of the shared window.
-        /// Ensures we get the correct start even if one segment is empty (Count=0).
         /// </summary>
-        public int Start
+        public readonly int Start
         {
             get
             {
-                if (SegmentA.Count > 0 && SegmentB.Count > 0) return Math.Min(SegmentA.Start, SegmentB.Start);
-                if (SegmentA.Count > 0) return SegmentA.Start;
-                if (SegmentB.Count > 0) return SegmentB.Start;
+                bool hasA = !SegmentA.IsEmpty;
+                bool hasB = !SegmentB.IsEmpty;
+
+                if (hasA && hasB) return Math.Min(SegmentA.Start, SegmentB.Start);
+                if (hasA) return SegmentA.Start;
+                if (hasB) return SegmentB.Start;
                 return 0;
             }
         }
@@ -58,19 +60,23 @@ namespace Rayforge.Core.Collections.Abstractions
         /// <summary>
         /// Returns the absolute maximum end index (exclusive) of the shared window.
         /// </summary>
-        public int End
+        public readonly int End
         {
             get
             {
-                int endA = SegmentA.Count > 0 ? SegmentA.Start + SegmentA.Count : 0;
-                int endB = SegmentB.Count > 0 ? SegmentB.Start + SegmentB.Count : 0;
-                return Math.Max(endA, endB);
+                bool hasA = !SegmentA.IsEmpty;
+                bool hasB = !SegmentB.IsEmpty;
+
+                if (hasA && hasB) return Math.Max(SegmentA.End, SegmentB.End);
+                if (hasA) return SegmentA.End;
+                if (hasB) return SegmentB.End;
+                return 0;
             }
         }
 
         /// <summary>
         /// Returns the total span from the very first dirty element to the very last.
         /// </summary>
-        public int TotalSpan => HasWork ? (End - Start) : 0;
+        public readonly int TotalSpan => HasWork ? (End - Start) : 0;
     }
 }
