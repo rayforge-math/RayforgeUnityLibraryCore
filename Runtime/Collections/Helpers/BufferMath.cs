@@ -72,14 +72,12 @@ namespace Rayforge.Core.Collections.Helpers
             if (maxBatch <= 0 || requestedSize <= 0)
                 return Math.Max(0, requestedSize);
 
-            // 1. Calculate how many batches we need
             long batches = GetTotalBatches(requestedSize, maxBatch);
 
-            // 2. Calculate the aligned size in 64-bit to detect overflow
+            // Calculate the aligned size in 64-bit to detect overflow
             long alignedSize = batches * maxBatch;
 
-            // 3. If the aligned size exceeds int.MaxValue, we clamp it.
-            // This prevents the -2147483648 wrap-around.
+            // If the aligned size exceeds int.MaxValue, we clamp it.
             if (alignedSize > int.MaxValue)
                 return int.MaxValue;
 

@@ -14,6 +14,13 @@ namespace Rayforge.Core.Collections.Helpers
         /// The core engine that maintains the concrete struct type.
         /// Use this directly to keep the iterator on the stack and allow JIT inlining.
         /// </summary>
+        /// <remarks>
+        /// Note: While this generic method catch-all handles any struct-based IEnumerator, 
+        /// the explicit overloads below are provided primarily for:
+        /// 1. Better IDE IntelliSense discovery (showing exact return types).
+        /// 2. Guiding the compiler to the most efficient specific implementation (e.g. ArraySegments).
+        /// 3. Serving as a 'safety net' for users who aren't aware of the generic constraints.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<T, EnumeratorState<T, TEnumerator>> ToIterator<T, TEnumerator>(this TEnumerator enumerator)
             where TEnumerator : struct, IEnumerator<T>
@@ -28,7 +35,12 @@ namespace Rayforge.Core.Collections.Helpers
         // --- Array ---
         /// <summary> Returns a high-performance struct iterator for arrays. </summary>
         public static Iterator<T, EnumeratorState<T, ArraySegment<T>.Enumerator>> ToIterator<T>(this T[] array)
-            => new ArraySegment<T>(array).GetEnumerator().ToIterator<T, ArraySegment<T>.Enumerator>();
+        {
+            if (array == null)
+                return new Iterator<T, EnumeratorState<T, ArraySegment<T>.Enumerator>>(default);
+
+            return new ArraySegment<T>(array).GetEnumerator().ToIterator<T, ArraySegment<T>.Enumerator>();
+        }
 
         /// <summary> Returns a boxed interface iterator for arrays. </summary>
         public static IIterator<T> ToIIterator<T>(this T[] array)
@@ -138,17 +150,16 @@ namespace Rayforge.Core.Collections.Helpers
                 return new Iterator<T, MultiCompositeState<T>>(default);
 
             int validCount = 0;
-            int lastValidIndex = -1;
             for (int i = 0; i < sources.Length; i++)
             {
                 if (sources[i] != null && sources[i] != IIterator<T>.Empty())
                 {
                     validCount++;
-                    lastValidIndex = i;
                 }
             }
 
-            if (validCount == 0) return new Iterator<T, MultiCompositeState<T>>(default);
+            if (validCount == 0)
+                return new Iterator<T, MultiCompositeState<T>>(default);
             return new Iterator<T, MultiCompositeState<T>>(new MultiCompositeState<T>(sources));
         }
 
