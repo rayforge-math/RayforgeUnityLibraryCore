@@ -12,38 +12,74 @@ namespace Rayforge.Core.Caching.Containers
     public class SnapshotCache<T> where T : struct, IEquatable<T>
     {
         private T[] _cache = Array.Empty<T>();
+        private int _count = 0;
         private readonly List<T> _reusableList = new List<T>(16);
 
         /// <summary>
         /// Gets the current cached snapshot as a ReadOnlySpan.
         /// </summary>
-        public ReadOnlySpan<T> Current => _cache;
+        public ReadOnlySpan<T> Current => _cache.AsSpan(0, _count);
 
         /// <summary>
-        /// Gets the number of elements in the current cache.
+        /// Gets the number of active elements in the current cache.
         /// </summary>
-        public int Count => _cache.Length;
+        public int Count => _count;
+
+        /// <summary>
+        /// Initializes a new empty <see cref="SnapshotCache{T}"/>.
+        /// </summary>
+        public SnapshotCache() { }
+
+        /// <summary>
+        /// Initializes a new <see cref="SnapshotCache{T}"/> with an initial snapshot.
+        /// The provided data is copied into the cache — no allocation is shared.
+        /// </summary>
+        /// <param name="initialData">The initial data to populate the cache with.</param>
+        public SnapshotCache(ReadOnlySpan<T> initialData)
+        {
+            _cache = initialData.Length > 0 ? initialData.ToArray() : Array.Empty<T>();
+            _count = initialData.Length;
+        }
+
+        /// <summary>
+        /// Initializes a new <see cref="SnapshotCache{T}"/> with a pre-allocated cache of the given size.
+        /// All elements are set to their default value.
+        /// </summary>
+        /// <param name="capacity">The number of elements to pre-allocate.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="capacity"/> is negative.</exception>
+        public SnapshotCache(int capacity)
+        {
+            if (capacity < 0)
+                throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be non-negative.");
+            _cache = capacity > 0 ? new T[capacity] : Array.Empty<T>();
+            _count = capacity;
+        }
 
         /// <summary>
         /// Compares the provided data against the cache and updates it if differences are found.
         /// Uses SIMD-optimized SequenceEqual for maximum performance.
+        /// Never shrinks the internal buffer — only grows on demand.
         /// </summary>
         /// <param name="newData">The new data to compare.</param>
         /// <returns>True if the data differed from the cache and an update occurred; otherwise, false.</returns>
         public bool Apply(ReadOnlySpan<T> newData)
         {
-            if (newData.SequenceEqual(_cache))
-            {
+            if (newData.SequenceEqual(Current))
                 return false;
-            }
 
-            _cache = newData.ToArray();
+            // Grow if needed — never shrink to avoid allocation
+            if (newData.Length > _cache.Length)
+                Array.Resize(ref _cache, newData.Length);
+
+            newData.CopyTo(_cache);
+            _count = newData.Length;
             return true;
         }
 
         /// <summary>
-        /// Overload for custom IIterator support. 
+        /// Overload for custom IIterator support.
         /// Materializes the iterator into a temporary buffer to perform the comparison.
+        /// Never shrinks the internal buffer — only grows on demand.
         /// </summary>
         /// <param name="iterator">The iterator providing the new data set.</param>
         /// <returns>True if the iterated data differs from the current cache.</returns>
@@ -54,26 +90,29 @@ namespace Rayforge.Core.Caching.Containers
             bool mismatchFound = false;
             int index = 0;
 
-            // Durch das struct-Constraint wird dieser Loop vom JIT komplett ge-inlined.
+            // struct-Constraint ensures this loop is fully inlined by the JIT.
             foreach (var item in iterator)
             {
                 if (!mismatchFound)
                 {
-                    if (index >= _cache.Length || !item.Equals(_cache[index]))
-                    {
+                    if (index >= _count || !item.Equals(_cache[index]))
                         mismatchFound = true;
-                    }
                 }
                 _reusableList.Add(item);
                 index++;
             }
 
-            if (!mismatchFound && index != _cache.Length)
+            if (!mismatchFound && index != _count)
                 mismatchFound = true;
 
             if (mismatchFound)
             {
-                _cache = _reusableList.ToArray();
+                // Grow if needed — never shrink
+                if (_reusableList.Count > _cache.Length)
+                    Array.Resize(ref _cache, _reusableList.Count);
+
+                _reusableList.CopyTo(_cache);
+                _count = _reusableList.Count;
                 return true;
             }
 
@@ -81,23 +120,14 @@ namespace Rayforge.Core.Caching.Containers
         }
 
         /// <summary>
-        /// Resets the cache to an empty state.
-        /// </summary>
-        /// <returns>True if the cache was not already empty.</returns>
-        private bool HandleEmpty()
-        {
-            if (_cache.Length == 0) return false;
-            _cache = Array.Empty<T>();
-            return true;
-        }
-
-        /// <summary>
         /// Forcefully clears the internal cache.
+        /// Does not release the internal buffer — only resets the active count.
         /// </summary>
         public void Clear()
         {
-            _cache = Array.Empty<T>();
-            _reusableList.Clear();
+            _count = 0;
+            if (_reusableList.Count > 0)
+                _reusableList.Clear();
         }
     }
 }

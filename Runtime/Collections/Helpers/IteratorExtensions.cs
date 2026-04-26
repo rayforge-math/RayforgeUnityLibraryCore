@@ -1,5 +1,6 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Iterator;
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
@@ -23,6 +24,15 @@ namespace Rayforge.Core.Collections.Helpers
         #endregion
 
         #region Collection Overloads (List, HashSet, Queue, Stack)
+
+        // --- Array ---
+        /// <summary> Returns a high-performance struct iterator for arrays. </summary>
+        public static Iterator<T, EnumeratorState<T, ArraySegment<T>.Enumerator>> ToIterator<T>(this T[] array)
+            => new ArraySegment<T>(array).GetEnumerator().ToIterator<T, ArraySegment<T>.Enumerator>();
+
+        /// <summary> Returns a boxed interface iterator for arrays. </summary>
+        public static IIterator<T> ToIIterator<T>(this T[] array)
+            => array.ToIterator();
 
         // --- List ---
         /// <summary> Returns a high-performance struct iterator for List. </summary>

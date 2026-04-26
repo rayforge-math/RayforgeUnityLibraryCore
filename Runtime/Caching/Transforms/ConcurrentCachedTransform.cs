@@ -109,11 +109,15 @@ namespace Rayforge.Core.Caching.Transforms
         public override void Refresh()
         {
             var t = Self;
+            var pos = t.position;
+            var rot = t.rotation;
+            var scale = t.localScale;
+
             lock (m_Lock)
             {
-                m_CachedPosition = t.position;
-                m_CachedRotation = t.rotation;
-                m_CachedScale = t.localScale;
+                m_CachedPosition = pos;
+                m_CachedRotation = rot;
+                m_CachedScale = scale;
             }
         }
     }
