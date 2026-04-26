@@ -123,6 +123,42 @@ namespace Rayforge.Core.Tests.Collections.Helpers
             Assert.IsFalse(BufferMath.IsPowerOfAligned(10, 32)); // Not a multiple
         }
 
+        [Test]
+        public void GetAlignedBatchSize_Standard_AlignsToNextMultiple()
+        {
+            // Alignment is 64. 
+            // Requested 100 -> Next multiple of 64 is 128.
+            Assert.AreEqual(128, BufferMath.GetAlignedBatchSize(100, 64, 16));
+
+            // Requested 64 -> Already aligned, should stay 64.
+            Assert.AreEqual(64, BufferMath.GetAlignedBatchSize(64, 64, 32));
+
+            // Requested 1 -> Should jump to 64.
+            Assert.AreEqual(64, BufferMath.GetAlignedBatchSize(1, 64, 64));
+        }
+
+        [Test]
+        public void GetAlignedBatchSize_RespectsLargestAlignment()
+        {
+            // Two different alignments: 16 and 128.
+            // The method must align to the LARGEST (128).
+            // Requested 130 -> Next multiple of 128 is 256.
+            Assert.AreEqual(256, BufferMath.GetAlignedBatchSize(130, 16, 128));
+
+            // Reverse order of arguments should not matter.
+            Assert.AreEqual(256, BufferMath.GetAlignedBatchSize(130, 128, 16));
+        }
+
+        [Test]
+        public void GetAlignedBatchSize_SmallValues_AlignsCorrectly()
+        {
+            // Align to 4. 
+            // 5 -> 8
+            Assert.AreEqual(8, BufferMath.GetAlignedBatchSize(5, 4, 2));
+            // 3 -> 4
+            Assert.AreEqual(4, BufferMath.GetAlignedBatchSize(3, 4, 4));
+        }
+
         // ================================================================
         // Boundary & Nonsense Cases (Stress Testing)
         // ================================================================
@@ -151,12 +187,29 @@ namespace Rayforge.Core.Tests.Collections.Helpers
         }
 
         [Test]
+        public void GetTotalBatches_MaxCapacity_MaxBatchSize_NoOverflow()
+        {
+            // Both are int.MaxValue. 
+            // The sum (cap + batch - 1) is ~4.2 billion, which exceeds int but fits in long.
+            int result = BufferMath.GetTotalBatches(int.MaxValue, int.MaxValue);
+            Assert.AreEqual(1, result, "Two MaxValues should result in exactly 1 batch.");
+        }
+
+        [Test]
         [TestCase(-500, 32, 0)]
         [TestCase(100, 0, 0)]
         [TestCase(100, -1, 0)]
         public void GetBatchIndex_NonsenseInputs_ClampsToZero(int idx, int size, int expected)
         {
             Assert.AreEqual(expected, BufferMath.GetBatchIndex(idx, size));
+        }
+
+        [Test]
+        public void GetBatchIndex_NegativeMaxValue_ClampsToZero()
+        {
+            // Even the most extreme negative index should never result in a negative batch.
+            Assert.AreEqual(0, BufferMath.GetBatchIndex(int.MinValue, 32));
+            Assert.AreEqual(0, BufferMath.GetBatchIndex(int.MinValue, int.MaxValue));
         }
 
         [Test]
@@ -191,11 +244,35 @@ namespace Rayforge.Core.Tests.Collections.Helpers
         }
 
         [Test]
-        [TestCase(0, 16, false)]
-        [TestCase(16, 0, false)]
-        [TestCase(-16, 16, false)]
-        [TestCase(16, -16, false)]
-        public void IsPowerOfAligned_InvalidSizes_ReturnsFalse(int a, int b, bool expected)
+        public void GetElementRange_MaxValue_Reversed_ReturnsEmpty()
+        {
+            // StartBatch is Max, EndBatch is 0.
+            BufferMath.GetElementRange(int.MaxValue, 0, 1024, 5000, out int start, out int count);
+            Assert.AreEqual(0, count, "Reversed range with MaxValue must be empty.");
+        }
+
+        [Test]
+        public void GetElementRange_AllValuesMaxValue_ClampsCorrectly()
+        {
+            // Everything is MaxValue.
+            BufferMath.GetElementRange(int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue, out int start, out int count);
+
+            // Start element would be MaxValue * MaxValue.
+            // But it must be clamped to totalCapacity (MaxValue).
+            Assert.AreEqual(int.MaxValue, start);
+            Assert.AreEqual(0, count);
+        }
+
+        [Test]
+        [TestCase(0, 16, false, Description = "Zero A")]
+        [TestCase(16, 0, false, Description = "Zero B")]
+        [TestCase(-16, 16, false, Description = "Negative A")]
+        [TestCase(16, -16, false, Description = "Negative B")]
+        [TestCase(int.MinValue, 16, false, Description = "Extreme Negative A")]
+        [TestCase(1, int.MaxValue, true, Description = "Max Value is always aligned by 1")]
+        [TestCase(int.MaxValue, int.MaxValue, true, Description = "Max Value is aligned by itself")]
+        [TestCase(int.MaxValue, 2, false, Description = "Max Value (odd) is not aligned by 2")]
+        public void IsPowerOfAligned_InvalidAndExtremeSizes_ReturnsExpected(int a, int b, bool expected)
         {
             Assert.AreEqual(expected, BufferMath.IsPowerOfAligned(a, b));
         }
@@ -207,6 +284,18 @@ namespace Rayforge.Core.Tests.Collections.Helpers
         public void GetAlignedBatchSize_Nonsense_ReturnsSafe(int req, int a, int b, int expected)
         {
             Assert.AreEqual(expected, BufferMath.GetAlignedBatchSize(req, a, b));
+        }
+
+        [Test]
+        public void GetAlignedBatchSize_AlignmentCausesOverflow_ClampsOrHandles()
+        {
+            // Requested is near MaxValue, and maxBatch alignment would push it over.
+            int requested = int.MaxValue - 5;
+            int alignment = 1024;
+
+            int result = BufferMath.GetAlignedBatchSize(requested, alignment, alignment);
+
+            Assert.GreaterOrEqual(result, 0, "Aligned size should never wrap to negative.");
         }
     }
 }
