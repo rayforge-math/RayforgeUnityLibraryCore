@@ -10,14 +10,15 @@ namespace Rayforge.Core.Collections.Iterator
     /// TType represents the element type, TState holds traversal data.
     /// 
     /// PERFORMANCE NOTE:
-    /// This implementation is optimized for zero-allocation performance in Unity by using 
-    /// the "Self-Logic" pattern (ref TState). By constraining TState to a struct, the JIT 
-    /// compiler can perform "Devirtualization" and "Inlining", making this as fast as a manual for-loop.
+    /// This implementation is optimized for zero-allocation performance by using 
+    /// the "Self-Logic" pattern (ref TState). By constraining TState to a struct and 
+    /// using interface constraints, the JIT compiler can perform "Devirtualization" 
+    /// and "Inlining", making this as fast as a manual for-loop.
     ///
-    /// FUTURE-PROOFING:
-    /// This design follows the evolution of C# (similar to Span/Memory enumerators). 
-    /// Once C# fully supports interfaces on 'ref structs', this pattern can be upgraded 
-    /// to even stricter stack-only enforcement without changing the consumer API.
+    /// FLEXIBILITY:
+    /// While the core is a high-performance struct, it can be seamlessly boxed into 
+    /// an IIterator interface for IoC (Inversion of Control) or passing through 
+    /// abstract APIs without changing the underlying iteration logic.
     /// </summary>
     /// <typeparam name="TType">The type of the objects being iterated.</typeparam>
     /// <typeparam name="TState">The custom state struct required to track progress.</typeparam>
@@ -50,10 +51,10 @@ namespace Rayforge.Core.Collections.Iterator
         /// Indicates if there are more elements to process.
         /// Use this to check the iterator state without advancing the iterator via MoveNext().
         /// </summary>
-        public bool HasNext => _state.HasNext(ref _state);
+        public bool HasNext => _isInitialized && _state.HasNext(ref _state);
 
         /// <summary>
-        /// Implements the new Peek functionality from the interface.
+        /// Implements the Peek functionality from the interface.
         /// Delegates directly to the underlying state logic.
         /// </summary>
         public bool TryPeekNext(out TType result)
@@ -91,12 +92,6 @@ namespace Rayforge.Core.Collections.Iterator
         IIterator<TType> IIterator<TType>.GetEnumerator() => this;
 
         /// <summary>
-        /// Cleans up any resources used by the iterator. 
-        /// Required by the IDisposable interface for the foreach pattern.
-        /// </summary>
-        public void Dispose() { }
-
-        /// <summary>
         /// Explicit IEnumerable<T> implementation for LINQ and generic usage.
         /// </summary>
         IEnumerator<TType> IEnumerable<TType>.GetEnumerator() => this;
@@ -114,6 +109,12 @@ namespace Rayforge.Core.Collections.Iterator
         {
             throw new NotSupportedException("Reset is not supported on state-based struct iterators. Create a new iterator instead.");
         }
+
+        /// <summary>
+        /// Cleans up any resources used by the iterator. 
+        /// Required by the IDisposable interface for the foreach pattern.
+        /// </summary>
+        public void Dispose() { }
 
         /// <summary>
         /// Returns an empty iterator instance. 
