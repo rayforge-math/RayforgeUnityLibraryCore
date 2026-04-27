@@ -1,4 +1,5 @@
 using Rayforge.Core.Collections.Abstractions;
+using System;
 
 namespace Rayforge.Core.Collections.Iterator
 {
@@ -22,8 +23,20 @@ namespace Rayforge.Core.Collections.Iterator
         public ArrayIteratorState(T[] array, int start, int count)
         {
             _array = array;
-            _index = start - 1;
-            _end = start + count;
+
+            if (array == null || array.Length == 0)
+            {
+                _index = -1;
+                _end = 0;
+                return;
+            }
+
+            int clampedStart = Math.Max(0, Math.Min(start, array.Length));
+            int maxRemaining = array.Length - clampedStart;
+            int clampedCount = Math.Max(0, Math.Min(count, maxRemaining));
+
+            _index = clampedStart - 1;
+            _end = clampedStart + clampedCount;
         }
 
         /// <summary>
