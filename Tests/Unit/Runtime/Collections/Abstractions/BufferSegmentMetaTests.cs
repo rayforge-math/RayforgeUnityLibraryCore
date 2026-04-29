@@ -6,9 +6,7 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
     [TestFixture]
     public class BufferSegmentMetaTests
     {
-        // ================================================================
-        // Default / Constructor
-        // ================================================================
+        #region Constructor Tests
 
         [Test]
         public void Default_SourceIsNull()
@@ -38,9 +36,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.IsTrue(seg.IsEmpty);
         }
 
-        // ================================================================
-        // End
-        // ================================================================
+        #endregion
+
+        #region End Tests
 
         [Test]
         public void End_EqualsStartPlusCount()
@@ -63,9 +61,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.AreEqual(5, seg.End);
         }
 
-        // ================================================================
-        // IsEmpty
-        // ================================================================
+        #endregion
+
+        #region IsEmpty
 
         [Test]
         public void IsEmpty_WhenSourceIsNull_ReturnsTrue()
@@ -95,9 +93,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.IsFalse(seg.IsEmpty);
         }
 
-        // ================================================================
-        // Contains
-        // ================================================================
+        #endregion
+
+        #region Contains
 
         [Test]
         public void Contains_IndexAtStart_ReturnsTrue()
@@ -156,5 +154,7 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.IsFalse(seg.Contains(3));
             Assert.IsFalse(seg.Contains(5));
         }
+
+        #endregion
     }
 }

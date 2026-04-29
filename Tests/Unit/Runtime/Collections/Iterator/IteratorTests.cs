@@ -1,100 +1,106 @@
 using NUnit.Framework;
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Iterator;
+using Rayforge.Core.Tests.Collections.Abstractions;
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
 
 namespace Rayforge.Core.Tests.Collections.Iterator
 {
-    public class IteratorTests
+    #region Structs
+
+    public struct MockLogic<TType> : IIterationLogic<TType, MockLogic<TType>>
     {
-        #region Structs
+        public TType[] Items;
+        public int Index;
 
-        public struct MockLogic<T> : IIterationLogic<T, MockLogic<T>>
+        public bool HasNext(ref MockLogic<TType> state)
+            => state.Items != null && state.Index < state.Items.Length;
+
+        public bool MoveNext(ref MockLogic<TType> state, out TType result)
         {
-            public T[] Items;
-            public int Index;
-
-            public bool HasNext(ref MockLogic<T> state)
-                => state.Items != null && state.Index < state.Items.Length;
-
-            public bool MoveNext(ref MockLogic<T> state, out T result)
+            if (state.Items != null && state.Index < state.Items.Length)
             {
-                if (state.Items != null && state.Index < state.Items.Length)
-                {
-                    result = state.Items[state.Index];
-                    state.Index++;
-                    return true;
-                }
-                result = default;
-                return false;
+                result = state.Items[state.Index];
+                state.Index++;
+                return true;
             }
+            result = default;
+            return false;
+        }
 
-            public bool TryPeekNext(ref MockLogic<T> state, out T result)
+        public bool TryPeekNext(ref MockLogic<TType> state, out TType result)
+        {
+            if (state.Items != null && state.Index < state.Items.Length)
             {
-                if (state.Items != null && state.Index < state.Items.Length)
-                {
-                    result = state.Items[state.Index];
-                    return true;
-                }
-                result = default;
-                return false;
+                result = state.Items[state.Index];
+                return true;
             }
+            result = default;
+            return false;
+        }
+    }
+
+    #endregion
+
+    [TestFixture(typeof(int))]
+    [TestFixture(typeof(float))]
+    [TestFixture(typeof(string))]
+    public class IteratorTests<T> : IIterationLogicTests<T, MockLogic<T>>
+    {
+        #region IIterationLogic Impl
+
+        protected override (MockLogic<T> logic, T[] expectedValues) CreateLogic(int count)
+        {
+            T[] items = TestDataUtility.CreateSampleItems<T>(count);
+
+            var logic = new MockLogic<T>
+            {
+                Items = items,
+                Index = 0
+            };
+
+            return (logic, items);
         }
 
         #endregion
 
-        #region Constructor & Initialization Tests (int, float, string)
+        #region Constructor & Initialization Tests
 
         [Test]
         public void Constructor_SetsInitializedFlag_EnablingAccess()
         {
             // Standard case: Constructor must enable access to the state logic.
-            var itInt = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 10 } });
-            var itFloat = new Iterator<float, MockLogic<float>>(new MockLogic<float> { Items = new[] { 1.5f } });
-            var itStr = new Iterator<string, MockLogic<string>>(new MockLogic<string> { Items = new[] { "A" } });
+            // We initialize with 1 element to ensure the logic state has valid data.
+            var (logic, _) = CreateLogic(1);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
-            Assert.IsTrue(itInt.HasNext, "int-iterator must allow logic access.");
-            Assert.IsTrue(itFloat.HasNext, "float-iterator must allow logic access.");
-            Assert.IsTrue(itStr.HasNext, "string-iterator must allow logic access.");
+            // Assert
+            Assert.IsTrue(it.HasNext,
+                $"{typeof(T).Name}-iterator must allow logic access after constructor initialization.");
         }
 
         [Test]
         public void Default_WithoutConstructor_IsSafelyDisabled()
         {
             // Verify that 'default' structs are safely uninitialized and return default values.
-            Iterator<int, MockLogic<int>> itInt = default;
-            Iterator<float, MockLogic<float>> itFloat = default;
-            Iterator<string, MockLogic<string>> itStr = default;
+            Iterator<T, MockLogic<T>> it = default;
 
             // Check HasNext (Logic Gate)
-            Assert.IsFalse(itInt.HasNext, "Uninitialized int-iterator must report HasNext as false.");
-            Assert.IsFalse(itFloat.HasNext, "Uninitialized float-iterator must report HasNext as false.");
-            Assert.IsFalse(itStr.HasNext, "Uninitialized string-iterator must report HasNext as false.");
+            Assert.IsFalse(it.HasNext, $"Uninitialized {typeof(T).Name}-iterator must report HasNext as false.");
 
             // Check Current (Data Safety)
-            Assert.AreEqual(0, itInt.Current);
-            Assert.AreEqual(0.0f, itFloat.Current);
-            Assert.IsNull(itStr.Current);
+            Assert.AreEqual(default(T), it.Current, $"Uninitialized {typeof(T).Name}-iterator must return default(T) for Current.");
         }
 
         [Test]
         public void EmptyFactory_ProducesUninitializedInstance()
         {
             // Ensure Iterator.Empty() behaves exactly like an uninitialized default struct.
-            var itInt = Iterator<int, MockLogic<int>>.Empty();
-            var itFloat = Iterator<float, MockLogic<float>>.Empty();
-            var itStr = Iterator<string, MockLogic<string>>.Empty();
+            var it = Iterator<T, MockLogic<T>>.Empty();
 
-            Assert.IsFalse(itInt.HasNext);
-            Assert.IsFalse(itFloat.HasNext);
-            Assert.IsFalse(itStr.HasNext);
-
-            Assert.AreEqual(0, itInt.Current);
-            Assert.AreEqual(0.0f, itFloat.Current);
-            Assert.IsNull(itStr.Current);
+            Assert.IsFalse(it.HasNext, $"Iterator.Empty<{typeof(T).Name}>() must be disabled.");
+            Assert.AreEqual(default(T), it.Current, $"Iterator.Empty<{typeof(T).Name}>() must return default(T).");
         }
 
         #endregion
@@ -104,30 +110,25 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         [Test]
         public void Current_Generic_InitialValues_AreDefault()
         {
-            // Test: int (Primitive Value Type)
-            var itInt = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 10 } });
-            Assert.AreEqual(0, itInt.Current, "Generic int must be 0 initially.");
+            // Test: Verify that Current returns the default value of T before MoveNext is called.
+            // We initialize with 1 element so the logic is in a valid starting state.
+            var (logic, _) = CreateLogic(1);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
-            // Test: float (Floating Point Value Type)
-            var itFloat = new Iterator<float, MockLogic<float>>(new MockLogic<float> { Items = new[] { 1.5f } });
-            Assert.AreEqual(0.0f, itFloat.Current, "Generic float must be 0.0f initially.");
-
-            // Test: string (Reference Type)
-            var itStr = new Iterator<string, MockLogic<string>>(new MockLogic<string> { Items = new[] { "A" } });
-            Assert.IsNull(itStr.Current, "Generic string must be null initially.");
+            // Assert
+            Assert.AreEqual(default(T), it.Current,
+                $"Generic {typeof(T).Name} must be {default(T)} initially (before first MoveNext).");
         }
 
         [Test]
         public void Current_Generic_OnUninitialized_IsSafe()
         {
-            Iterator<int, MockLogic<int>> itInt = default;
-            Assert.AreEqual(0, itInt.Current);
+            // Safety check: Even if the struct was never initialized via constructor, 
+            // accessing Current must not throw and should return default(T).
+            Iterator<T, MockLogic<T>> it = default;
 
-            Iterator<float, MockLogic<float>> itFloat = default;
-            Assert.AreEqual(0.0f, itFloat.Current);
-
-            Iterator<string, MockLogic<string>> itStr = default;
-            Assert.IsNull(itStr.Current);
+            Assert.AreEqual(default(T), it.Current,
+                $"Uninitialized {typeof(T).Name}-iterator must return {default(T)} safely.");
         }
 
         #endregion
@@ -137,53 +138,51 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         [Test]
         public void Current_IEnumerator_InitialValues_AreDefault()
         {
-            // Test: int
-            IEnumerator itInt = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 10 } });
-            Assert.AreEqual(0, itInt.Current, "Interface Current must be 0 for int-iterators initially.");
+            // Scenario: Verify that the non-generic IEnumerator.Current property
+            // returns default(T) before any calls to MoveNext() are made.
+            var (logic, _) = CreateLogic(1);
+            System.Collections.IEnumerator it = new Iterator<T, MockLogic<T>>(logic);
 
-            // Test: float
-            IEnumerator itFloat = new Iterator<float, MockLogic<float>>(new MockLogic<float> { Items = new[] { 1.5f } });
-            Assert.AreEqual(0.0f, itFloat.Current, "Interface Current must be 0.0f for float-iterators initially.");
-
-            // Test: string
-            IEnumerator itStr = new Iterator<string, MockLogic<string>>(new MockLogic<string> { Items = new[] { "A" } });
-            Assert.IsNull(itStr.Current, "Interface Current must be null for string-iterators initially.");
+            // Assert: The interface implementation of Current returns 'object', 
+            // which should be a boxed version of default(T).
+            Assert.AreEqual(default(T), it.Current,
+                $"The non-generic Current must be {default(T)} for {typeof(T).Name}-iterators initially.");
         }
 
         [Test]
         public void Current_IEnumerator_OnUninitialized_IsSafe()
         {
-            // Test: int
-            IEnumerator itInt = default(Iterator<int, MockLogic<int>>);
-            Assert.AreEqual(0, itInt.Current, "Interface Current must return 0 for uninitialized int struct.");
+            // Safety check: Explicitly cast default struct to IEnumerator to check interface implementation.
+            System.Collections.IEnumerator it = default(Iterator<T, MockLogic<T>>);
 
-            // Test: float
-            IEnumerator itFloat = default(Iterator<float, MockLogic<float>>);
-            Assert.AreEqual(0.0f, itFloat.Current, "Interface Current must return 0.0f for uninitialized float struct.");
-
-            // Test: string
-            IEnumerator itStr = default(Iterator<string, MockLogic<string>>);
-            Assert.IsNull(itStr.Current, "Interface Current must return null for uninitialized string struct.");
+            Assert.AreEqual(default(T), it.Current,
+                $"Interface Current must return {default(T)} for uninitialized {typeof(T).Name} struct.");
         }
 
         [Test]
         public void Current_IEnumerator_BoxingConsistency()
         {
-            // Verify that all types are correctly boxed and match their generic counterpart.
-            var itInt = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 1 } });
-            var itFloat = new Iterator<float, MockLogic<float>>(new MockLogic<float> { Items = new[] { 1.1f } });
-            var itStr = new Iterator<string, MockLogic<string>>(new MockLogic<string> { Items = new[] { "X" } });
+            // Scenario: Verify that the non-generic IEnumerator.Current correctly boxes the value T.
+            var (logic, expected) = CreateLogic(1);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
-            // Int check
-            Assert.IsInstanceOf<int>(((IEnumerator)itInt).Current);
-            Assert.AreEqual(itInt.Current, (int)((IEnumerator)itInt).Current);
+            // 1. Cast to the interface (This creates a boxed copy)
+            var interfaceIt = (System.Collections.IEnumerator)it;
 
-            // Float check
-            Assert.IsInstanceOf<float>(((IEnumerator)itFloat).Current);
-            Assert.AreEqual(itFloat.Current, (float)((IEnumerator)itFloat).Current);
+            // 2. Act: Advance the BOXED instance, not the local struct
+            bool moveSuccess = interfaceIt.MoveNext();
+            Assert.IsTrue(moveSuccess, "MoveNext should succeed via the interface.");
 
-            // String check
-            Assert.AreEqual(itStr.Current, ((IEnumerator)itStr).Current);
+            // 3. Assert: Check the boxed current value
+            object boxedCurrent = interfaceIt.Current;
+
+            // Verify type safety
+            Assert.IsInstanceOf<T>(boxedCurrent,
+                $"The boxed Current must be an instance of {typeof(T).Name}.");
+
+            // Verify value consistency against ground truth
+            Assert.AreEqual(expected[0], (T)boxedCurrent,
+                "The boxed value must match the ground truth data.");
         }
 
         #endregion
@@ -193,33 +192,36 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         [Test]
         public void HasNext_ReflectsStateLogic_WithoutAdvancing()
         {
-            // Verify that HasNext correctly queries the state logic 
-            // and can be called multiple times without changing Current.
-            var itInt = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 10 } });
-            var itFloat = new Iterator<float, MockLogic<float>>(new MockLogic<float> { Items = new[] { 1.5f } });
-            var itStr = new Iterator<string, MockLogic<string>>(new MockLogic<string> { Items = new[] { "A" } });
+            // Scenario: Verify that HasNext correctly queries the state logic 
+            // and can be called multiple times without changing the cursor or Current value.
+            var (logic, _) = CreateLogic(1);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
-            // 1. Check true
-            Assert.IsTrue(itInt.HasNext, "int-iterator should have next.");
-            Assert.IsTrue(itFloat.HasNext, "float-iterator should have next.");
-            Assert.IsTrue(itStr.HasNext, "string-iterator should have next.");
+            // 1. Initial State: Should be true because we have 1 element
+            Assert.IsTrue(it.HasNext, $"{typeof(T).Name}-iterator should have next initially.");
 
-            // 2. Check stability (calling it again shouldn't change anything)
-            Assert.IsTrue(itInt.HasNext);
-            Assert.AreEqual(0, itInt.Current, "HasNext must not advance the iterator or change Current.");
+            // 2. Check Stability: Calling it again shouldn't change anything
+            Assert.IsTrue(it.HasNext, "HasNext must be idempotent (return the same result on multiple calls).");
+
+            // 3. Verify No Side Effects: Current must still be default because MoveNext hasn't been called
+            Assert.AreEqual(default(T), it.Current, "HasNext must not advance the iterator or change the Current property.");
         }
 
         [Test]
         public void HasNext_ReturnsFalse_WhenStateIsEmpty()
         {
-            // Verify that HasNext returns false when the underlying logic has no data.
-            var itInt = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new int[0] });
-            var itFloat = new Iterator<float, MockLogic<float>>(new MockLogic<float> { Items = new float[0] });
-            var itStr = new Iterator<string, MockLogic<string>>(new MockLogic<string> { Items = new string[0] });
+            // Scenario: Verify that HasNext correctly reports false when 
+            // the underlying logic is initialized with zero elements.
+            var (logic, _) = CreateLogic(0);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
-            Assert.IsFalse(itInt.HasNext, "Empty int-iterator must return false for HasNext.");
-            Assert.IsFalse(itFloat.HasNext, "Empty float-iterator must return false for HasNext.");
-            Assert.IsFalse(itStr.HasNext, "Empty string-iterator must return false for HasNext.");
+            // Assert
+            Assert.IsFalse(it.HasNext,
+                $"Empty {typeof(T).Name}-iterator must return false for HasNext immediately.");
+
+            // Verify Current remains default
+            Assert.AreEqual(default(T), it.Current,
+                "Current must be default(T) for an empty iterator.");
         }
 
         [Test]
@@ -227,10 +229,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Critical performance/safety test: If _isInitialized is false, 
             // the state logic must NOT be called (short-circuit).
-            // Even with a 'dirty' state that might look like it has data, default must return false.
-            Iterator<int, MockLogic<int>> it = default;
+            Iterator<T, MockLogic<T>> it = default;
 
-            Assert.IsFalse(it.HasNext, "HasNext must immediately return false if the iterator is uninitialized.");
+            Assert.IsFalse(it.HasNext, "HasNext must immediately return false if the iterator is uninitialized (default struct).");
         }
 
         #endregion
@@ -240,54 +241,59 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         [Test]
         public void TryPeekNext_ReturnsCorrectValue_WithoutChangingCurrent()
         {
-            // Verify that Peek returns the next value but leaves the iterator's Current untouched.
-            var itInt = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 42 } });
-            var itFloat = new Iterator<float, MockLogic<float>>(new MockLogic<float> { Items = new[] { 1.5f } });
-            var itStr = new Iterator<string, MockLogic<string>>(new MockLogic<string> { Items = new[] { "Peek" } });
+            // Scenario: Verify that TryPeekNext provides the upcoming value 
+            // but leaves the iterator's Current property and position untouched.
+            var (logic, expected) = CreateLogic(1);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
-            // 1. Peek the values
-            bool successInt = itInt.TryPeekNext(out int resultInt);
-            bool successFloat = itFloat.TryPeekNext(out float resultFloat);
-            bool successStr = itStr.TryPeekNext(out string resultStr);
+            // 1. Act: Peek the value
+            bool success = it.TryPeekNext(out T result);
 
-            // 2. Assert results
-            Assert.IsTrue(successInt);
-            Assert.AreEqual(42, resultInt);
-            Assert.IsTrue(successFloat);
-            Assert.AreEqual(1.5f, resultFloat);
-            Assert.IsTrue(successStr);
-            Assert.AreEqual("Peek", resultStr);
+            // 2. Assert: Peek results
+            Assert.IsTrue(success, $"TryPeekNext should succeed for {typeof(T).Name}.");
+            Assert.AreEqual(expected[0], result, "Peeked value does not match the expected first item.");
 
-            // 3. CRITICAL: Current must still be default!
-            Assert.AreEqual(0, itInt.Current, "Current must not change after a Peek.");
-            Assert.AreEqual(0.0f, itFloat.Current);
-            Assert.IsNull(itStr.Current);
+            // 3. CRITICAL: State check
+            // Current must still be default because MoveNext has not been called!
+            Assert.AreEqual(default(T), it.Current, "Current must not change after a Peek operation.");
+
+            // Verify that we can still MoveNext to that same value
+            Assert.IsTrue(it.MoveNext(), "MoveNext should still succeed after a Peek.");
+            Assert.AreEqual(result, it.Current, "The value returned by Peek must be the same as the subsequent MoveNext.");
         }
 
         [Test]
         public void TryPeekNext_ReturnsFalse_WhenEmpty()
         {
-            // Verify that Peek returns false and default(T) if no more elements exist.
-            var itInt = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new int[0] });
-            var itStr = new Iterator<string, MockLogic<string>>(new MockLogic<string> { Items = new string[0] });
+            // Scenario: Verify that TryPeekNext returns false and provides the 
+            // default(T) value if the iterator has no elements or is exhausted.
+            var (logic, _) = CreateLogic(0);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
-            Assert.IsFalse(itInt.TryPeekNext(out int resultInt));
-            Assert.AreEqual(0, resultInt);
+            // Act
+            bool success = it.TryPeekNext(out T result);
 
-            Assert.IsFalse(itStr.TryPeekNext(out string resultStr));
-            Assert.IsNull(resultStr);
+            // Assert
+            Assert.IsFalse(success,
+                $"TryPeekNext must return false for an empty {typeof(T).Name}-iterator.");
+
+            Assert.AreEqual(default(T), result,
+                "The 'out' result must be default(T) when TryPeekNext fails.");
+
+            // Verify State: HasNext should also be false
+            Assert.IsFalse(it.HasNext, "HasNext must be false for empty iterators.");
         }
 
         [Test]
         public void TryPeekNext_ShortCircuits_WhenUninitialized()
         {
             // Safety check: Uninitialized iterators must not call the state logic.
-            Iterator<int, MockLogic<int>> it = default;
+            Iterator<T, MockLogic<T>> it = default;
 
-            bool success = it.TryPeekNext(out int result);
+            bool success = it.TryPeekNext(out T result);
 
-            Assert.IsFalse(success, "Peek must return false for uninitialized iterators.");
-            Assert.AreEqual(0, result, "Out result must be default(T) for uninitialized iterators.");
+            Assert.IsFalse(success, "Peek must return false for uninitialized (default) iterators.");
+            Assert.AreEqual(default(T), result, "Out result must be default(T) for uninitialized iterators.");
         }
 
         #endregion
@@ -297,82 +303,71 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         [Test]
         public void MoveNext_UpdatesCurrent_And_AdvancesState()
         {
-            // Verify that MoveNext updates the Current property and returns true.
-            var itInt = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 10, 20 } });
-            var itFloat = new Iterator<float, MockLogic<float>>(new MockLogic<float> { Items = new[] { 1.1f, 2.2f } });
-            var itStr = new Iterator<string, MockLogic<string>>(new MockLogic<string> { Items = new[] { "A", "B" } });
+            // Scenario: Verify that MoveNext correctly updates the Current property 
+            // and successfully advances the internal state of the logic.
+            var (logic, expected) = CreateLogic(2);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
             // 1. First Move
-            Assert.IsTrue(itInt.MoveNext());
-            Assert.AreEqual(10, itInt.Current, "Current must update to the first element (int).");
-
-            Assert.IsTrue(itFloat.MoveNext());
-            Assert.AreEqual(1.1f, itFloat.Current, "Current must update to the first element (float).");
-
-            Assert.IsTrue(itStr.MoveNext());
-            Assert.AreEqual("A", itStr.Current, "Current must update to the first element (string).");
+            bool move1Success = it.MoveNext();
+            Assert.IsTrue(move1Success, $"First MoveNext should return true for {typeof(T).Name}.");
+            Assert.AreEqual(expected[0], it.Current, "Current must update to the first element after the first MoveNext.");
 
             // 2. Second Move
-            Assert.IsTrue(itInt.MoveNext());
-            Assert.AreEqual(20, itInt.Current);
+            bool move2Success = it.MoveNext();
+            Assert.IsTrue(move2Success, "Second MoveNext should return true for the second element.");
+            Assert.AreEqual(expected[1], it.Current, "Current must update to the second element after the second MoveNext.");
+
+            // 3. Post-Condition: Verify no more items
+            Assert.IsFalse(it.HasNext, "HasNext must be false after consuming all items.");
         }
 
         [Test]
-        [TestCase(new int[] { 10, 20, 30 })]
-        [TestCase(new int[] { 5 })]
-        [TestCase(new int[] { })]
-        public void MoveNext_IntArray_IdentifiesAllElements(int[] items)
+        public void MoveNext_Exhaustion_IdentifiesAllElementsAndResetsCurrent()
         {
-            // Arrange
-            var logic = new MockLogic<int> { Items = items };
-            var iterator = new Iterator<int, MockLogic<int>>(logic);
-
-            // Act & Assert
-            for (int i = 0; i < items.Length; i++)
-            {
-                Assert.IsTrue(iterator.MoveNext(), $"Should return true at index {i}");
-                Assert.AreEqual(items[i], iterator.Current, $"Value mismatch at index {i}");
-            }
-
-            // After the last element, MoveNext must be false
-            Assert.IsFalse(iterator.MoveNext(), "Should return false after reaching the end");
-        }
-
-        [Test]
-        public void MoveNext_HandlesVariousLengthsAndTypes()
-        {
-            // Integer scenarios
-            VerifyExhaustion(new[] { 10, 20, 30 }, 0, "Standard int array");
-            VerifyExhaustion(new[] { 99 }, 0, "Single element int array");
-            VerifyExhaustion(new int[] { }, 0, "Empty int array");
-
-            // Reference type scenarios
-            VerifyExhaustion(new[] { "A", "B" }, (string)null, "Reference type array");
-            VerifyExhaustion(new string[] { }, (string)null, "Empty string array");
-
-            // Boolean scenarios
-            VerifyExhaustion(new[] { true, false }, false, "Boolean value type array");
-        }
-
-        private void VerifyExhaustion<T>(T[] items, T expectedDefault, string scenario)
-        {
-            // Arrange
-            var logic = new MockLogic<T> { Items = items };
-            var iterator = new Iterator<T, MockLogic<T>>(logic);
+            // Scenario: Iterate through a full set and verify behavior both 
+            // during iteration and after the sequence is exhausted.
+            int count = 3;
+            var (logic, expected) = CreateLogic(count);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
             // Act & Assert 1: Iteration through all existing items
-            for (int i = 0; i < items.Length; i++)
+            for (int i = 0; i < expected.Length; i++)
             {
-                bool moved = iterator.MoveNext();
-                Assert.IsTrue(moved, $"Step {i} failed in scenario: {scenario}");
-                Assert.AreEqual(items[i], iterator.Current, $"Value mismatch at index {i} in scenario: {scenario}");
+                Assert.IsTrue(it.MoveNext(), $"Should return true at index {i} for {typeof(T).Name}.");
+                Assert.AreEqual(expected[i], it.Current, $"Value mismatch at index {i}.");
             }
 
-            // Act & Assert 2: Behavior after the end
-            bool hasMoreAfterEnd = iterator.MoveNext();
+            // Act & Assert 2: Behavior after the end (Exhaustion)
+            bool canMoveFurther = it.MoveNext();
 
-            Assert.IsFalse(hasMoreAfterEnd, $"MoveNext must return false after exhaustion in scenario: {scenario}");
-            Assert.AreEqual(expectedDefault, iterator.Current, $"Current must be reset to default in scenario: {scenario}");
+            Assert.IsFalse(canMoveFurther, "MoveNext must return false after the last element has been passed.");
+
+            // Critical: Ensure the iterator doesn't "leak" the last value
+            Assert.AreEqual(default(T), it.Current,
+                "Current must be reset to default(T) after the iterator is exhausted.");
+
+            // Verify HasNext reflects this state
+            Assert.IsFalse(it.HasNext, "HasNext must stay false once exhausted.");
+        }
+
+        [Test]
+        public void MoveNext_OnEmpty_ReturnsFalseImmediately()
+        {
+            // Scenario: Verify that MoveNext returns false immediately when 
+            // the iterator is initialized with an empty dataset.
+            var (logic, _) = CreateLogic(0);
+            var it = new Iterator<T, MockLogic<T>>(logic);
+
+            // Act
+            bool result = it.MoveNext();
+
+            // Assert
+            Assert.IsFalse(result, $"MoveNext must return false immediately for an empty {typeof(T).Name}-iterator.");
+
+            // Ensure Current is in a safe state
+            Assert.AreEqual(default(T), it.Current,
+                "Current must be default(T) when the iterator is empty.");
         }
 
         [Test]
@@ -380,26 +375,32 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Safety check: Uninitialized iterators must immediately return false 
             // without attempting to access the state.
-            Iterator<float, MockLogic<float>> it = default;
+            Iterator<T, MockLogic<T>> it = default;
 
             bool result = it.MoveNext();
 
             Assert.IsFalse(result, "MoveNext must return false for default structs.");
-            Assert.AreEqual(0.0f, it.Current, "Current must remain default.");
+            Assert.AreEqual(default(T), it.Current, "Current must remain default.");
         }
 
         [Test]
-        public void MoveNext_IsPersistent_ThroughStructCopies()
+        public void MoveNext_IsPersistent_ThroughStateMutation()
         {
-            // Since it's a struct with internal state, we verify that 
-            // the mutation is consistent.
-            var it = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 1, 2, 3 } });
+            // Scenario: Verify that the internal state mutation is persistent 
+            // and the iterator tracks its position correctly across multiple steps.
+            var (logic, expected) = CreateLogic(3);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
-            it.MoveNext(); // Current = 1
-            it.MoveNext(); // Current = 2
+            // Act: Advance two steps
+            it.MoveNext(); // Element 0
+            it.MoveNext(); // Element 1
 
-            Assert.AreEqual(2, it.Current);
-            Assert.IsTrue(it.HasNext, "Iterator should still have one element left.");
+            // Assert: Check current position and remaining availability
+            Assert.AreEqual(expected[1], it.Current,
+                $"Iterator must persistently hold the second element for {typeof(T).Name}.");
+
+            Assert.IsTrue(it.HasNext,
+                "Iterator should still report HasNext true when elements remain in the sequence.");
         }
 
         #endregion
@@ -409,59 +410,79 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         [Test]
         public void GetEnumerator_ConcreteStruct_ReturnsCopyOfSelf()
         {
-            // Arrange: Create and partially advance
-            var it = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 10, 20, 30 } });
-            it.MoveNext(); // Current = 10
+            // Arrange: Create an iterator and advance it partially
+            var (logic, expected) = CreateLogic(3);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
-            // Act
+            it.MoveNext(); // Current = expected[0]
+
+            // Act: Get a copy of the current state
+            // Since Iterator is a struct, GetEnumerator() returns a value copy.
             var snapshot = it.GetEnumerator();
 
-            // Assert: State must be identical but separate
-            Assert.AreEqual(10, snapshot.Current);
-            Assert.AreEqual(10, it.Current);
+            // Assert: Initial states must be identical but separate
+            Assert.AreEqual(expected[0], snapshot.Current, "Snapshot should start at the same position.");
+            Assert.AreEqual(expected[0], it.Current, "Original should remain at its position.");
 
             // Deep State Change: Advance both independently
-            snapshot.MoveNext(); // snapshot -> 20
-            it.MoveNext();       // it -> 20
-            snapshot.MoveNext(); // snapshot -> 30
+            snapshot.MoveNext(); // snapshot -> expected[1]
+            it.MoveNext();       // it -> expected[1]
+            snapshot.MoveNext(); // snapshot -> expected[2]
 
-            Assert.AreEqual(30, snapshot.Current, "Snapshot should reach the end.");
-            Assert.AreEqual(20, it.Current, "Original should be unaffected by snapshot advancement.");
-            Assert.IsTrue(it.HasNext, "Original should still have elements even if snapshot is finished.");
+            // Final Validation
+            Assert.AreEqual(expected[2], snapshot.Current,
+                "Snapshot should have reached the third element.");
+
+            Assert.AreEqual(expected[1], it.Current,
+                "Original should be unaffected by snapshot advancement and stay at the second element.");
+
+            Assert.IsTrue(it.HasNext,
+                "Original should still report HasNext true even if the snapshot is finished.");
         }
 
         [Test]
         public void GetEnumerator_InterfaceFallback_SupportsForeach_WithEarlyExit()
         {
-            // Arrange: Use interface to force explicit implementation
-            IIterator<int> it = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 1, 2, 3, 4 } });
-            int lastValue = 0;
+            // Arrange: Use the interface to force execution of explicit implementation.
+            // We use 4 items to have enough room for an early exit test.
+            var (logic, expected) = CreateLogic(4);
+            IIterator<T> it = new Iterator<T, MockLogic<T>>(logic);
 
-            // Act: Test if 'break' works correctly through the interface-based loop
+            T lastValue = default;
+            int count = 0;
+
+            // Act: Verify that 'foreach' correctly consumes the interface-based iterator
+            // and that a 'break' statement stops the process as expected.
             foreach (var val in it)
             {
                 lastValue = val;
-                if (val == 2) break;
+                count++;
+
+                // Exit early after the second element
+                if (count == 2) break;
             }
 
             // Assert
-            Assert.AreEqual(2, lastValue, "Foreach should support early exit via interface.");
+            Assert.AreEqual(expected[1], lastValue,
+                "Foreach should have captured the second element before breaking.");
 
-            // Critical: Verify the iterator state AFTER the break
-            // Since foreach uses a COPY (even when boxed, it's a separate enumerator instance),
-            // the original 'it' reference should technically be untouched if it was a fresh cast.
-            // However, if 'it' was already the box, its state might have changed.
+            Assert.AreEqual(2, count,
+                "The iteration count must exactly match the point of the early exit.");
         }
 
         [Test]
         public void GetEnumerator_IsCompatibleWithDuckTyping_NestedLoops()
         {
-            // Arrange: Test if we can run two independent loops over the same struct instance
-            var it = new Iterator<string, MockLogic<string>>(new MockLogic<string> { Items = new[] { "A", "B" } });
-            var outerResults = new List<string>();
-            var innerResults = new List<string>();
+            // Arrange: Verify that the compiler's duck-typing (foreach) correctly 
+            // copies the struct, allowing independent nested iteration.
+            var (logic, expected) = CreateLogic(2);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
-            // Act: Nested loops
+            var outerResults = new List<T>();
+            var innerResults = new List<T>();
+
+            // Act: Execute nested loops over the same struct instance.
+            // Each 'foreach' calls the public GetEnumerator(), which returns a new copy.
             foreach (var outer in it)
             {
                 outerResults.Add(outer);
@@ -472,13 +493,17 @@ namespace Rayforge.Core.Tests.Collections.Iterator
             }
 
             // Assert
-            // Duck typing must ensure that each 'foreach' calls GetEnumerator(), 
-            // which returns a FRESH copy of the current state.
-            Assert.AreEqual(2, outerResults.Count, "Outer loop should run twice.");
-            Assert.AreEqual(4, innerResults.Count, "Inner loop should run twice for EACH outer element.");
-            Assert.AreEqual("A", innerResults[0]);
-            Assert.AreEqual("B", innerResults[1]);
-            Assert.AreEqual("A", innerResults[2]);
+            // 1. Check counts: Outer should run 2 times, Inner 2 times per outer loop (2 * 2 = 4).
+            Assert.AreEqual(2, outerResults.Count, "Outer loop should have processed 2 elements.");
+            Assert.AreEqual(4, innerResults.Count, "Inner loop should have processed 4 elements total (2x2).");
+
+            // 2. Check value sequence for the first inner pass
+            Assert.AreEqual(expected[0], innerResults[0], "First inner element should match first item.");
+            Assert.AreEqual(expected[1], innerResults[1], "Second inner element should match second item.");
+
+            // 3. Check value sequence for the second inner pass (proving it restarted/copied)
+            Assert.AreEqual(expected[0], innerResults[2], "Inner loop must start fresh for the second outer element.");
+            Assert.AreEqual(expected[1], innerResults[3], "Inner loop must complete second pass correctly.");
         }
 
         #endregion
@@ -488,59 +513,95 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         [Test]
         public void IEnumerable_Generic_AdvancesStateAndPreservesIntegrity()
         {
-            // Arrange
-            var logic = new MockLogic<int> { Items = new[] { 10, 20, 30 } };
-            var it = new Iterator<int, MockLogic<int>>(logic);
-            IEnumerable<int> enumerable = it; // Boxing occurs here
+            // Arrange: Create the iterator and cast it to the generic interface.
+            // This assignment causes boxing, creating a separate instance on the heap.
+            var (logic, expected) = CreateLogic(3);
+            var it = new Iterator<T, MockLogic<T>>(logic);
+            IEnumerable<T> enumerable = it;
 
-            // Act
-            var enumerator = enumerable.GetEnumerator();
+            // Act: Get the enumerator from the interface and advance it.
+            using var enumerator = enumerable.GetEnumerator();
+
+            // Advance the boxed enumerator two steps.
+            Assert.IsTrue(enumerator.MoveNext()); // -> expected[0]
+            Assert.IsTrue(enumerator.MoveNext()); // -> expected[1]
 
             // Assert
-            Assert.IsTrue(enumerator.MoveNext());
-            Assert.AreEqual(10, enumerator.Current, "Interface should access the first element.");
+            // 1. Interface Check: The boxed copy must reflect the advancement.
+            Assert.AreEqual(expected[1], enumerator.Current,
+                "The interface-based enumerator should be at the second element.");
 
-            Assert.IsTrue(enumerator.MoveNext());
-            Assert.AreEqual(20, enumerator.Current, "State must advance correctly through the interface.");
+            // 2. CRITICAL STRUCT CHECK: 
+            // The original 'it' struct must remain at the start (Current = default).
+            // Because 'it' was boxed when assigned to 'enumerable', 'it' is NOT 
+            // the same instance as the one being advanced by the interface.
+            Assert.AreEqual(default(T), it.Current,
+                "The original local struct must remain untouched when the boxed interface copy moves.");
 
-            // Verify that the 'enumerable' (the box) is independent from the original 'it' (the struct)
-            Assert.AreNotEqual(enumerator.Current, it.Current, "Original struct should not have moved.");
+            // 3. Verify original is still 'ready'
+            Assert.IsTrue(it.HasNext, "The original struct should still report true for HasNext.");
         }
 
         [Test]
         public void IEnumerable_NonGeneric_AdvancesState()
         {
-            // Arrange
-            System.Collections.IEnumerable enumerable = new Iterator<int, MockLogic<int>>(
-                new MockLogic<int> { Items = new[] { 42, 43 } }
-            );
+            // Arrange: Cast the struct to the legacy non-generic IEnumerable.
+            // This tests the explicit implementation of System.Collections.IEnumerable.
+            var (logic, expected) = CreateLogic(2);
+            System.Collections.IEnumerable enumerable = new Iterator<T, MockLogic<T>>(logic);
             var enumerator = enumerable.GetEnumerator();
 
-            // Act
-            enumerator.MoveNext(); // To 42
-            enumerator.MoveNext(); // To 43
+            // Act: Advance the state through the non-generic MoveNext()
+            bool step1 = enumerator.MoveNext(); // Advances to expected[0]
+            bool step2 = enumerator.MoveNext(); // Advances to expected[1]
 
             // Assert
-            Assert.AreEqual(43, enumerator.Current, "Non-generic IEnumerator must advance state correctly.");
-            Assert.IsFalse(enumerator.MoveNext(), "Should reach end through non-generic interface.");
+            Assert.IsTrue(step1, "First MoveNext should return true on non-generic enumerator.");
+            Assert.IsTrue(step2, "Second MoveNext should return true on non-generic enumerator.");
+
+            // Check boxed Current value
+            Assert.AreEqual(expected[1], enumerator.Current,
+                "The legacy IEnumerator.Current must return the correct boxed value.");
+
+            // Act: Move past the end
+            bool step3 = enumerator.MoveNext();
+
+            // Assert: Exhaustion
+            Assert.IsFalse(step3, "Non-generic enumerator must return false when exhausted.");
         }
 
         [Test]
         public void IEnumerable_MultipleEnumerators_AreIndependent()
         {
-            // Arrange
-            var it = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 1, 2, 3 } });
-            var enumerable = (IEnumerable<int>)it;
+            // Arrange: Create the iterator and box it into an IEnumerable.
+            var (logic, expected) = CreateLogic(3);
+            var it = new Iterator<T, MockLogic<T>>(logic);
+            var enumerable = (IEnumerable<T>)it;
 
-            // Act
-            var enum1 = enumerable.GetEnumerator();
-            var enum2 = enumerable.GetEnumerator();
+            // Act: Spawn two separate enumerators from the same enumerable source.
+            using var enum1 = enumerable.GetEnumerator();
+            using var enum2 = enumerable.GetEnumerator();
 
-            enum1.MoveNext(); // enum1 is at 1
+            // Advance the first enumerator
+            bool move1Success = enum1.MoveNext(); // Advances enum1 to expected[0]
 
             // Assert
-            Assert.AreEqual(1, enum1.Current);
-            Assert.AreEqual(0, ((Iterator<int, MockLogic<int>>)enum2).Current, "The second enumerator should be a fresh copy/box.");
+            Assert.IsTrue(move1Success, "First enumerator should advance successfully.");
+            Assert.AreEqual(expected[0], enum1.Current, "First enumerator should point to the first element.");
+
+            // Verify Independence:
+            // We cast the second enumerator back to the concrete struct to inspect its internal state.
+            // Because enum1 and enum2 are separate boxes created from the original 'it' struct,
+            // advancing enum1 must have zero impact on enum2.
+            var it2 = (Iterator<T, MockLogic<T>>)enum2;
+
+            Assert.AreEqual(default(T), it2.Current,
+                "The second enumerator must be a fresh, independent copy with default state.");
+
+            // Final proof: Advance enum2 and ensure it starts from the beginning
+            Assert.IsTrue(enum2.MoveNext());
+            Assert.AreEqual(expected[0], enum2.Current,
+                "The second enumerator should still be able to access the first element independently.");
         }
 
         #endregion
@@ -550,17 +611,22 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         [Test]
         public void Reset_ThrowsNotSupportedException()
         {
-            var it = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 1, 2, 3 } });
+            // Arrange: Initialize with a small sample via the factory.
+            var (logic, _) = CreateLogic(1);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
             // Reset is an explicit IEnumerator implementation, 
-            // so we must cast to call it.
+            // so we must cast to the non-generic interface to access it.
             var enumerator = (System.Collections.IEnumerator)it;
 
-            // Assert
-            var ex = Assert.Throws<NotSupportedException>(() => enumerator.Reset());
+            // Act & Assert
+            // We verify that calling Reset() triggers the expected exception.
+            var ex = Assert.Throws<NotSupportedException>(() => enumerator.Reset(),
+                $"Reset() should throw NotSupportedException for Iterator<{typeof(T).Name}>.");
 
-            // Verify that the message is helpful and explains WHY.
-            Assert.That(ex.Message, Does.Contain("not supported"), "Exception message should clarify that Reset is unavailable.");
+            // Verify that the message is descriptive.
+            Assert.That(ex.Message.ToLower(), Does.Contain("not supported"),
+                "The exception message should clarify that Reset is unavailable for this iterator type.");
         }
 
         #endregion
@@ -570,45 +636,70 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         [Test]
         public void Dispose_IsPassive_And_DoesNotAlterState()
         {
-            var logic = new MockLogic<int> { Items = new[] { 10, 20 } };
-            var it = new Iterator<int, MockLogic<int>>(logic);
+            // Scenario: Verify that calling Dispose does not unexpectedly 
+            // reset or clear the iterator's current position and state.
+            var (logic, expected) = CreateLogic(2);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
+            // 1. Advance to a known state
             it.MoveNext();
-            var stateBefore = it.Current;
-            var hasNextBefore = it.HasNext;
+            T stateBefore = it.Current;
+            bool hasNextBefore = it.HasNext;
 
+            // 2. Act: Dispose the iterator
+            // Note: Since Iterator is a struct, this is a direct call.
             it.Dispose();
 
-            Assert.AreEqual(stateBefore, it.Current, "Dispose should not reset the Current property.");
-            Assert.AreEqual(hasNextBefore, it.HasNext, "Dispose should not alter the HasNext state.");
+            // 3. Assert: Integrity check
+            Assert.AreEqual(expected[0], it.Current,
+                "Dispose should not clear the Current property for this iterator type.");
+
+            Assert.AreEqual(stateBefore, it.Current,
+                "The value of Current must remain identical after a Dispose call.");
+
+            Assert.AreEqual(hasNextBefore, it.HasNext,
+                "Dispose should not alter the internal HasNext state machine.");
         }
 
         [Test]
         public void Dispose_CanBeCalledMultipleTimes_WithoutException()
         {
-            var it = new Iterator<int, MockLogic<int>>(new MockLogic<int> { Items = new[] { 1, 2, 3 } });
+            // Scenario: Verify that calling Dispose does not throw, even if called multiple times.
+            // This ensures adherence to the standard IDisposable contract requirements.
+            var (logic, _) = CreateLogic(1);
+            var it = new Iterator<T, MockLogic<T>>(logic);
 
-            // Verify that calling Dispose does not throw, even if called multiple times.
-            // This is a standard requirement for the IDisposable contract.
-            Assert.DoesNotThrow(() => it.Dispose());
-            Assert.DoesNotThrow(() => it.Dispose());
+            // Act & Assert
+            // First call should be safe
+            Assert.DoesNotThrow(() => it.Dispose(), "Initial Dispose call should not throw.");
+
+            // Subsequent calls should also be safe (Idempotency)
+            Assert.DoesNotThrow(() => it.Dispose(), "Subsequent Dispose calls must not throw or cause side effects.");
         }
 
         [Test]
         public void Dispose_Foreach_EvenIfManuallyDisposedBeforehand()
         {
-            var logic = new MockLogic<int> { Items = new[] { 1, 2 } };
-            var it = new Iterator<int, MockLogic<int>>(logic);
+            // Scenario: Manual disposal before iteration starts. 
+            // Since the Iterator is a struct and Dispose is passive (non-destructive), 
+            // the subsequent foreach loop must still function correctly.
+            var (logic, expected) = CreateLogic(2);
+            var it = new Iterator<T, MockLogic<T>>(logic);
             int count = 0;
 
-            it.Dispose(); // Call it before the loop
+            // Act: Dispose early
+            it.Dispose();
 
+            // The foreach loop calls it.GetEnumerator(), creating a fresh copy of 
+            // the current struct state.
             foreach (var item in it)
             {
+                Assert.AreEqual(expected[count], item, $"Value mismatch at index {count}.");
                 count++;
             }
 
-            Assert.AreEqual(2, count, "The loop should complete normally even if Dispose was called early.");
+            // Assert
+            Assert.AreEqual(2, count, "The loop should complete normally even if Dispose was called beforehand.");
         }
 
         #endregion

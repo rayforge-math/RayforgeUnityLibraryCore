@@ -7,15 +7,17 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
     [TestFixture]
     public class SyncedBufferSegmentMetaTests
     {
+        #region Helpers
+
         private static BufferSegmentMeta MakeSeg(int start, int count)
             => new BufferSegmentMeta { Source = new int[Math.Max(0, start + count)], Start = start, Count = count };
 
         private static BufferSegmentMeta EmptySeg()
             => new BufferSegmentMeta();
 
-        // ================================================================
-        // Default
-        // ================================================================
+        #endregion
+
+        #region Default Tests
 
         [Test]
         public void Default_SegmentA_IsEmpty()
@@ -59,9 +61,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.AreEqual(0, seg.TotalSpan);
         }
 
-        // ================================================================
-        // Semantic aliases
-        // ================================================================
+        #endregion
+
+        #region Semantic aliases Tests
 
         [Test]
         public void Culling_AliasesSegmentA()
@@ -81,9 +83,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.AreEqual(synced.SegmentB.Count, synced.Render.Count);
         }
 
-        // ================================================================
-        // HasWork
-        // ================================================================
+        #endregion
+
+        #region HasWork Tests
 
         [Test]
         public void HasWork_BothEmpty_ReturnsFalse()
@@ -113,9 +115,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.IsTrue(synced.HasWork);
         }
 
-        // ================================================================
-        // Start
-        // ================================================================
+        #endregion
+
+        #region Start Tests
 
         [Test]
         public void Start_BothEmpty_ReturnsZero()
@@ -152,9 +154,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.AreEqual(3, synced.Start);
         }
 
-        // ================================================================
-        // End
-        // ================================================================
+        #endregion
+
+        #region End Tests
 
         [Test]
         public void End_BothEmpty_ReturnsZero()
@@ -191,9 +193,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.AreEqual(5, synced.End);
         }
 
-        // ================================================================
-        // TotalSpan
-        // ================================================================
+        #endregion
+
+        #region TotalSpan Tests
 
         [Test]
         public void TotalSpan_BothEmpty_ReturnsZero()
@@ -230,9 +232,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.AreEqual(7, synced.TotalSpan);
         }
 
-        // ================================================================
-        // Bullshit Scenarios (Negative Values, Reversed Order, Overflows)
-        // ================================================================
+        #endregion
+
+        #region Bullshit Scenarios (Negative Values, Reversed Order, Overflows)
 
         [Test]
         public void Nonsense_NegativeCount_IsIgnoredByIsEmpty()
@@ -314,5 +316,7 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.AreEqual(10, synced.Start);
             Assert.AreEqual(10, synced.TotalSpan);
         }
+
+        #endregion
     }
 }
