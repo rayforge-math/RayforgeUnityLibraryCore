@@ -1,46 +1,16 @@
 using NUnit.Framework;
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Collections.Iterator;
-using Rayforge.Core.Tests.Collections.Abstractions;
+using Rayforge.Core.Collections.Abstractions.Tests;
+using Rayforge.Core.Collections.Helpers;
 using System;
 using System.Collections.Generic;
 
-namespace Rayforge.Core.Tests.Collections.Iterator
+namespace Rayforge.Core.Collections.Iterator.Tests
 {
     #region Structs
-
-    public struct MockLogic<TType> : IIterationLogic<TType, MockLogic<TType>>
-    {
-        public TType[] Items;
-        public int Index;
-
-        public bool HasNext(ref MockLogic<TType> state)
-            => state.Items != null && state.Index < state.Items.Length;
-
-        public bool MoveNext(ref MockLogic<TType> state, out TType result)
-        {
-            if (state.Items != null && state.Index < state.Items.Length)
-            {
-                result = state.Items[state.Index];
-                state.Index++;
-                return true;
-            }
-            result = default;
-            return false;
-        }
-
-        public bool TryPeekNext(ref MockLogic<TType> state, out TType result)
-        {
-            if (state.Items != null && state.Index < state.Items.Length)
-            {
-                result = state.Items[state.Index];
-                return true;
-            }
-            result = default;
-            return false;
-        }
-    }
-
+    
+    
+    
     #endregion
 
     [TestFixture(typeof(int))]
@@ -50,18 +20,8 @@ namespace Rayforge.Core.Tests.Collections.Iterator
     {
         #region IIterationLogic Impl
 
-        protected override (MockLogic<T> logic, T[] expectedValues) CreateLogic(int count)
-        {
-            T[] items = TestDataUtility.CreateSampleItems<T>(count);
-
-            var logic = new MockLogic<T>
-            {
-                Items = items,
-                Index = 0
-            };
-
-            return (logic, items);
-        }
+        protected override IterationData<T, MockLogic<T>> CreateLogic(int count)
+            => CreateDefaultMockLogic(count);
 
         #endregion
 
@@ -72,7 +32,8 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Standard case: Constructor must enable access to the state logic.
             // We initialize with 1 element to ensure the logic state has valid data.
-            var (logic, _) = CreateLogic(1);
+            var data = CreateLogic(1);
+            var logic = data.logic;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // Assert
@@ -112,7 +73,8 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Test: Verify that Current returns the default value of T before MoveNext is called.
             // We initialize with 1 element so the logic is in a valid starting state.
-            var (logic, _) = CreateLogic(1);
+            var data = CreateLogic(1);
+            var logic = data.logic;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // Assert
@@ -140,7 +102,8 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Scenario: Verify that the non-generic IEnumerator.Current property
             // returns default(T) before any calls to MoveNext() are made.
-            var (logic, _) = CreateLogic(1);
+            var data = CreateLogic(1);
+            var logic = data.logic;
             System.Collections.IEnumerator it = new Iterator<T, MockLogic<T>>(logic);
 
             // Assert: The interface implementation of Current returns 'object', 
@@ -163,7 +126,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         public void Current_IEnumerator_BoxingConsistency()
         {
             // Scenario: Verify that the non-generic IEnumerator.Current correctly boxes the value T.
-            var (logic, expected) = CreateLogic(1);
+            var data = CreateLogic(1);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // 1. Cast to the interface (This creates a boxed copy)
@@ -186,7 +151,7 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         }
 
         #endregion
-
+        
         #region HasNext Property Tests
 
         [Test]
@@ -194,7 +159,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Scenario: Verify that HasNext correctly queries the state logic 
             // and can be called multiple times without changing the cursor or Current value.
-            var (logic, _) = CreateLogic(1);
+            var data = CreateLogic(1);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // 1. Initial State: Should be true because we have 1 element
@@ -212,7 +179,8 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Scenario: Verify that HasNext correctly reports false when 
             // the underlying logic is initialized with zero elements.
-            var (logic, _) = CreateLogic(0);
+            var data = CreateLogic(0);
+            var logic = data.logic;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // Assert
@@ -243,7 +211,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Scenario: Verify that TryPeekNext provides the upcoming value 
             // but leaves the iterator's Current property and position untouched.
-            var (logic, expected) = CreateLogic(1);
+            var data = CreateLogic(1);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // 1. Act: Peek the value
@@ -267,7 +237,8 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Scenario: Verify that TryPeekNext returns false and provides the 
             // default(T) value if the iterator has no elements or is exhausted.
-            var (logic, _) = CreateLogic(0);
+            var data = CreateLogic(0);
+            var logic = data.logic;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // Act
@@ -305,7 +276,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Scenario: Verify that MoveNext correctly updates the Current property 
             // and successfully advances the internal state of the logic.
-            var (logic, expected) = CreateLogic(2);
+            var data = CreateLogic(2);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // 1. First Move
@@ -328,7 +301,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
             // Scenario: Iterate through a full set and verify behavior both 
             // during iteration and after the sequence is exhausted.
             int count = 3;
-            var (logic, expected) = CreateLogic(count);
+            var data = CreateLogic(count);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // Act & Assert 1: Iteration through all existing items
@@ -356,7 +331,8 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Scenario: Verify that MoveNext returns false immediately when 
             // the iterator is initialized with an empty dataset.
-            var (logic, _) = CreateLogic(0);
+            var data = CreateLogic(0);
+            var logic = data.logic;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // Act
@@ -388,7 +364,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Scenario: Verify that the internal state mutation is persistent 
             // and the iterator tracks its position correctly across multiple steps.
-            var (logic, expected) = CreateLogic(3);
+            var data = CreateLogic(3);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // Act: Advance two steps
@@ -404,14 +382,16 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         }
 
         #endregion
-
+        
         #region Enumerator Pattern & Compiler Integration
 
         [Test]
         public void GetEnumerator_ConcreteStruct_ReturnsCopyOfSelf()
         {
             // Arrange: Create an iterator and advance it partially
-            var (logic, expected) = CreateLogic(3);
+            var data = CreateLogic(3);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             it.MoveNext(); // Current = expected[0]
@@ -445,7 +425,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Arrange: Use the interface to force execution of explicit implementation.
             // We use 4 items to have enough room for an early exit test.
-            var (logic, expected) = CreateLogic(4);
+            var data = CreateLogic(4);
+            var logic = data.logic;
+            var expected = data.expected;
             IIterator<T> it = new Iterator<T, MockLogic<T>>(logic);
 
             T lastValue = default;
@@ -475,7 +457,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Arrange: Verify that the compiler's duck-typing (foreach) correctly 
             // copies the struct, allowing independent nested iteration.
-            var (logic, expected) = CreateLogic(2);
+            var data = CreateLogic(2);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             var outerResults = new List<T>();
@@ -515,7 +499,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Arrange: Create the iterator and cast it to the generic interface.
             // This assignment causes boxing, creating a separate instance on the heap.
-            var (logic, expected) = CreateLogic(3);
+            var data = CreateLogic(3);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
             IEnumerable<T> enumerable = it;
 
@@ -547,7 +533,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Arrange: Cast the struct to the legacy non-generic IEnumerable.
             // This tests the explicit implementation of System.Collections.IEnumerable.
-            var (logic, expected) = CreateLogic(2);
+            var data = CreateLogic(2);
+            var logic = data.logic;
+            var expected = data.expected;
             System.Collections.IEnumerable enumerable = new Iterator<T, MockLogic<T>>(logic);
             var enumerator = enumerable.GetEnumerator();
 
@@ -574,7 +562,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         public void IEnumerable_MultipleEnumerators_AreIndependent()
         {
             // Arrange: Create the iterator and box it into an IEnumerable.
-            var (logic, expected) = CreateLogic(3);
+            var data = CreateLogic(3);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
             var enumerable = (IEnumerable<T>)it;
 
@@ -612,7 +602,8 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         public void Reset_ThrowsNotSupportedException()
         {
             // Arrange: Initialize with a small sample via the factory.
-            var (logic, _) = CreateLogic(1);
+            var data = CreateLogic(1);
+            var logic = data.logic;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // Reset is an explicit IEnumerator implementation, 
@@ -638,7 +629,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Scenario: Verify that calling Dispose does not unexpectedly 
             // reset or clear the iterator's current position and state.
-            var (logic, expected) = CreateLogic(2);
+            var data = CreateLogic(2);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // 1. Advance to a known state
@@ -666,7 +659,8 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         {
             // Scenario: Verify that calling Dispose does not throw, even if called multiple times.
             // This ensures adherence to the standard IDisposable contract requirements.
-            var (logic, _) = CreateLogic(1);
+            var data = CreateLogic(1);
+            var logic = data.logic;
             var it = new Iterator<T, MockLogic<T>>(logic);
 
             // Act & Assert
@@ -683,7 +677,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
             // Scenario: Manual disposal before iteration starts. 
             // Since the Iterator is a struct and Dispose is passive (non-destructive), 
             // the subsequent foreach loop must still function correctly.
-            var (logic, expected) = CreateLogic(2);
+            var data = CreateLogic(2);
+            var logic = data.logic;
+            var expected = data.expected;
             var it = new Iterator<T, MockLogic<T>>(logic);
             int count = 0;
 
@@ -700,6 +696,105 @@ namespace Rayforge.Core.Tests.Collections.Iterator
 
             // Assert
             Assert.AreEqual(2, count, "The loop should complete normally even if Dispose was called beforehand.");
+        }
+
+        #endregion
+
+        #region Create Factory
+
+        [Test]
+        public void Create_WithValidLogic_ReturnsCorrectType()
+        {
+            var logic = new MockLogic<int> { Items = new[] { 10, 20 } };
+            var iterator = new Iterator<int, MockLogic<int>>(logic);
+
+            Assert.IsInstanceOf<Iterator<int, MockLogic<int>>>(iterator);
+
+            Assert.IsTrue(iterator.MoveNext());
+            Assert.AreEqual(10, iterator.Current);
+        }
+
+        [Test]
+        public void Create_WithDefaultLogic_ReturnsDormantIterator()
+        {
+            MockLogic<int> defaultLogic = default;
+
+            // Act
+            var iterator = new Iterator<int, MockLogic<int>>(defaultLogic);
+
+            Assert.DoesNotThrow(() => {
+                Assert.IsFalse(iterator.MoveNext(), "Iterator from default logic must be dormant.");
+            });
+        }
+
+        #endregion
+
+        #region Full Iterator Tests
+
+        [Test]
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(5)]
+        [TestCase(20)]
+        public void Iterator_Wrapper_SystemStressTest_WithFullDataValidation(int count)
+        {
+            // Arrange: Use the generic factory to get logic and ground truth
+            var data = CreateLogic(count);
+            var logic = data.logic;
+            var expected = data.expected;
+            var iterator = new Iterator<T, MockLogic<T>>(logic);
+
+            T lastMovedValue = default;
+            bool hasLastValue = false;
+
+            // Act & Assert: Execute the full interleaved contract
+            for (int i = 0; i < count; i++)
+            {
+                T expectedValue = expected[i];
+
+                // 1. Availability Check
+                Assert.IsTrue(iterator.HasNext,
+                    $"Contract Violation: HasNext must be true at index {i}.");
+
+                // 2. Peek & Progress Validation
+                bool peekSuccess = iterator.TryPeekNext(out T currentPeek);
+                Assert.IsTrue(peekSuccess, $"Wrapper Error: TryPeekNext failed at index {i}.");
+                Assert.AreEqual(expectedValue, currentPeek, $"Data Error: Peek mismatch at index {i}.");
+
+                if (hasLastValue)
+                {
+                    Assert.AreNotEqual(lastMovedValue, currentPeek,
+                        $"Sequence Error: Peek at index {i} returned the same value as the previous MoveNext. State advancement failed.");
+                }
+
+                // 3. Consistency (HasNext stays true after non-destructive Peek)
+                Assert.IsTrue(iterator.HasNext,
+                    "State Error: Wrapper's HasNext became false after a Peek.");
+
+                // 4. Execution & Final Data Integrity Check
+                bool moveSuccess = iterator.MoveNext();
+                T moved = iterator.Current;
+
+                Assert.IsTrue(moveSuccess, $"Wrapper Execution Error: MoveNext failed at index {i}.");
+
+                // Final Triple-Check: Peek == Moved == Expected
+                Assert.AreEqual(currentPeek, moved,
+                    $"Sync Error: Current value ({moved}) differs from Peeked value ({currentPeek}) at index {i}.");
+                Assert.AreEqual(expectedValue, moved,
+                    $"Data Integrity Error: Current value ({moved}) does not match expected ground truth ({expectedValue}) at index {i}.");
+
+                // Update cache
+                lastMovedValue = moved;
+                hasLastValue = true;
+            }
+
+            // --- Post-Exhaustion Phase ---
+            Assert.IsFalse(iterator.HasNext, "Exhaustion Error: HasNext must be false.");
+            Assert.IsFalse(iterator.TryPeekNext(out _), "Exhaustion Error: TryPeekNext must return false.");
+
+            bool finalMove = iterator.MoveNext();
+            Assert.IsFalse(finalMove, "Exhaustion Error: MoveNext must return false.");
+            Assert.AreEqual(default(T), iterator.Current, "Safety Error: Current must be default(T) after exhaustion.");
         }
 
         #endregion

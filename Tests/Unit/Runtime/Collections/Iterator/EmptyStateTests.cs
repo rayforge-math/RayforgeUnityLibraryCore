@@ -2,14 +2,12 @@ using NUnit.Framework;
 using Rayforge.Core.Collections.Abstractions;
 using System.Linq;
 
-namespace Rayforge.Core.Tests.Collections.Abstractions
+namespace Rayforge.Core.Collections.Iterator.Tests
 {
     [TestFixture]
     public class EmptyStateTests
     {
-        // ================================================================
-        // Self
-        // ================================================================
+        #region Self Tests
 
         [Test]
         public void Self_IsDefaultIterator()
@@ -45,9 +43,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.AreEqual(0, stringEmpty.Count());
         }
 
-        // ================================================================
-        // HasNext
-        // ================================================================
+        #endregion
+
+        #region HasNext Tests
 
         [Test]
         public void HasNext_AlwaysReturnsFalse()
@@ -66,9 +64,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.IsFalse(state.HasNext(ref state));
         }
 
-        // ================================================================
-        // TryPeekNext
-        // ================================================================
+        #endregion
+
+        #region TryPeekNext Tests
 
         [Test]
         public void TryPeekNext_ReturnsFalse()
@@ -103,9 +101,9 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.IsFalse(state.TryPeekNext(ref state, out _));
         }
 
-        // ================================================================
-        // MoveNext
-        // ================================================================
+        #endregion
+
+        #region MoveNext Tests
 
         [Test]
         public void MoveNext_ReturnsFalse()
@@ -139,5 +137,7 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
             Assert.IsFalse(state.MoveNext(ref state, out _));
             Assert.IsFalse(state.MoveNext(ref state, out _));
         }
+
+        #endregion
     }
 }

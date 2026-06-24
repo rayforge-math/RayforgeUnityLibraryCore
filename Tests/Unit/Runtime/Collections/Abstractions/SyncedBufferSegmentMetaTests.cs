@@ -1,8 +1,7 @@
 using NUnit.Framework;
-using Rayforge.Core.Collections.Abstractions;
 using System;
 
-namespace Rayforge.Core.Tests.Collections.Abstractions
+namespace Rayforge.Core.Collections.Abstractions.Tests
 {
     [TestFixture]
     public class SyncedBufferSegmentMetaTests

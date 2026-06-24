@@ -1,16 +1,13 @@
 using NUnit.Framework;
-using Rayforge.Core.Caching.Containers;
 using Rayforge.Core.Collections.Helpers;
 using System;
-using UnityEngine;
+using Rayforge.Core.TestEnv;
 
-namespace Rayforge.Core.Tests.Caching.Containers
+namespace Rayforge.Core.Caching.Containers.Tests
 {
     public class SnapshotCache
     {
-        // ================================================================
-        // Constructors
-        // ================================================================
+        #region Constructors
 
         [Test]
         public void Constructor_Default_CountIsZero()
@@ -29,15 +26,19 @@ namespace Rayforge.Core.Tests.Caching.Containers
         [Test]
         public void Constructor_WithData_CountMatches()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
             Assert.AreEqual(3, cache.Count);
         }
 
         [Test]
         public void Constructor_WithData_CurrentMatchesInput()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
-            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, cache.Current.ToArray());
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
+            CollectionAssert.AreEqual(samples, cache.Current.ToArray());
         }
 
         [Test]
@@ -81,9 +82,9 @@ namespace Rayforge.Core.Tests.Caching.Containers
             Assert.Throws<ArgumentOutOfRangeException>(() => new SnapshotCache<int>(-1));
         }
 
-        // ================================================================
-        // Apply(ReadOnlySpan<T>)
-        // ================================================================
+        #endregion
+
+        #region Apply(ReadOnlySpan<T>)
 
         [Test]
         public void Apply_Span_EmptyToEmpty_ReturnsFalse()
@@ -95,31 +96,39 @@ namespace Rayforge.Core.Tests.Caching.Containers
         [Test]
         public void Apply_Span_EmptyToData_ReturnsTrue()
         {
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
             var cache = new SnapshotCache<int>();
-            Assert.IsTrue(cache.Apply(new[] { 1, 2, 3 }));
+            Assert.IsTrue(cache.Apply(samples));
         }
 
         [Test]
         public void Apply_Span_EmptyToData_UpdatesCache()
         {
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
             var cache = new SnapshotCache<int>();
-            cache.Apply(new[] { 1, 2, 3 });
-            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, cache.Current.ToArray());
+            cache.Apply(samples);
+            CollectionAssert.AreEqual(samples, cache.Current.ToArray());
         }
 
         [Test]
         public void Apply_Span_SameData_ReturnsFalse()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
-            Assert.IsFalse(cache.Apply(new[] { 1, 2, 3 }));
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
+            Assert.IsFalse(cache.Apply(samples));
         }
 
         [Test]
         public void Apply_Span_SameData_CacheUnchanged()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
-            cache.Apply(new[] { 1, 2, 3 });
-            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, cache.Current.ToArray());
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
+            cache.Apply(samples);
+            CollectionAssert.AreEqual(samples, cache.Current.ToArray());
         }
 
         [Test]
@@ -170,14 +179,18 @@ namespace Rayforge.Core.Tests.Caching.Containers
         [Test]
         public void Apply_Span_DataToEmpty_ReturnsTrue()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
             Assert.IsTrue(cache.Apply(ReadOnlySpan<int>.Empty));
         }
 
         [Test]
         public void Apply_Span_DataToEmpty_ClearsCache()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
             cache.Apply(ReadOnlySpan<int>.Empty);
             Assert.AreEqual(0, cache.Count);
         }
@@ -207,8 +220,10 @@ namespace Rayforge.Core.Tests.Caching.Containers
         [Test]
         public void Apply_Span_CountUnchangedWhenNoChange()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
-            cache.Apply(new[] { 1, 2, 3 });
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
+            cache.Apply(samples);
             Assert.AreEqual(3, cache.Count);
         }
 
@@ -222,9 +237,9 @@ namespace Rayforge.Core.Tests.Caching.Containers
             CollectionAssert.AreEqual(new[] { 1, 2, 3 }, cache.Current.ToArray());
         }
 
-        // ================================================================
-        // Apply(TIterator) via Array.ToIterator()
-        // ================================================================
+        #endregion
+
+        #region Apply(TIterator) via Array.ToIterator()
 
         [Test]
         public void Apply_ArrayIterator_EmptyToEmpty_ReturnsFalse()
@@ -236,31 +251,39 @@ namespace Rayforge.Core.Tests.Caching.Containers
         [Test]
         public void Apply_ArrayIterator_EmptyToData_ReturnsTrue()
         {
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
             var cache = new SnapshotCache<int>();
-            Assert.IsTrue(cache.Apply(new[] { 1, 2, 3 }.ToIterator()));
+            Assert.IsTrue(cache.Apply(samples.ToIterator()));
         }
 
         [Test]
         public void Apply_ArrayIterator_EmptyToData_UpdatesCache()
         {
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
             var cache = new SnapshotCache<int>();
-            cache.Apply(new[] { 1, 2, 3 }.ToIterator());
-            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, cache.Current.ToArray());
+            cache.Apply(samples.ToIterator());
+            CollectionAssert.AreEqual(samples, cache.Current.ToArray());
         }
 
         [Test]
         public void Apply_ArrayIterator_SameData_ReturnsFalse()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
-            Assert.IsFalse(cache.Apply(new[] { 1, 2, 3 }.ToIterator()));
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
+            Assert.IsFalse(cache.Apply(samples.ToIterator()));
         }
 
         [Test]
         public void Apply_ArrayIterator_SameData_CacheUnchanged()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
-            cache.Apply(new[] { 1, 2, 3 }.ToIterator());
-            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, cache.Current.ToArray());
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
+            cache.Apply(samples.ToIterator());
+            CollectionAssert.AreEqual(samples, cache.Current.ToArray());
         }
 
         [Test]
@@ -327,14 +350,18 @@ namespace Rayforge.Core.Tests.Caching.Containers
         [Test]
         public void Apply_ArrayIterator_DataToEmpty_ReturnsTrue()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
             Assert.IsTrue(cache.Apply(Array.Empty<int>().ToIterator()));
         }
 
         [Test]
         public void Apply_ArrayIterator_DataToEmpty_CountIsZero()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
             cache.Apply(Array.Empty<int>().ToIterator());
             Assert.AreEqual(0, cache.Count);
         }
@@ -342,7 +369,9 @@ namespace Rayforge.Core.Tests.Caching.Containers
         [Test]
         public void Apply_ArrayIterator_DataToEmpty_CurrentIsEmpty()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
             cache.Apply(Array.Empty<int>().ToIterator());
             Assert.AreEqual(0, cache.Current.Length);
         }
@@ -372,8 +401,10 @@ namespace Rayforge.Core.Tests.Caching.Containers
         [Test]
         public void Apply_ArrayIterator_CountUnchangedWhenNoChange()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
-            cache.Apply(new[] { 1, 2, 3 }.ToIterator());
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
+            cache.Apply(samples.ToIterator());
             Assert.AreEqual(3, cache.Count);
         }
 
@@ -390,30 +421,39 @@ namespace Rayforge.Core.Tests.Caching.Containers
         [Test]
         public void Apply_ArrayIterator_NeverShrinksBuffer_AfterShrink()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3, 4, 5 });
-            cache.Apply(new[] { 1, 2 }.ToIterator());
-            bool changed = cache.Apply(new[] { 1, 2, 3, 4, 5 }.ToIterator());
+            var samples = TestUtility.CreateSampleItems<int>(5);
+            var smallerSamples = samples.AsSpan(0, 2).ToArray();
+
+            var cache = new SnapshotCache<int>(samples);
+            cache.Apply(smallerSamples.ToIterator());
+            bool changed = cache.Apply(samples.ToIterator());
             Assert.IsTrue(changed);
-            CollectionAssert.AreEqual(new[] { 1, 2, 3, 4, 5 }, cache.Current.ToArray());
+            CollectionAssert.AreEqual(samples, cache.Current.ToArray());
         }
 
-        // ================================================================
-        // Span vs Iterator consistency
-        // ================================================================
+        #endregion
+
+        #region Span vs Iterator consistency
 
         [Test]
         public void Apply_SpanThenIterator_SameData_ReturnsFalse()
         {
-            var cache = new SnapshotCache<int>(new[] { 1, 2, 3 });
-            Assert.IsFalse(cache.Apply((new[] { 1, 2, 3 }).ToIterator()));
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
+            var cache = new SnapshotCache<int>(samples);
+            Assert.IsFalse(cache.Apply(samples.ToIterator()));
         }
 
         [Test]
         public void Apply_IteratorThenSpan_SameData_ReturnsFalse()
         {
+            var samples = TestUtility.CreateSampleItems<int>(3);
+
             var cache = new SnapshotCache<int>();
-            cache.Apply((new[] { 1, 2, 3 }).ToIterator());
-            Assert.IsFalse(cache.Apply(new[] { 1, 2, 3 }));
+            cache.Apply(samples.ToIterator());
+            Assert.IsFalse(cache.Apply(samples));
         }
+
+        #endregion
     }
 }

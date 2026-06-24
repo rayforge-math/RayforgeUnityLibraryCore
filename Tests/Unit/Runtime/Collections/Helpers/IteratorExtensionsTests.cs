@@ -1,11 +1,10 @@
 using NUnit.Framework;
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Collections.Helpers;
 using Rayforge.Core.Collections.Iterator;
 using System;
 using System.Collections.Generic;
 
-namespace Rayforge.Core.Tests.Collections.Helpers
+namespace Rayforge.Core.Collections.Helpers.Tests
 {
     [TestFixture]
     public class IteratorExtensionsTests
@@ -96,33 +95,6 @@ namespace Rayforge.Core.Tests.Collections.Helpers
             Assert.IsFalse(iterator.MoveNext(), "Iterator for empty array must not have elements.");
         }
 
-        [Test]
-        public void ToIIterator_Array_BoxesToInterface()
-        {
-            // Test the boxing variant. 
-            // Ensures the IIterator<T> interface is correctly implemented and reachable.
-            int[] source = { 1, 2, 3 };
-
-            IIterator<int> interfaceIterator = source.ToIIterator();
-
-            Assert.IsNotNull(interfaceIterator);
-            // Briefly verify functionality through the interface
-            Assert.IsTrue(interfaceIterator.MoveNext());
-            Assert.AreEqual(1, interfaceIterator.Current);
-        }
-
-        [Test]
-        public void ToIIterator_Array_Null_ReturnsValidEmptyInterface()
-        {
-            // The interface-based version must also remain stable when input is null.
-            int[] source = null;
-
-            IIterator<int> interfaceIterator = source.ToIIterator();
-
-            Assert.IsNotNull(interfaceIterator);
-            Assert.IsFalse(interfaceIterator.MoveNext(), "Boxed iterator for null array must be empty.");
-        }
-
         #endregion
 
         #region List Tests
@@ -137,18 +109,6 @@ namespace Rayforge.Core.Tests.Collections.Helpers
 
             // Verification of the exact type chain: Iterator -> EnumeratorState -> List.Enumerator
             Assert.IsInstanceOf<Iterator<int, EnumeratorState<int, List<int>.Enumerator>>>(iterator);
-        }
-
-        [Test]
-        public void ToIIterator_List_BoxesToInterface()
-        {
-            // Verify that the interface boxing variant works for List enumerators.
-            // This is used when an IIterator<T> is required by a consumer.
-            var list = new List<int> { 10 };
-            IIterator<int> interfaceIterator = list.GetEnumerator().ToIIterator();
-
-            Assert.IsNotNull(interfaceIterator);
-            Assert.IsTrue(interfaceIterator is IIterator<int>, "Result must implement IIterator interface.");
         }
 
         [Test]
@@ -183,18 +143,6 @@ namespace Rayforge.Core.Tests.Collections.Helpers
         }
 
         [Test]
-        public void ToIIterator_HashSet_BoxesToInterface()
-        {
-            // Verify that the interface boxing variant works for HashSet enumerators.
-            // This allows the struct-based HashSet iterator to be treated as an IIterator<T>.
-            var set = new HashSet<int> { 100 };
-            IIterator<int> interfaceIterator = set.GetEnumerator().ToIIterator();
-
-            Assert.IsNotNull(interfaceIterator);
-            Assert.IsTrue(interfaceIterator is IIterator<int>, "Result must implement the IIterator interface.");
-        }
-
-        [Test]
         public void ToIterator_HashSet_EmptyCollection_ReturnsEmptyIterator()
         {
             // Verify that an empty HashSet produces a valid iterator 
@@ -226,19 +174,6 @@ namespace Rayforge.Core.Tests.Collections.Helpers
         }
 
         [Test]
-        public void ToIIterator_Queue_BoxesToInterface()
-        {
-            // Verify that the interface boxing variant works for Queue enumerators.
-            // Confirms that the high-performance struct can be safely cast to IIterator<T>.
-            var queue = new Queue<string>();
-            queue.Enqueue("test");
-            IIterator<string> interfaceIterator = queue.GetEnumerator().ToIIterator();
-
-            Assert.IsNotNull(interfaceIterator);
-            Assert.IsTrue(interfaceIterator is IIterator<string>, "Result must implement the IIterator interface.");
-        }
-
-        [Test]
         public void ToIterator_Queue_EmptyCollection_ReturnsEmptyIterator()
         {
             // Verify that an empty Queue produces a valid iterator 
@@ -267,19 +202,6 @@ namespace Rayforge.Core.Tests.Collections.Helpers
 
             // Verification of the exact type chain: Iterator -> EnumeratorState -> Stack.Enumerator
             Assert.IsInstanceOf<Iterator<int, EnumeratorState<int, Stack<int>.Enumerator>>>(iterator);
-        }
-
-        [Test]
-        public void ToIIterator_Stack_BoxesToInterface()
-        {
-            // Verify that the interface boxing variant works for Stack enumerators.
-            // Confirms that the struct-based iterator correctly fulfills the IIterator contract.
-            var stack = new Stack<string>();
-            stack.Push("top");
-            IIterator<string> interfaceIterator = stack.GetEnumerator().ToIIterator();
-
-            Assert.IsNotNull(interfaceIterator);
-            Assert.IsTrue(interfaceIterator is IIterator<string>, "Result must implement the IIterator interface.");
         }
 
         [Test]
@@ -327,19 +249,6 @@ namespace Rayforge.Core.Tests.Collections.Helpers
             });
         }
 
-        [Test]
-        public void ToIIterator_Dictionary_BoxesToInterface()
-        {
-            // Verify that the interface boxing variant works for Dictionary enumerators.
-            // Confirms that the struct-based iterator correctly fulfills the IIterator contract for KeyValuePairs.
-            var dict = new Dictionary<int, string>();
-            dict.Add(1, "Value");
-            IIterator<KeyValuePair<int, string>> interfaceIterator = dict.GetEnumerator().ToIIterator();
-
-            Assert.IsNotNull(interfaceIterator);
-            Assert.IsTrue(interfaceIterator is IIterator<KeyValuePair<int, string>>, "Result must implement the IIterator interface.");
-        }
-
         // --- Key Collection ---
 
         [Test]
@@ -365,17 +274,6 @@ namespace Rayforge.Core.Tests.Collections.Helpers
             });
         }
 
-        [Test]
-        public void ToIIterator_DictionaryKeys_BoxesToInterface()
-        {
-            // Verify that the interface boxing variant works for Dictionary Key enumerators.
-            var dict = new Dictionary<int, string> { { 1, "One" } };
-            IIterator<int> interfaceIterator = dict.Keys.GetEnumerator().ToIIterator();
-
-            Assert.IsNotNull(interfaceIterator);
-            Assert.IsTrue(interfaceIterator is IIterator<int>, "Result must implement the IIterator interface.");
-        }
-
         // --- Value Collection ---
 
         [Test]
@@ -399,17 +297,6 @@ namespace Rayforge.Core.Tests.Collections.Helpers
             {
                 Assert.IsFalse(iterator.MoveNext(), "An empty Dictionary Values enumerator must yield no elements.");
             });
-        }
-
-        [Test]
-        public void ToIIterator_DictionaryValues_BoxesToInterface()
-        {
-            // Verify that the interface boxing variant works for Dictionary Value enumerators.
-            var dict = new Dictionary<int, string> { { 1, "One" } };
-            IIterator<string> interfaceIterator = dict.Values.GetEnumerator().ToIIterator();
-
-            Assert.IsNotNull(interfaceIterator);
-            Assert.IsTrue(interfaceIterator is IIterator<string>, "Result must implement the IIterator interface.");
         }
 
         #endregion
@@ -445,18 +332,6 @@ namespace Rayforge.Core.Tests.Collections.Helpers
             });
         }
 
-        [Test]
-        public void ToIIterator_LinkedList_BoxesToInterface()
-        {
-            // Verify that the interface boxing variant works for LinkedList enumerators.
-            var list = new LinkedList<int>();
-            list.AddFirst(10);
-            IIterator<int> interfaceIterator = list.GetEnumerator().ToIIterator();
-
-            Assert.IsNotNull(interfaceIterator);
-            Assert.IsTrue(interfaceIterator is IIterator<int>, "Result must implement the IIterator interface.");
-        }
-
         // --- SortedSet ---
 
         [Test]
@@ -485,79 +360,35 @@ namespace Rayforge.Core.Tests.Collections.Helpers
             });
         }
 
-        [Test]
-        public void ToIIterator_SortedSet_BoxesToInterface()
-        {
-            // Verify that the interface boxing variant works for SortedSet enumerators.
-            var set = new SortedSet<string> { "data" };
-            IIterator<string> interfaceIterator = set.GetEnumerator().ToIIterator();
-
-            Assert.IsNotNull(interfaceIterator);
-            Assert.IsTrue(interfaceIterator is IIterator<string>, "Result must implement the IIterator interface.");
-        }
-
         #endregion
 
         #region Composite & Utility Tests
 
         [Test]
-        public void Combine_ReturnsCorrectIteratorType()
+        public void Combine_NullInput_YieldsDormantIterator()
         {
-            // Verify that the factory creates an Iterator with the specific MultiCompositeState.
-            var s1 = new[] { 1 }.ToIIterator();
-            var iterator = IteratorExtensions.Combine(s1);
-
-            Assert.IsInstanceOf<Iterator<int, MultiCompositeState<int>>>(iterator);
-        }
-
-        [Test]
-        public void Combine_NullInput_IsSafeToIterate()
-        {
-            // Test if the factory handles a null params array by returning an iterator 
-            // that does not throw when MoveNext is called.
+            // Verifies that a null array results in a safe, non-throwing iterator
             var iterator = IteratorExtensions.Combine<int>(null);
 
-            Assert.DoesNotThrow(() =>
-            {
-                bool hasNext = iterator.MoveNext();
-                Assert.IsFalse(hasNext, "Iterator created from null sources must be empty.");
-            });
+            Assert.IsFalse(iterator.MoveNext(), "Iterator created from null sources must be immediately exhausted.");
         }
 
         [Test]
-        public void Combine_EmptyInput_IsSafeToIterate()
+        public void Combine_EmptyInput_YieldsDormantIterator()
         {
-            // Test if the factory handles an empty params array safely.
-            var iterator = IteratorExtensions.Combine<int>(new IIterator<int>[0]);
+            // Verifies that an empty array results in a safe, non-throwing iterator
+            var iterator = IteratorExtensions.Combine(new IIterator<int>[0]);
 
-            Assert.DoesNotThrow(() =>
-            {
-                Assert.IsFalse(iterator.MoveNext(), "Iterator created from empty sources must be empty.");
-            });
+            Assert.IsFalse(iterator.MoveNext(), "Iterator created from empty sources must be immediately exhausted.");
         }
 
         [Test]
         public void Combine_AllInvalidSources_IsSafeToIterate()
         {
-            // Verify the short-circuit logic: if all provided sources are null or IIterator.Empty,
-            // the resulting iterator must still be safe to call and immediately return false.
+            // Verify that nulls and Empty-iterators are effectively ignored
             var iterator = IteratorExtensions.Combine<int>(null, IIterator<int>.Empty(), null);
 
-            Assert.DoesNotThrow(() =>
-            {
-                Assert.IsFalse(iterator.MoveNext(), "Iterator with only invalid sources must be empty.");
-            });
-        }
-
-        [Test]
-        public void CombineIIterator_BoxesToInterface()
-        {
-            // Verify that the utility method correctly boxes the composite struct into an IIterator interface.
-            var s1 = new[] { 1 }.ToIIterator();
-            IIterator<int> interfaceIterator = IteratorExtensions.CombineIIterator(s1);
-
-            Assert.IsNotNull(interfaceIterator);
-            Assert.IsTrue(interfaceIterator is IIterator<int>, "The result should be a boxed IIterator.");
+            Assert.IsFalse(iterator.MoveNext(), "Iterator with only invalid sources must be empty.");
         }
 
         #endregion

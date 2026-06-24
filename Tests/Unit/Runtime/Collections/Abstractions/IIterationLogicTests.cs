@@ -1,61 +1,59 @@
 using NUnit.Framework;
-using Rayforge.Core.Collections.Abstractions;
-using System;
-using UnityEngine;
+using Rayforge.Core.TestEnv;
 
-namespace Rayforge.Core.Tests.Collections.Abstractions
+namespace Rayforge.Core.Collections.Abstractions.Tests
 {
     public abstract class IIterationLogicTests<T, TLogic>
         where TLogic : struct, IIterationLogic<T, TLogic>
     {
         #region Create Test Env
 
-        protected abstract (TLogic logic, T[] expectedValues) CreateLogic(int count);
+        protected abstract IterationData<T, TLogic> CreateLogic(int count);
+
+        public static IterationData<T, MockLogic<T>> CreateDefaultMockLogic(int count)
+        {
+            T[] items = TestUtility.CreateSampleItems<T>(count);
+
+            var logic = new MockLogic<T>
+            {
+                Items = items,
+                Index = 0
+            };
+
+            return new IterationData<T, MockLogic<T>>
+            {
+                logic = logic,
+                expected = items
+            };
+        }
 
         #endregion
 
-        #region Core Logic Contracts
+        #region HasNext Contract Tests
 
         [Test]
         [TestCase(0)]
         [TestCase(1)]
         [TestCase(5)]
-        public void HasNext_IsIdempotent_And_Consistent(int count)
+        [TestCase(15)]
+        [TestCase(20)]
+        public void HasNext_InitialState_MatchesExpected(int count)
         {
-            // Arrange: Initialize the logic with the specified number of elements
-            var (logic, expected) = CreateLogic(count);
+            // Arrange: Create a fresh logic state
+            var data = CreateLogic(count);
+            var logic = data.logic;
 
+            // Act: Check the initial availability
+            bool result = logic.HasNext(ref logic);
+
+            // Assert: Must be true if count > 0, false otherwise
             if (count > 0)
             {
-                // Scenario: Elements are available
-                T firstExpected = expected[0];
-
-                // Act & Assert: Multiple HasNext calls must not advance the internal state
-                Assert.IsTrue(logic.HasNext(ref logic), "HasNext must be true when elements are available.");
-                Assert.IsTrue(logic.HasNext(ref logic), "Successive HasNext calls must be idempotent (non-destructive).");
-
-                // Act & Assert: Peek must return the first element without consuming it
-                bool peekSuccess = logic.TryPeekNext(ref logic, out T peeked);
-                Assert.IsTrue(peekSuccess, "Peek should succeed when HasNext is true.");
-                Assert.AreEqual(firstExpected, peeked, "Peeked value does not match the first expected element.");
-
-                // HasNext must still be true after a Peek
-                Assert.IsTrue(logic.HasNext(ref logic), "HasNext must remain true after a Peek operation.");
-
-                // Final Verification: MoveNext must still return that same first element
-                bool moveSuccess = logic.MoveNext(ref logic, out T moved);
-                Assert.IsTrue(moveSuccess, "MoveNext must succeed for the first element.");
-                Assert.AreEqual(firstExpected, moved, "MoveNext returned the wrong element after Peek/HasNext calls.");
+                Assert.IsTrue(result, $"HasNext must be true for an initial state with {count} elements.");
             }
             else
             {
-                // Scenario: Empty collection
-                // Act & Assert
-                Assert.IsFalse(logic.HasNext(ref logic), "HasNext must be false for empty iterators.");
-                Assert.IsFalse(logic.HasNext(ref logic), "HasNext must stay false (idempotent) for empty iterators.");
-
-                bool peekSuccess = logic.TryPeekNext(ref logic, out _);
-                Assert.IsFalse(peekSuccess, "Peek must return false when HasNext is false.");
+                Assert.IsFalse(result, "HasNext must be false for an initial empty state.");
             }
         }
 
@@ -63,35 +61,129 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
         [TestCase(0)]
         [TestCase(1)]
         [TestCase(5)]
+        [TestCase(15)]
+        [TestCase(20)]
+        public void HasNext_IsIdempotent(int count)
+        {
+            // Arrange: Use a state that definitely has elements
+            var data = CreateLogic(count);
+            var logic = data.logic;
+
+            // Act: Call HasNext multiple times in succession
+            bool firstCall = logic.HasNext(ref logic);
+            bool secondCall = logic.HasNext(ref logic);
+            bool thirdCall = logic.HasNext(ref logic);
+
+            // Assert: The result must remain consistent and the state must not advance
+            bool valid = count > 0;
+            Assert.AreEqual(firstCall, valid, "First call to HasNext failed.");
+            Assert.AreEqual(secondCall, valid, "Second call to HasNext must still be true (idempotency check).");
+            Assert.AreEqual(thirdCall, valid, "Third call to HasNext must still be true (idempotency check).");
+        }
+
+        #endregion
+
+        #region MoveNext Contract Tests
+
+        [Test]
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(5)]
+        [TestCase(15)]
+        [TestCase(20)]
+        public void MoveNext_ReturnsCorrectInitialValue(int count)
+        {
+            bool valid = count > 0;
+
+            // Arrange: Create a fresh logic state and retrieve expected values
+            var data = CreateLogic(count);
+            var logic = data.logic;
+            var expected = data.expected;
+            T expectedFirstValue = valid ? expected[0] : default;
+
+            // Act: Perform the first move operation
+            bool success = logic.MoveNext(ref logic, out T result);
+
+            // Assert: Verify the method succeeded and returned the correct first element
+            Assert.AreEqual(success, valid, "MoveNext should return true when elements are available.");
+            Assert.AreEqual(expectedFirstValue, result,
+                "MoveNext returned a different value than the first expected element.");
+        }
+
+        [Test]
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(5)]
+        [TestCase(15)]
+        [TestCase(20)]
+        public void MoveNext_IteratesThroughAllExpectedValues(int count)
+        {
+            // Arrange: Initialize the logic and the comparison data
+            var data = CreateLogic(count);
+            var logic = data.logic;
+            var expected = data.expected;
+
+            // Act & Assert: Traverse the entire sequence
+            for (int i = 0; i < count; i++)
+            {
+                // We call MoveNext for every expected index
+                bool success = logic.MoveNext(ref logic, out T result);
+
+                Assert.IsTrue(success,
+                    $"MoveNext failed prematurely at index {i} for a sequence of length {count}.");
+
+                Assert.AreEqual(expected[i], result,
+                    $"The value returned by MoveNext at index {i} does not match the expected source data.");
+            }
+
+            // Final Step: Ensure the logic recognizes it has reached the end
+            bool exhausted = logic.MoveNext(ref logic, out _);
+            Assert.IsFalse(exhausted,
+                "MoveNext should return false after all elements have been consumed.");
+        }
+
+        [Test]
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(5)]
+        [TestCase(15)]
+        [TestCase(20)]
         public void MoveNext_ReturnsFalse_And_Default_OnExhaustion(int count)
         {
-            // Scenario: Ensure the iterator behaves correctly when it is empty or runs out of data
-            // We initialize the logic with 'count' elements
-            var (logic, _) = CreateLogic(count);
+            // Arrange: Initialize logic and advance it to the very end
+            var data = CreateLogic(count);
+            var logic = data.logic;
 
-            // Act: Exhaust the iterator by moving through all available elements
+            // Act: Fully exhaust the sequence by consuming all 'count' elements
             for (int i = 0; i < count; i++)
             {
                 logic.MoveNext(ref logic, out _);
             }
 
-            // Attempt to move one step further (or move immediately if count was 0)
+            // Attempt to move beyond the end of the sequence
             bool result = logic.MoveNext(ref logic, out T value);
 
-            // Assert
-            Assert.IsFalse(result, "MoveNext must return false when no elements are left to iterate.");
-            Assert.AreEqual(default(T), value, "The output value must be default(T) when MoveNext returns false.");
+            // Assert: Verify that the logic reports exhaustion correctly
+            Assert.IsFalse(result,
+                "MoveNext must return false once the sequence is exhausted or if it was initially empty.");
+
+            // Safety: Verify that the output parameter is cleared to avoid leaking old data
+            Assert.AreEqual(default(T), value,
+                "The output value must be reset to default(T) when MoveNext returns false.");
         }
 
         [Test]
         [TestCase(0)]
         [TestCase(1)]
         [TestCase(5)]
+        [TestCase(15)]
+        [TestCase(20)]
         public void MoveNext_StaysFalse_AfterExhaustion(int count)
         {
             // Scenario: Finiteness - once the iterator returns false, it must remain false.
             // This prevents accidental wrap-around or invalid state transitions.
-            var (logic, _) = CreateLogic(count);
+            var data = CreateLogic(count);
+            var logic = data.logic;
 
             // Act: Fully exhaust the logic
             for (int i = 0; i < count; i++)
@@ -111,139 +203,199 @@ namespace Rayforge.Core.Tests.Collections.Abstractions
                 "MoveNext must remain false (stay exhausted) on repeated calls.");
         }
 
+        #endregion
+
+        #region TryPeekNext Contract Tests
+
         [Test]
         [TestCase(0)]
         [TestCase(1)]
         [TestCase(5)]
-        public void TryPeekNext_DoesNotAdvance_And_IsIdempotent(int count)
+        [TestCase(15)]
+        [TestCase(20)]
+        public void TryPeekNext_IdentifiesCorrectValue(int count)
         {
-            // Scenario: Peeking multiple times must return the same element (if any) 
-            // without advancing the cursor or affecting future MoveNext calls.
-            var (logic, expected) = CreateLogic(count);
+            bool valid = count > 0;
 
-            if (count > 0)
-            {
-                T firstExpected = expected[0];
+            // Arrange: Fresh logic state
+            var data = CreateLogic(count);
+            var logic = data.logic;
+            var expected = data.expected;
+            T expectedValue = valid ? expected[0] : default;
 
-                // Act
-                bool firstPeekSuccess = logic.TryPeekNext(ref logic, out T firstPeek);
-                bool secondPeekSuccess = logic.TryPeekNext(ref logic, out T secondPeek);
+            // Act: Peek the first value
+            bool success = logic.TryPeekNext(ref logic, out T result);
 
-                // Assert
-                Assert.IsTrue(firstPeekSuccess, "First peek should be successful.");
-                Assert.IsTrue(secondPeekSuccess, "Second peek should be successful.");
-                Assert.AreEqual(firstExpected, firstPeek, "Peeked value must match the expected first element.");
-                Assert.AreEqual(firstPeek, secondPeek, "Consecutive Peeks must return the same value.");
-
-                // Verify state: Peek must not consume the element
-                Assert.IsTrue(logic.HasNext(ref logic), "HasNext must remain true after Peek.");
-
-                logic.MoveNext(ref logic, out T movedValue);
-                Assert.AreEqual(firstExpected, movedValue, "MoveNext must still return the element that was peeked.");
-            }
-            else
-            {
-                // Act
-                bool peekSuccess = logic.TryPeekNext(ref logic, out T peeked);
-
-                // Assert
-                Assert.IsFalse(peekSuccess, "Peek must return false for empty iterators.");
-                Assert.AreEqual(default(T), peeked, "Peeked value must be default(T) for empty iterators.");
-            }
+            // Assert
+            Assert.AreEqual(success, valid, "TryPeekNext should return true when elements are available.");
+            Assert.AreEqual(expectedValue, result, "The peeked value does not match the first expected element.");
         }
 
         [Test]
         [TestCase(0)]
         [TestCase(1)]
         [TestCase(5)]
-        public void TryPeekNext_ReturnsFalse_AfterExhaustion(int count)
+        [TestCase(15)]
+        [TestCase(20)]
+        public void TryPeekNext_DoesNotAdvanceState(int count)
         {
-            // Scenario: Peek behavior must be consistently false once the stream is exhausted,
-            // regardless of the initial collection size.
-            var (logic, _) = CreateLogic(count);
+            bool valid = count > 0;
 
-            // Act: Move to the end by consuming all available elements
+            // Arrange
+            var data = CreateLogic(count);
+            var logic = data.logic;
+            var expected = data.expected;
+            T expectedValue = valid ? expected[0] : default;
+
+            // Act: Peek then Move
+            logic.TryPeekNext(ref logic, out T peeked);
+            bool moveSuccess = logic.MoveNext(ref logic, out T moved);
+
+            // Assert: Move must still succeed and return the same value as Peek
+            Assert.AreEqual(moveSuccess, valid, "MoveNext must still succeed after a Peek operation.");
+            Assert.AreEqual(peeked, moved, "MoveNext must return the same value that was just peeked.");
+        }
+
+        [Test]
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(5)]
+        [TestCase(15)]
+        [TestCase(20)]
+        public void TryPeekNext_ReturnsFalse_And_Default_OnExhaustion(int count)
+        {
+            // Arrange: Exhaust the logic
+            var data = CreateLogic(count);
+            var logic = data.logic;
             for (int i = 0; i < count; i++)
             {
                 logic.MoveNext(ref logic, out _);
             }
 
-            // Attempt to peek when no elements are left
+            // Act: Attempt to peek beyond the end
             bool success = logic.TryPeekNext(ref logic, out T result);
 
             // Assert
-            Assert.IsFalse(success, "TryPeekNext must return false when the iterator is exhausted.");
-            Assert.AreEqual(default(T), result, "The result of a failed Peek must be default(T).");
-
-            // Safety check: Ensure HasNext also agrees with the exhausted state
-            Assert.IsFalse(logic.HasNext(ref logic), "HasNext must be false upon exhaustion.");
+            Assert.IsFalse(success, "TryPeekNext must return false when the logic is exhausted.");
+            Assert.AreEqual(default(T), result, "TryPeekNext must return default(T) on failure.");
         }
 
         [Test]
         [TestCase(0)]
         [TestCase(1)]
         [TestCase(5)]
-        public void Consistency_HasNext_Matches_MoveNext(int count)
+        [TestCase(15)]
+        [TestCase(20)]
+        public void TryPeekNext_IsIdempotent(int count)
         {
-            // Scenario: The "Contract Agreement"
-            // This ensures that HasNext and MoveNext are perfectly synchronized.
-            var (logic, _) = CreateLogic(count);
+            // Arrange
+            var data = CreateLogic(count);
+            var logic = data.logic;
 
-            int iterations = 0;
+            // Act: Peek multiple times
+            logic.TryPeekNext(ref logic, out T firstPeek);
+            logic.TryPeekNext(ref logic, out T secondPeek);
+            logic.TryPeekNext(ref logic, out T thirdPeek);
 
-            // Act & Assert: Loop as long as HasNext is true
-            while (logic.HasNext(ref logic))
+            // Assert: All peeks must yield the same result
+            Assert.AreEqual(firstPeek, secondPeek, "Successive peeks must return the same value.");
+            Assert.AreEqual(firstPeek, thirdPeek, "Successive peeks must return the same value.");
+        }
+
+        [Test]
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(5)]
+        [TestCase(15)]
+        [TestCase(20)]
+        public void TryPeekNext_FullIteration_SequenceValidation(int count)
+        {
+            // Arrange: Initialize logic and expected sequence
+            var data = CreateLogic(count);
+            var logic = data.logic;
+            var expected = data.expected;
+
+            // Act & Assert: Traverse the full chain, peeking before every move
+            for (int i = 0; i < count; i++)
             {
-                bool moveResult = logic.MoveNext(ref logic, out _);
+                // 1. Validate peek at current position
+                bool peekSuccess = logic.TryPeekNext(ref logic, out T peeked);
+                Assert.IsTrue(peekSuccess, $"TryPeekNext failed at index {i}.");
+                Assert.AreEqual(expected[i], peeked, $"Peek value mismatch at index {i}.");
 
-                Assert.IsTrue(moveResult,
-                    $"If HasNext is true, MoveNext MUST return true. Failed at index {iterations}.");
-
-                iterations++;
+                // 2. Consume the peeked element
+                bool moveSuccess = logic.MoveNext(ref logic, out T moved);
+                Assert.IsTrue(moveSuccess, $"MoveNext failed after Peek at index {i}.");
+                Assert.AreEqual(peeked, moved, $"The value from Peek and MoveNext must be identical at index {i}.");
             }
 
-            // Act & Assert: Once HasNext is false, MoveNext must also be false
-            bool finalMove = logic.MoveNext(ref logic, out _);
-
-            Assert.IsFalse(finalMove,
-                "If HasNext is false, MoveNext MUST return false.");
-
-            Assert.AreEqual(count, iterations,
-                "The number of successful MoveNext calls must match the expected count.");
+            // 3. Final exhaustion check for Peek
+            bool finalPeek = logic.TryPeekNext(ref logic, out _);
+            Assert.IsFalse(finalPeek, "Peek must return false once the entire sequence is consumed.");
         }
+
+        #endregion
+
+        #region Full Contract Tests
 
         [Test]
         [TestCase(0)]
         [TestCase(1)]
         [TestCase(5)]
-        public void Interleaved_Peek_And_Move_Consistency(int count)
+        [TestCase(15)]
+        [TestCase(20)]
+        public void FullContract_SystemStressTest(int count)
         {
-            // Scenario: Mixing Peek and Move operations to ensure they always point to the same element.
-            var (logic, expected) = CreateLogic(count);
+            // Scenario: Comprehensive stress test of the entire IIterationLogic contract.
+            // It verifies the interplay between HasNext, TryPeekNext, and MoveNext
+            // throughout the entire lifecycle of the iteration, including redundant calls.
+            var data = CreateLogic(count);
+            var logic = data.logic;
+            var expected = data.expected;
 
             for (int i = 0; i < count; i++)
             {
-                T expectedValue = expected[i];
+                // 1. Initial Availability Check
+                Assert.IsTrue(logic.HasNext(ref logic),
+                    $"Contract Violation: HasNext must be true at index {i} for count {count}.");
 
-                // Perform multiple peeks
+                // 2. Multi-Peek Stability (Interleaved with HasNext)
                 bool peek1Success = logic.TryPeekNext(ref logic, out T p1);
+                Assert.IsTrue(peek1Success, $"Contract Violation: TryPeekNext failed at index {i}.");
+
+                // Redundant HasNext call to ensure Peek didn't advance the state
+                Assert.IsTrue(logic.HasNext(ref logic),
+                    $"State Corruption: HasNext became false after the first Peek at index {i}.");
+
                 bool peek2Success = logic.TryPeekNext(ref logic, out T p2);
+                Assert.IsTrue(peek2Success, $"Contract Violation: Second TryPeekNext failed at index {i}.");
 
-                Assert.IsTrue(peek1Success, $"Peek 1 should succeed at index {i}.");
-                Assert.IsTrue(peek2Success, $"Peek 2 should succeed at index {i}.");
-                Assert.AreEqual(p1, p2, $"Consecutive peeks must return the same value at index {i}.");
-                Assert.AreEqual(expectedValue, p1, $"Peeked value must match expected ground truth at index {i}.");
+                // Data Integrity Check
+                Assert.AreEqual(p1, p2, $"Idempotency Violation: Consecutive peeks differ at index {i}.");
+                Assert.AreEqual(expected[i], p1, $"Data Integrity: Peek mismatch at index {i}.");
 
-                // Move to the element we just peeked
-                bool moveSuccess = logic.MoveNext(ref logic, out T m1);
+                // 3. Final Execution Step
+                bool moveSuccess = logic.MoveNext(ref logic, out T moved);
 
-                Assert.IsTrue(moveSuccess, $"MoveNext should succeed at index {i} after Peeking.");
-                Assert.AreEqual(p1, m1, $"MoveNext must return the same value that was just returned by Peek at index {i}.");
+                Assert.IsTrue(moveSuccess, $"Execution Failure: MoveNext failed at index {i}.");
+                Assert.AreEqual(p1, moved, $"Sync Error: MoveNext result differs from previous Peek at index {i}.");
             }
 
-            // Final check after all items are consumed
-            Assert.IsFalse(logic.HasNext(ref logic), "HasNext must be false after the interleaved loop is finished.");
-            Assert.IsFalse(logic.TryPeekNext(ref logic, out _), "TryPeekNext must return false after exhaustion.");
+            // --- Post-Exhaustion Phase ---
+
+            // 4. Final State Validation (All accessors must agree on exhaustion)
+            Assert.IsFalse(logic.HasNext(ref logic),
+                "Exhaustion Error: HasNext must be false after full consumption.");
+
+            Assert.IsFalse(logic.TryPeekNext(ref logic, out _),
+                "Exhaustion Error: TryPeekNext must return false after full consumption.");
+
+            bool finalMove = logic.MoveNext(ref logic, out T finalVal);
+            Assert.IsFalse(finalMove,
+                "Exhaustion Error: MoveNext must return false after full consumption.");
+
+            Assert.AreEqual(default(T), finalVal,
+                "Safety Violation: Exhausted MoveNext must return default(T).");
         }
 
         #endregion

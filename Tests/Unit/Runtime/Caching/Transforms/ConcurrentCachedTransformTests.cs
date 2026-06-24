@@ -1,16 +1,15 @@
 using NUnit.Framework;
 using Rayforge.Core.Caching.Abstractions;
-using Rayforge.Core.Caching.Transforms;
-using Rayforge.Core.Tests.Caching.Abstraction;
+using Rayforge.Core.Caching.Abstractions.Tests;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 
-namespace Rayforge.Core.Tests.Caching.Transforms
+namespace Rayforge.Core.Caching.Transforms.Tests
 {
     [TestFixture]
-    public class ConcurrentCachedTransformTests : CachedTransformContractTestBase<ConcurrentCachedTransform>
+    public class ConcurrentCachedTransformTests : CachedTransformContractTests<ConcurrentCachedTransform>
     {
         protected override ConcurrentCachedTransform CallCreateFactory(string name)
         {

@@ -1,10 +1,9 @@
 using NUnit.Framework;
-using Rayforge.Core.Collections.Iterator;
-using Rayforge.Core.Tests.Collections.Abstractions;
+using Rayforge.Core.Collections.Abstractions.Tests;
 using System;
-using UnityEngine;
+using Rayforge.Core.TestEnv;
 
-namespace Rayforge.Core.Tests.Collections.Iterator
+namespace Rayforge.Core.Collections.Iterator.Tests
 {
     [TestFixture(typeof(int))]
     [TestFixture(typeof(float))]
@@ -13,11 +12,15 @@ namespace Rayforge.Core.Tests.Collections.Iterator
     {
         #region IIterationLogic Impl
 
-        protected override (ArrayIteratorState<T> logic, T[] expectedValues) CreateLogic(int count)
+        protected override IterationData<T, ArrayIteratorState<T>> CreateLogic(int count)
         {
-            T[] items = TestDataUtility.CreateSampleItems<T>(count);
+            T[] items = TestUtility.CreateSampleItems<T>(count);
             var logic = new ArrayIteratorState<T>(items, 0, items.Length);
-            return (logic, items);
+            return new IterationData<T, ArrayIteratorState<T>>
+            {
+                logic = logic,
+                expected = items
+            };
         }
 
         #endregion
@@ -27,60 +30,65 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         [Test]
         public void Constructor_HandlesNullAndEmptyArrays_Gracefully()
         {
-            // Scenario 1: Null array
+            // Scenario 1: Null array should act as an empty iterator
             var nullState = new ArrayIteratorState<T>(null, 0, 10);
-            Assert.AreEqual(-1, GetPrivateField(nullState, "_index"));
-            Assert.AreEqual(0, GetPrivateField(nullState, "_end"));
+            Assert.IsFalse(nullState.HasNext(ref nullState), "Null array should be treated as empty.");
 
-            // Scenario 2: Empty array
+            // Scenario 2: Empty array should act as an empty iterator
             var emptyState = new ArrayIteratorState<T>(Array.Empty<T>(), 0, 10);
-            Assert.AreEqual(-1, GetPrivateField(emptyState, "_index"));
-            Assert.AreEqual(0, GetPrivateField(emptyState, "_end"));
+            Assert.IsFalse(emptyState.HasNext(ref emptyState), "Empty array should have no next elements.");
         }
 
         [Test]
-        [TestCase(-10, 5, 0, 5, Description = "Start < 0 -> clamped to 0")]
-        [TestCase(100, 5, 10, 0, Description = "Start > Length -> clamped to Length (Count becomes 0)")]
-        [TestCase(10, 0, 10, 0, Description = "Start exactly at Length -> valid empty iteration")]
-        public void Constructor_ClampsStartBoundary(int start, int count, int expectedStart, int expectedCount)
-        {
-            // Array length is 10
-            T[] array = new T[10];
-            var state = new ArrayIteratorState<T>(array, start, count);
-
-            Assert.AreEqual(expectedStart - 1, GetPrivateField(state, "_index"), "Start index not clamped correctly.");
-            Assert.AreEqual(expectedStart + expectedCount, GetPrivateField(state, "_end"), "End boundary based on clamped start is wrong.");
-        }
-
-        [Test]
-        [TestCase(0, -5, 0, 0, Description = "Count < 0 -> clamped to 0")]
-        [TestCase(0, 100, 0, 10, Description = "Count > Length -> clamped to remaining (Length)")]
-        [TestCase(5, 10, 5, 5, Description = "Count > remaining space -> clamped to remaining")]
-        public void Constructor_ClampsCountBoundary(int start, int count, int expectedStart, int expectedCount)
+        [TestCase(-10, 5, 5, Description = "Start < 0 -> clamped to 0, count remains 5")]
+        [TestCase(100, 5, 0, Description = "Start > Length -> clamped to Length, count becomes 0")]
+        [TestCase(10, 0, 0, Description = "Start exactly at Length -> empty iteration")]
+        public void Constructor_ClampsStartBoundary(int start, int count, int expectedCount)
         {
             T[] array = new T[10];
             var state = new ArrayIteratorState<T>(array, start, count);
 
-            Assert.AreEqual(expectedStart + expectedCount, GetPrivateField(state, "_end"), "Count not clamped to available array space.");
+            // Verify count by consuming the iterator
+            int consumed = 0;
+            while (state.MoveNext(ref state, out _)) consumed++;
+
+            Assert.AreEqual(expectedCount, consumed, "The number of consumed elements does not match the clamped range.");
         }
 
         [Test]
-        [TestCase(-50, -50, 0, 0, Description = "Both extremely negative")]
-        [TestCase(100, 100, 10, 0, Description = "Both extremely positive")]
-        [TestCase(int.MinValue, int.MaxValue, 0, 10, Description = "Extreme overflow potential")]
-        public void Constructor_HandlesNonsensicalCombinations(int start, int count, int expectedStart, int expectedCount)
+        [TestCase(0, -5, 0, Description = "Count < 0 -> clamped to 0")]
+        [TestCase(0, 100, 10, Description = "Count > Length -> clamped to remaining")]
+        public void Constructor_ClampsCountBoundary(int start, int count, int expectedCount)
         {
             T[] array = new T[10];
             var state = new ArrayIteratorState<T>(array, start, count);
 
-            // Verify that even with absurd inputs, the state remains within [0, 10]
-            int actualIndex = (int)GetPrivateField(state, "_index");
-            int actualEnd = (int)GetPrivateField(state, "_end");
+            int consumed = 0;
+            while (state.MoveNext(ref state, out _)) consumed++;
 
-            Assert.GreaterOrEqual(actualIndex, -1);
-            Assert.LessOrEqual(actualEnd, array.Length);
-            Assert.AreEqual(expectedStart - 1, actualIndex);
-            Assert.AreEqual(expectedStart + expectedCount, actualEnd);
+            Assert.AreEqual(expectedCount, consumed, "Count not clamped correctly to available array space.");
+        }
+
+        [Test]
+        [TestCase(-50, -50, 0, Description = "Both extremely negative -> Clamped to empty")]
+        [TestCase(100, 100, 0, Description = "Both extremely positive -> Clamped to empty")]
+        [TestCase(int.MinValue, int.MaxValue, 10, Description = "Extreme overflow potential -> Should cover full array")]
+        public void Constructor_HandlesNonsensicalCombinations(int start, int count, int expectedCount)
+        {
+            // Arrange: Array length is 10
+            T[] array = new T[10];
+            var state = new ArrayIteratorState<T>(array, start, count);
+
+            // Act: Count how many elements the iterator actually yields
+            int consumed = 0;
+            while (state.MoveNext(ref state, out _))
+            {
+                consumed++;
+            }
+
+            // Assert: Verify that the state behaves as expected despite nonsense input
+            Assert.AreEqual(expectedCount, consumed,
+                $"Iterator yielded {consumed} elements, but expected {expectedCount} based on clamping logic.");
         }
 
         #endregion
@@ -88,64 +96,10 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         #region HasNext Tests
 
         [Test]
-        public void HasNext_IsTrulyNonDestructive()
-        {
-            // Arrange
-            T[] array = TestDataUtility.CreateSampleItems<T>(2);
-            var state = new ArrayIteratorState<T>(array, 0, 2);
-
-            // Act
-            bool firstCheck = state.HasNext(ref state);
-            bool secondCheck = state.HasNext(ref state);
-            bool thirdCheck = state.HasNext(ref state);
-
-            // Assert
-            Assert.IsTrue(firstCheck, "Should have next element.");
-            Assert.IsTrue(secondCheck, "Should still have next element (non-destructive).");
-            Assert.IsTrue(thirdCheck, "State must not change no matter how often we call HasNext.");
-
-            // Verify internal index hasn't moved via MoveNext
-            state.MoveNext(ref state, out T result);
-            Assert.AreEqual(array[0], result, "Index should still be at the start after multiple HasNext calls.");
-        }
-
-        [Test]
-        public void HasNext_ReturnsFalse_AtExactEnd()
-        {
-            // Arrange: Array length 2, range count 1 (only index 0 is valid)
-            T[] array = TestDataUtility.CreateSampleItems<T>(2);
-            var state = new ArrayIteratorState<T>(array, 0, 1);
-
-            // Act
-            state.MoveNext(ref state, out _); // Move to index 0
-            bool hasMore = state.HasNext(ref state);
-
-            // Assert
-            Assert.IsFalse(hasMore, "HasNext should be false when the next index equals the clamped _end.");
-        }
-
-        [Test]
-        public void HasNext_HandlesExhaustion_Repeatedly()
-        {
-            // Arrange: Use a single element and move past it
-            T[] array = TestDataUtility.CreateSampleItems<T>(1);
-            var state = new ArrayIteratorState<T>(array, 0, 1);
-            state.MoveNext(ref state, out _); // Now at the end
-
-            // Act & Assert
-            Assert.IsFalse(state.HasNext(ref state));
-
-            // Simulate someone calling MoveNext anyway
-            bool moved = state.MoveNext(ref state, out _);
-            Assert.IsFalse(moved);
-            Assert.IsFalse(state.HasNext(ref state), "Should remain false even after invalid MoveNext calls.");
-        }
-
-        [Test]
         public void HasNext_WorksWithClampedNegativeStart()
         {
             // Arrange: Start -5 will be clamped to 0
-            T[] array = TestDataUtility.CreateSampleItems<T>(2);
+            T[] array = TestUtility.CreateSampleItems<T>(2);
             var state = new ArrayIteratorState<T>(array, -5, 2);
 
             // Assert
@@ -259,52 +213,33 @@ namespace Rayforge.Core.Tests.Collections.Iterator
         #region MoveNext Tests
 
         [Test]
-        public void MoveNext_StandardIteration_AdvancesAndReturnsValues()
-        {
-            // Arrange: Create test data based on T
-            T[] items = TestDataUtility.CreateSampleItems<T>(3);
-            var state = new ArrayIteratorState<T>(items, 0, 3);
-
-            // Act & Assert: Element 1
-            bool m1 = state.MoveNext(ref state, out T r1);
-            Assert.IsTrue(m1);
-            Assert.AreEqual(items[0], r1);
-            Assert.AreEqual(0, GetPrivateField(state, "_index"), "Index should be 0 after first MoveNext.");
-
-            // Act & Assert: Element 2
-            bool m2 = state.MoveNext(ref state, out T r2);
-            Assert.IsTrue(m2);
-            Assert.AreEqual(items[1], r2);
-            Assert.AreEqual(1, GetPrivateField(state, "_index"), "Index should be 1 after second MoveNext.");
-
-            // Act & Assert: Element 3
-            bool m3 = state.MoveNext(ref state, out T r3);
-            Assert.IsTrue(m3);
-            Assert.AreEqual(items[2], r3);
-        }
-
-        [Test]
         public void MoveNext_Exhaustion_ReturnsFalseAndDefault()
         {
-            // Arrange: Single element
-            T[] items = TestDataUtility.CreateSampleItems<T>(1);
+            // Arrange: Single element array
+            T[] items = TestUtility.CreateSampleItems<T>(1);
             var state = new ArrayIteratorState<T>(items, 0, 1);
 
-            // Act
-            state.MoveNext(ref state, out _); // Index -> 0
-            bool hasMore = state.MoveNext(ref state, out T result); // Index -> 1
+            // Act: Consume the single element
+            state.MoveNext(ref state, out _);
 
-            // Assert
+            // Attempt to move past the range
+            bool hasMore = state.MoveNext(ref state, out T result);
+
+            // Assert: Verify standard exhaustion contract
             Assert.IsFalse(hasMore, "MoveNext must return false when moving past the range.");
             Assert.AreEqual(default(T), result, "Result must be default(T) on failure.");
-            Assert.AreEqual(1, (int)GetPrivateField(state, "_index"), "Index should still increment even if invalid.");
+
+            // Verify consistency: The iterator must remain exhausted even after repeated calls
+            bool stillExhausted = state.MoveNext(ref state, out T subsequentResult);
+            Assert.IsFalse(stillExhausted, "MoveNext must remain false after full exhaustion.");
+            Assert.AreEqual(default(T), subsequentResult, "Result must remain default(T) after full exhaustion.");
         }
 
         [Test]
         public void MoveNext_RespectsClampedRange_NotArrayEnd()
         {
             // Arrange: Array of 5, but we only want a range of 2 starting at index 1
-            T[] items = TestDataUtility.CreateSampleItems<T>(5);
+            T[] items = TestUtility.CreateSampleItems<T>(5);
             var state = new ArrayIteratorState<T>(items, 1, 2); // Expected Elements: items[1], items[2]
 
             // Act
@@ -330,23 +265,6 @@ namespace Rayforge.Core.Tests.Collections.Iterator
             var nullState = new ArrayIteratorState<T>(null, 0, 0);
             Assert.IsFalse(nullState.MoveNext(ref nullState, out T r2));
             Assert.AreEqual(default(T), r2);
-        }
-
-        [Test]
-        public void MoveNext_AfterExhaustion_StaysFalse()
-        {
-            // Arrange
-            T[] items = TestDataUtility.CreateSampleItems<T>(1);
-            var state = new ArrayIteratorState<T>(items, 0, 1);
-
-            // Act
-            state.MoveNext(ref state, out _); // Valid (items[0])
-            bool firstFalse = state.MoveNext(ref state, out _); // Invalid
-            bool secondFalse = state.MoveNext(ref state, out _); // Still invalid
-
-            // Assert
-            Assert.IsFalse(firstFalse);
-            Assert.IsFalse(secondFalse, "Consecutive calls to MoveNext after end must remain false.");
         }
 
         #endregion
@@ -388,16 +306,9 @@ namespace Rayforge.Core.Tests.Collections.Iterator
 
         #region Helper Methods
 
-        private static object GetPrivateField<T>(ArrayIteratorState<T> instance, string fieldName)
+        private static bool InvokeIsValid<TType>(ArrayIteratorState<TType> state, int index)
         {
-            var field = typeof(ArrayIteratorState<T>).GetField(fieldName,
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            return field?.GetValue(instance);
-        }
-
-        private static bool InvokeIsValid<T>(ArrayIteratorState<T> state, int index)
-        {
-            var method = typeof(ArrayIteratorState<T>).GetMethod("IsValid",
+            var method = typeof(ArrayIteratorState<TType>).GetMethod("IsValid",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
 
             if (method == null) throw new System.Exception("Method IsValid not found.");

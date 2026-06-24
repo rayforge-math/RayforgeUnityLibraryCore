@@ -1,7 +1,6 @@
 using NUnit.Framework;
-using Rayforge.Core.Collections.Helpers;
 
-namespace Rayforge.Core.Tests.Collections.Helpers
+namespace Rayforge.Core.Collections.Helpers.Tests
 {
     [TestFixture]
     public class BufferMathTests

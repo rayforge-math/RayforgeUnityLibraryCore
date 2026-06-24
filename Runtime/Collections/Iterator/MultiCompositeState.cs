@@ -14,6 +14,7 @@ namespace Rayforge.Core.Collections.Iterator
     {
         private readonly IIterator<T>[] _sources;
         private int _index;
+        private readonly bool _isInitialized;
 
         /// <summary>
         /// Initializes the composite state with an array of source iterators.
@@ -23,23 +24,25 @@ namespace Rayforge.Core.Collections.Iterator
         {
             _sources = sources ?? Array.Empty<IIterator<T>>();
             _index = 0;
+            _isInitialized = true;
         }
 
-        /// <summary>
-        /// Checks if any of the remaining iterators in the chain have more elements.
-        /// Skips empty iterators until it finds one with data or reaches the end.
-        /// </summary>
+        /// <inheritdoc />
         public bool HasNext(ref MultiCompositeState<T> self)
         {
+            if (!self._isInitialized) return false;
             MoveBeforeNext(ref self);
             return self._index < self._sources.Length && self._sources[self._index].HasNext;
         }
 
-        /// <summary>
-        /// Allows peeking into the current active sub-iterator.
-        /// </summary>
+        /// <inheritdoc />
         public bool TryPeekNext(ref MultiCompositeState<T> self, out T result)
         {
+            if (!self._isInitialized)
+            {
+                result = default;
+                return false;
+            }
             MoveBeforeNext(ref self);
 
             if (self._index < self._sources.Length)
@@ -51,11 +54,14 @@ namespace Rayforge.Core.Collections.Iterator
             return false;
         }
 
-        /// <summary>
-        /// Advances the stream to the next element, switching to the next source if necessary.
-        /// </summary>
+        /// <inheritdoc />
         public bool MoveNext(ref MultiCompositeState<T> self, out T result)
         {
+            if (!self._isInitialized)
+            {
+                result = default;
+                return false;
+            }
             MoveBeforeNext(ref self);
 
             if (self._index < self._sources.Length)
@@ -76,15 +82,18 @@ namespace Rayforge.Core.Collections.Iterator
         /// Fast-forwards the index to the first iterator that reports HasNext.
         /// Aligns the state so that the current _index is the one to be consumed.
         /// </summary>
+        /// <param name="self">Reference to the current iterator state.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void MoveBeforeNext(ref MultiCompositeState<T> self)
         {
+            if (!self._isInitialized) return;
+
             var sources = self._sources;
             while (self._index < sources.Length)
             {
                 var current = sources[self._index];
 
-                // Skip null or empty iterators
+                // Skip null iterators or iterators without elements
                 if (current != null && current.HasNext)
                 {
                     return;

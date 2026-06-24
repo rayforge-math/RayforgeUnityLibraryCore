@@ -1,4 +1,5 @@
 using Rayforge.Core.Collections.Abstractions;
+using System;
 using System.Collections;
 
 namespace Rayforge.Core.Collections.Iterator
@@ -25,8 +26,20 @@ namespace Rayforge.Core.Collections.Iterator
         {
             _bits = bits;
             _targetState = targetState;
-            _currentIndex = startIndex - 1;
-            _endIndex = startIndex + count;
+
+            if (bits == null || bits.Length == 0 || count <= 0)
+            {
+                _currentIndex = -1;
+                _endIndex = 0;
+                return;
+            }
+
+            int actualStart = Math.Max(0, Math.Min(startIndex, bits.Length));
+            int remaining = bits.Length - actualStart;
+            int actualCount = Math.Max(0, Math.Min(count, remaining));
+
+            _currentIndex = actualStart - 1;
+            _endIndex = actualStart + actualCount;
         }
 
         /// <summary>

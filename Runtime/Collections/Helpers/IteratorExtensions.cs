@@ -34,6 +34,7 @@ namespace Rayforge.Core.Collections.Helpers
 
         // --- Array ---
         /// <summary> Returns a high-performance struct iterator for arrays. </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<T, EnumeratorState<T, ArraySegment<T>.Enumerator>> ToIterator<T>(this T[] array)
         {
             if (array == null)
@@ -42,45 +43,29 @@ namespace Rayforge.Core.Collections.Helpers
             return new ArraySegment<T>(array).GetEnumerator().ToIterator<T, ArraySegment<T>.Enumerator>();
         }
 
-        /// <summary> Returns a boxed interface iterator for arrays. </summary>
-        public static IIterator<T> ToIIterator<T>(this T[] array)
-            => array.ToIterator();
-
         // --- List ---
         /// <summary> Returns a high-performance struct iterator for List. </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<T, EnumeratorState<T, List<T>.Enumerator>> ToIterator<T>(this List<T>.Enumerator enumerator)
             => enumerator.ToIterator<T, List<T>.Enumerator>();
 
-        /// <summary> Returns a boxed interface iterator for List. </summary>
-        public static IIterator<T> ToIIterator<T>(this List<T>.Enumerator enumerator)
-            => enumerator.ToIterator();
-
         // --- HashSet ---
         /// <summary> Returns a high-performance struct iterator for HashSet. </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<T, EnumeratorState<T, HashSet<T>.Enumerator>> ToIterator<T>(this HashSet<T>.Enumerator enumerator)
             => enumerator.ToIterator<T, HashSet<T>.Enumerator>();
 
-        /// <summary> Returns a boxed interface iterator for HashSet. </summary>
-        public static IIterator<T> ToIIterator<T>(this HashSet<T>.Enumerator enumerator)
-            => enumerator.ToIterator();
-
         // --- Queue ---
         /// <summary> Returns a high-performance struct iterator for Queue. </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<T, EnumeratorState<T, Queue<T>.Enumerator>> ToIterator<T>(this Queue<T>.Enumerator enumerator)
             => enumerator.ToIterator<T, Queue<T>.Enumerator>();
 
-        /// <summary> Returns a boxed interface iterator for Queue. </summary>
-        public static IIterator<T> ToIIterator<T>(this Queue<T>.Enumerator enumerator)
-            => enumerator.ToIterator();
-
         // --- Stack ---
         /// <summary> Returns a high-performance struct iterator for Stack. </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<T, EnumeratorState<T, Stack<T>.Enumerator>> ToIterator<T>(this Stack<T>.Enumerator enumerator)
             => enumerator.ToIterator<T, Stack<T>.Enumerator>();
-
-        /// <summary> Returns a boxed interface iterator for Stack. </summary>
-        public static IIterator<T> ToIIterator<T>(this Stack<T>.Enumerator enumerator)
-            => enumerator.ToIterator();
 
         #endregion
 
@@ -88,30 +73,21 @@ namespace Rayforge.Core.Collections.Helpers
 
         // --- Full Dictionary ---
         /// <summary> Returns a high-performance struct iterator for Dictionary (KeyValuePair). </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<KeyValuePair<TKey, TValue>, EnumeratorState<KeyValuePair<TKey, TValue>, Dictionary<TKey, TValue>.Enumerator>> ToIterator<TKey, TValue>(this Dictionary<TKey, TValue>.Enumerator enumerator)
             => enumerator.ToIterator<KeyValuePair<TKey, TValue>, Dictionary<TKey, TValue>.Enumerator>();
 
-        /// <summary> Returns a boxed interface iterator for Dictionary. </summary>
-        public static IIterator<KeyValuePair<TKey, TValue>> ToIIterator<TKey, TValue>(this Dictionary<TKey, TValue>.Enumerator enumerator)
-            => enumerator.ToIterator();
-
         // --- Key Collection ---
         /// <summary> Returns a high-performance struct iterator for Dictionary Keys. </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<TKey, EnumeratorState<TKey, Dictionary<TKey, TValue>.KeyCollection.Enumerator>> ToIterator<TKey, TValue>(this Dictionary<TKey, TValue>.KeyCollection.Enumerator enumerator)
             => enumerator.ToIterator<TKey, Dictionary<TKey, TValue>.KeyCollection.Enumerator>();
 
-        /// <summary> Returns a boxed interface iterator for Dictionary Keys. </summary>
-        public static IIterator<TKey> ToIIterator<TKey, TValue>(this Dictionary<TKey, TValue>.KeyCollection.Enumerator enumerator)
-            => enumerator.ToIterator();
-
         // --- Value Collection ---
         /// <summary> Returns a high-performance struct iterator for Dictionary Values. </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<TValue, EnumeratorState<TValue, Dictionary<TKey, TValue>.ValueCollection.Enumerator>> ToIterator<TKey, TValue>(this Dictionary<TKey, TValue>.ValueCollection.Enumerator enumerator)
             => enumerator.ToIterator<TValue, Dictionary<TKey, TValue>.ValueCollection.Enumerator>();
-
-        /// <summary> Returns a boxed interface iterator for Dictionary Values. </summary>
-        public static IIterator<TValue> ToIIterator<TKey, TValue>(this Dictionary<TKey, TValue>.ValueCollection.Enumerator enumerator)
-            => enumerator.ToIterator();
 
         #endregion
 
@@ -119,21 +95,15 @@ namespace Rayforge.Core.Collections.Helpers
 
         // --- LinkedList ---
         /// <summary> Returns a high-performance struct iterator for LinkedList. </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<T, EnumeratorState<T, LinkedList<T>.Enumerator>> ToIterator<T>(this LinkedList<T>.Enumerator enumerator)
             => enumerator.ToIterator<T, LinkedList<T>.Enumerator>();
 
-        /// <summary> Returns a boxed interface iterator for LinkedList. </summary>
-        public static IIterator<T> ToIIterator<T>(this LinkedList<T>.Enumerator enumerator)
-            => enumerator.ToIterator();
-
         // --- SortedSet ---
         /// <summary> Returns a high-performance struct iterator for SortedSet. </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<T, EnumeratorState<T, SortedSet<T>.Enumerator>> ToIterator<T>(this SortedSet<T>.Enumerator enumerator)
             => enumerator.ToIterator<T, SortedSet<T>.Enumerator>();
-
-        /// <summary> Returns a boxed interface iterator for SortedSet. </summary>
-        public static IIterator<T> ToIIterator<T>(this SortedSet<T>.Enumerator enumerator)
-            => enumerator.ToIterator();
 
         #endregion
 
@@ -144,6 +114,7 @@ namespace Rayforge.Core.Collections.Helpers
         /// NOTE: While the returned Iterator is a struct, the 'params' array and the IIterator sources 
         /// within it are typically heap-allocated (Cold Path).
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<T, MultiCompositeState<T>> Combine<T>(params IIterator<T>[] sources)
         {
             if (sources == null || sources.Length == 0)
@@ -161,15 +132,6 @@ namespace Rayforge.Core.Collections.Helpers
             if (validCount == 0)
                 return new Iterator<T, MultiCompositeState<T>>(default);
             return new Iterator<T, MultiCompositeState<T>>(new MultiCompositeState<T>(sources));
-        }
-
-        /// <summary>
-        /// Combines multiple IIterators into a single sequential stream, returned as a boxed interface.
-        /// Useful for passing combined streams to methods that only accept IIterator.
-        /// </summary>
-        public static IIterator<T> CombineIIterator<T>(params IIterator<T>[] sources)
-        {
-            return Combine(sources);
         }
 
         #endregion

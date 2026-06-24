@@ -1,11 +1,10 @@
 using NUnit.Framework;
-using Rayforge.Core.Caching.Abstractions;
 
 using UnityEngine;
 
-namespace Rayforge.Core.Tests.Caching.Abstraction
+namespace Rayforge.Core.Caching.Abstractions.Tests
 {
-    public abstract class CachedTransformContractTestBase<TDerived>
+    public abstract class CachedTransformContractTests<TDerived>
         where TDerived : ICachedTransform
     {
         #region Abstract Members
