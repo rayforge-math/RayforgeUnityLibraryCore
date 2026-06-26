@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
-namespace Rayforge.Core.Collections.Buffered
+namespace Rayforge.Core.Collections.Buffering
 {
     /// <summary>
     /// A generic queue that manages pending Add/Update and Remove requests using custom Iterators.

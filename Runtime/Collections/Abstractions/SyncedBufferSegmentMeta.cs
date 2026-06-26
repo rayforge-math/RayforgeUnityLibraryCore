@@ -7,33 +7,18 @@ namespace Rayforge.Core.Collections.Abstractions
     /// Provides aligned memory ranges for a primary and a secondary buffer 
     /// that are processed within the same synchronization window.
     /// </summary>
-    public struct SyncedBufferSegmentMeta
+    public struct SyncedBufferSegmentMeta<T>
+        where T : unmanaged
     {
         /// <summary>
         /// The dirty range for the first data stream (e.g., Culling, Physics, or Logic).
         /// </summary>
-        public BufferSegmentMeta SegmentA;
+        public BufferSegmentMeta<T> SegmentA;
 
         /// <summary>
         /// The dirty range for the second data stream (e.g., Render, Interpolation, or Bake).
         /// </summary>
-        public BufferSegmentMeta SegmentB;
-
-        #region Semantic View (Culling & Render)
-
-        /// <summary>
-        /// Explicit alias for SegmentA. Use this for spatial/culling logic.
-        /// Points to the same memory range as SegmentA.
-        /// </summary>
-        public readonly BufferSegmentMeta Culling => SegmentA;
-
-        /// <summary>
-        /// Explicit alias for SegmentB. Use this for visual/rendering logic.
-        /// Points to the same memory range as SegmentB.
-        /// </summary>
-        public readonly BufferSegmentMeta Render => SegmentB;
-
-        #endregion
+        public BufferSegmentMeta<T> SegmentB;
 
         /// <summary>
         /// Helper property to determine if either of the segments contains pending changes.

@@ -19,8 +19,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /*
         private struct BakeSession : IDisposable
         {
-            public Iterator<BufferSegmentMeta, DirtySegmentIteratorState> RenderIterator;
-            public Iterator<BufferSegmentMeta, DirtySegmentIteratorState> CullingIterator;
+            public Iterator<BufferSegmentMeta, DirtyBufferSegmentState> RenderIterator;
+            public Iterator<BufferSegmentMeta, DirtyBufferSegmentState> CullingIterator;
 
             public bool IsActive => RenderIterator.HasNext || CullingIterator.HasNext;
 

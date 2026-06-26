@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Rayforge.Core.Collections.Buffered
+namespace Rayforge.Core.Collections.Buffering
 {
     /// <summary>
     /// Manages the occupancy of slots for an array-like buffer or resource pool.

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Rayforge.Core.Collections.Buffered
+namespace Rayforge.Core.Collections.Buffering
 {
     /// <summary>
     /// A lightweight index broker for GPU resource management. 

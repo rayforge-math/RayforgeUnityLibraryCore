@@ -1,5 +1,5 @@
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Collections.Buffered;
+using Rayforge.Core.Collections.Buffering;
 using Rayforge.Core.Collections.Helpers;
 using Rayforge.Core.Environment.Abstractions;
 using System;
@@ -12,8 +12,8 @@ namespace Rayforge.Core.Environment.Spatial
     /// </summary>
     public struct SyncedBufferIteratorState : IIterationLogic<SyncedBufferSegmentMeta, SyncedBufferIteratorState>
     {
-        private DirtySegmentIteratorState _scannerA;
-        private DirtySegmentIteratorState _scannerB;
+        private DirtyBufferSegmentState _scannerA;
+        private DirtyBufferSegmentState _scannerB;
 
         private int _resumeA;
         private int _resumeB;
@@ -33,7 +33,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="b">The second dirty segment scanner (e.g., Visual).</param>
         /// <param name="requestedWindowSize">The target size for the synchronization grid slots.</param>
         /// <exception cref="ArgumentException">Thrown if capacities or batch sizes are incompatible.</exception>
-        public SyncedBufferIteratorState(DirtySegmentIteratorState a, DirtySegmentIteratorState b, int requestedWindowSize)
+        public SyncedBufferIteratorState(DirtyBufferSegmentState a, DirtyBufferSegmentState b, int requestedWindowSize)
         {
             if (a.TotalCapacity != b.TotalCapacity)
             {
@@ -161,7 +161,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="windowEnd">The exclusive upper boundary of the current grid window.</param>
         /// <param name="result">The segment metadata to populate.</param>
         private static void SpanWindowForScanner(
-            ref DirtySegmentIteratorState scanner,
+            ref DirtyBufferSegmentState scanner,
             ref int resumeIndex,
             int windowEnd,
             ref BufferSegmentMeta result)

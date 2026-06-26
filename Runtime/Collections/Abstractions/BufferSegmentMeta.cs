@@ -4,17 +4,18 @@ namespace Rayforge.Core.Collections.Abstractions
 {
     /// <summary>
     /// Represents a contiguous range within a data array for GPU synchronization.
-    /// Provides helper methods for index calculations and segment merging.
+    /// Provides helper methods for index calculations and segment access.
     /// </summary>
-    public struct BufferSegmentMeta
+    /// <typeparam name="T">The unmanaged type of the elements in the buffer.</typeparam>
+    public struct BufferSegmentMeta<T> where T : unmanaged
     {
         /// <summary>
         /// The reference to the underlying data array.
         /// </summary>
-        public Array Source;
+        public T[] Source;
 
         /// <summary>
-        /// The starting index of the modified range.
+        /// The starting index of the range.
         /// </summary>
         public int Start;
 
@@ -42,6 +43,15 @@ namespace Rayforge.Core.Collections.Abstractions
         public bool Contains(int index)
         {
             return index >= Start && index < End;
+        }
+
+        /// <summary>
+        /// Provides a convenient way to access the segment as a Span.
+        /// </summary>
+        public Span<T> AsSpan()
+        {
+            if (Source == null || Count <= 0) return Span<T>.Empty;
+            return Source.AsSpan(Start, Count);
         }
     }
 }

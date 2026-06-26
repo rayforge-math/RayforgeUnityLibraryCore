@@ -5,7 +5,7 @@ using Rayforge.Core.Rendering.Abstractions;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using Rayforge.Core.Collections.Buffered;
+using Rayforge.Core.Collections.Buffering;
 using Rayforge.Core.Collections.Helpers;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering

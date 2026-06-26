@@ -47,7 +47,7 @@ namespace Rayforge.Core.Collections.Abstractions
         /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into a single segment.</param>
         void ForEachDirtySegment<T, TAction>(ref TAction action, bool mergeContiguous = true)
             where T : unmanaged
-            where TAction : struct, IExecutionHandler<BufferSegmentMeta>;
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta<T>>;
 
         /// <summary>
         /// Executes a specialized action for each dirty batch index of a specific metadata type.
@@ -73,7 +73,7 @@ namespace Rayforge.Core.Collections.Abstractions
         /// <typeparam name="T">The unmanaged metadata type.</typeparam>
         /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into a single segment.</param>
         /// <returns>A boxed iterator instance.</returns>
-        IIterator<BufferSegmentMeta> GetDirtySegmentIterator<T>(bool mergeContiguous = true)
+        IIterator<BufferSegmentMeta<T>> GetDirtySegmentIterator<T>(bool mergeContiguous = true)
             where T : unmanaged;
 
         /// <summary>

@@ -1,5 +1,5 @@
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Collections.Buffered;
+using Rayforge.Core.Collections.Buffering;
 using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Execution.Abstractions;

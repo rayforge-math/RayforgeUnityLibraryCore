@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
-namespace Rayforge.Core.Collections.Buffered
+namespace Rayforge.Core.Collections.Buffering
 {
     /// <summary>
     /// A centralized hub for managing GPU-bound metadata. 

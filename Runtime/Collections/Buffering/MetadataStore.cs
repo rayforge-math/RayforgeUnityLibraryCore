@@ -7,7 +7,7 @@ using System.Collections;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace Rayforge.Core.Collections.Buffered
+namespace Rayforge.Core.Collections.Buffering
 {
     /// <summary>
     /// A lightweight metadata container that manages a CPU-side array of shader data.
@@ -270,7 +270,7 @@ namespace Rayforge.Core.Collections.Buffered
             if (!m_AnyDirty) return;
 
             var scanner = GetDirtySegmentScanner(mergeContiguous);
-            var it = new Iterator<BufferSegmentMeta, DirtySegmentIteratorState>(scanner);
+            var it = new Iterator<BufferSegmentMeta, DirtyBufferSegmentState>(scanner);
 
             while (it.MoveNext())
             {
@@ -316,7 +316,7 @@ namespace Rayforge.Core.Collections.Buffered
             where TAction : struct, IExecutionHandler<BufferSegmentMeta>
         {
             var scanner = GetSegmentScanner();
-            var it = new Iterator<BufferSegmentMeta, SegmentIteratorState>(scanner);
+            var it = new Iterator<BufferSegmentMeta, BufferSegmentState<TValue>>(scanner);
 
             while (it.MoveNext())
             {
@@ -341,7 +341,7 @@ namespace Rayforge.Core.Collections.Buffered
             }
 
             var scanner = GetDirtySegmentScanner(mergeContiguous);
-            return new Iterator<BufferSegmentMeta, DirtySegmentIteratorState>(scanner);
+            return new Iterator<BufferSegmentMeta, DirtyBufferSegmentState>(scanner);
         }
 
         /// <summary>
@@ -379,7 +379,7 @@ namespace Rayforge.Core.Collections.Buffered
             }
 
             var scanner = GetSegmentScanner();
-            return new Iterator<BufferSegmentMeta, SegmentIteratorState>(scanner);
+            return new Iterator<BufferSegmentMeta, BufferSegmentState<TValue>>(scanner);
         }
 
         #endregion
@@ -393,9 +393,9 @@ namespace Rayforge.Core.Collections.Buffered
         /// </summary>
         /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into segments.</param>
         /// <returns>A stack-allocated state struct ready for iteration.</returns>
-        internal DirtySegmentIteratorState GetDirtySegmentScanner(bool mergeContiguous = false)
+        internal DirtyBufferSegmentState GetDirtySegmentScanner(bool mergeContiguous = false)
         {
-            return new DirtySegmentIteratorState(
+            return new DirtyBufferSegmentState(
                 m_CpuData,
                 m_DirtyBits,
                 m_BatchSize,
@@ -410,9 +410,9 @@ namespace Rayforge.Core.Collections.Buffered
         /// to avoid heap allocations and interface overhead.
         /// </summary>
         /// <returns>A stack-allocated state struct ready for iteration.</returns>
-        internal SegmentIteratorState GetSegmentScanner()
+        internal BufferSegmentState<TValue> GetSegmentScanner()
         {
-            return new SegmentIteratorState(
+            return new BufferSegmentState<TValue>(
                 m_CpuData,
                 m_BatchSize,
                 m_CpuData.Length
