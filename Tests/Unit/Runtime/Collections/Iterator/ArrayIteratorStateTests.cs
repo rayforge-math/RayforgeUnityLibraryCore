@@ -85,6 +85,51 @@ namespace Rayforge.Core.Collections.Iterator.Tests
 
         #endregion
 
+        #region MoveNext Tests
+
+        [Test]
+        public void MoveNext_Exhaustion_ReturnsFalseAndDefault()
+        {
+            // Arrange: Single element array
+            T[] items = TestUtility.CreateSampleItems<T>(1);
+            var state = new ArrayIteratorState<T>(items, 0, 1);
+
+            // Act: Consume the single element
+            state.MoveNext(ref state, out _);
+
+            // Attempt to move past the range
+            bool hasMore = state.MoveNext(ref state, out T result);
+
+            // Assert: Verify standard exhaustion contract
+            Assert.IsFalse(hasMore, "MoveNext must return false when moving past the range.");
+            Assert.AreEqual(default(T), result, "Result must be default(T) on failure.");
+
+            // Verify consistency: The iterator must remain exhausted even after repeated calls
+            bool stillExhausted = state.MoveNext(ref state, out T subsequentResult);
+            Assert.IsFalse(stillExhausted, "MoveNext must remain false after full exhaustion.");
+            Assert.AreEqual(default(T), subsequentResult, "Result must remain default(T) after full exhaustion.");
+        }
+
+        [Test]
+        public void MoveNext_RespectsClampedRange_NotArrayEnd()
+        {
+            // Arrange: Array of 5, but we only want a range of 2 starting at index 1
+            T[] items = TestUtility.CreateSampleItems<T>(5);
+            var state = new ArrayIteratorState<T>(items, 1, 2); // Expected Elements: items[1], items[2]
+
+            // Act
+            state.MoveNext(ref state, out T v1);
+            state.MoveNext(ref state, out T v2);
+            bool hasMore = state.MoveNext(ref state, out T v3);
+
+            // Assert
+            Assert.AreEqual(items[1], v1);
+            Assert.AreEqual(items[2], v2);
+            Assert.IsFalse(hasMore, "Should stop at clamped range end, not array end.");
+        }
+
+        #endregion
+
         #region TryPeekNext Tests
 
         [Test]
@@ -157,96 +202,69 @@ namespace Rayforge.Core.Collections.Iterator.Tests
 
         #endregion
 
-        #region MoveNext Tests
+        #region HasNext Tests
 
         [Test]
-        public void MoveNext_Exhaustion_ReturnsFalseAndDefault()
+        public void HasNext_EmptyRange_ReturnsFalse()
         {
-            // Arrange: Single element array
-            T[] items = TestUtility.CreateSampleItems<T>(1);
-            var state = new ArrayIteratorState<T>(items, 0, 1);
+            // Arrange: Start 0, Count 0
+            var items = TestUtility.CreateSampleItems<T>(10);
+            var state = new ArrayIteratorState<T>(items, 0, 0);
 
-            // Act: Consume the single element
-            state.MoveNext(ref state, out _);
-
-            // Attempt to move past the range
-            bool hasMore = state.MoveNext(ref state, out T result);
-
-            // Assert: Verify standard exhaustion contract
-            Assert.IsFalse(hasMore, "MoveNext must return false when moving past the range.");
-            Assert.AreEqual(default(T), result, "Result must be default(T) on failure.");
-
-            // Verify consistency: The iterator must remain exhausted even after repeated calls
-            bool stillExhausted = state.MoveNext(ref state, out T subsequentResult);
-            Assert.IsFalse(stillExhausted, "MoveNext must remain false after full exhaustion.");
-            Assert.AreEqual(default(T), subsequentResult, "Result must remain default(T) after full exhaustion.");
+            Assert.IsFalse(state.HasNext(ref state), "Should be false for empty range.");
         }
 
         [Test]
-        public void MoveNext_RespectsClampedRange_NotArrayEnd()
+        public void HasNext_FullRange_ReturnsTrueUntilEnd()
         {
-            // Arrange: Array of 5, but we only want a range of 2 starting at index 1
-            T[] items = TestUtility.CreateSampleItems<T>(5);
-            var state = new ArrayIteratorState<T>(items, 1, 2); // Expected Elements: items[1], items[2]
-
-            // Act
-            state.MoveNext(ref state, out T v1);
-            state.MoveNext(ref state, out T v2);
-            bool hasMore = state.MoveNext(ref state, out T v3);
-
-            // Assert
-            Assert.AreEqual(items[1], v1);
-            Assert.AreEqual(items[2], v2);
-            Assert.IsFalse(hasMore, "Should stop at clamped range end, not array end.");
-        }
-
-        #endregion
-
-        #region IsValid Tests
-
-        [Test]
-        public void IsValid_HandlesNullArray_ReturnsFalse()
-        {
-            // Arrange
-            var state = default(ArrayIteratorState<int>);
+            // Arrange: 3 elements (0, 1, 2)
+            var items = TestUtility.CreateSampleItems<T>(3);
+            var state = new ArrayIteratorState<T>(items, 0, 3);
 
             // Act & Assert
-            bool result = InvokeIsValid(state, 0);
-
-            Assert.IsFalse(result, "IsValid must return false if _array is null.");
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Index 0
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Index 1
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Index 2
+            Assert.IsFalse(state.HasNext(ref state), "Should be false after last element.");
         }
 
         [Test]
-        [TestCase(0, 5, 0, true, Description = "Valid index at start")]
-        [TestCase(0, 5, 4, true, Description = "Valid index at end")]
-        [TestCase(0, 5, -1, false, Description = "Index below zero")]
-        [TestCase(0, 5, 5, false, Description = "Index at _end (exclusive boundary)")]
-        [TestCase(2, 3, 5, false, Description = "Index exceeds _end even if within array length")]
-        public void IsValid_VerifiesBoundsCorrectly(int start, int count, int testIndex, bool expected)
+        public void HasNext_OffsetRange_ReturnsTrueOnlyWithinBounds()
         {
-            // Arrange
-            var array = new int[10];
-            var state = new ArrayIteratorState<int>(array, start, count);
+            // Arrange: Range [5, 6] (Count 2)
+            var items = TestUtility.CreateSampleItems<T>(10);
+            var state = new ArrayIteratorState<T>(items, 5, 2);
 
-            // Act
-            bool result = InvokeIsValid(state, testIndex);
-
-            // Assert
-            Assert.AreEqual(expected, result, $"IsValid logic failed for Index {testIndex}");
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Index 5
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Index 6
+            Assert.IsFalse(state.HasNext(ref state), "Should be false after offset 6.");
         }
 
-        #endregion
-
-        #region Helper Methods
-
-        private static bool InvokeIsValid<TType>(ArrayIteratorState<TType> state, int index)
+        [Test]
+        public void HasNext_SingleElementRange_ReturnsTrueOnlyOnce()
         {
-            var method = typeof(ArrayIteratorState<TType>).GetMethod("IsValid",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            // Arrange: Range [2, 2] (Count 1)
+            var items = TestUtility.CreateSampleItems<T>(10);
+            var state = new ArrayIteratorState<T>(items, 2, 1);
 
-            if (method == null) throw new System.Exception("Method IsValid not found.");
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _);
+            Assert.IsFalse(state.HasNext(ref state), "Should be false after consuming single element.");
+        }
 
-            return (bool)method.Invoke(null, new object[] { state, index });
+        [Test]
+        public void HasNext_EmptyArray_ReturnsFalse()
+        {
+            // Arrange: Array length 0, Request 0 elements
+            var items = new T[0];
+            var state = new ArrayIteratorState<T>(items, 0, 0);
+
+            Assert.IsFalse(state.HasNext(ref state), "Empty array must return false.");
         }
 
         #endregion

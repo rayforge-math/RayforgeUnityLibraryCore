@@ -68,19 +68,16 @@ namespace Rayforge.Core.Collections.Helpers.Tests
         }
 
         [Test]
-        public void ToIterator_Array_Null_ReturnsEmptyIterator_NoThrow()
+        public void ToIterator_Array_Null_DoesThrow()
         {
-            // Essential nonsense test: A null array must not cause a NullReferenceException.
-            // It should instead return a valid "Empty" iterator struct.
+            // Arrange: Array is null, which is an invalid input for this factory
             int[] source = null;
 
-            Assert.DoesNotThrow(() =>
+            // Act & Assert: It must throw an ArgumentNullException
+            Assert.Throws<ArgumentNullException>(() =>
             {
                 var iterator = source.ToIterator();
-
-                Assert.IsNotNull(iterator);
-                Assert.IsFalse(iterator.MoveNext(), "Iterator for null array must be empty.");
-            });
+            }, "ToIterator should throw an ArgumentNullException when the source array is null.");
         }
 
         [Test]
@@ -365,12 +362,14 @@ namespace Rayforge.Core.Collections.Helpers.Tests
         #region Composite & Utility Tests
 
         [Test]
-        public void Combine_NullInput_YieldsDormantIterator()
+        public void Combine_NullInput_DoesThrow()
         {
-            // Verifies that a null array results in a safe, non-throwing iterator
-            var iterator = IteratorExtensions.Combine<int>(null);
-
-            Assert.IsFalse(iterator.MoveNext(), "Iterator created from null sources must be immediately exhausted.");
+            // Arrange: Provide null as the sources array
+            // Act & Assert: It must throw an ArgumentNullException to maintain consistency
+            Assert.Throws<ArgumentNullException>(() =>
+            {
+                IteratorExtensions.Combine<int>(null);
+            }, "Combine should throw an ArgumentNullException when the source array is null.");
         }
 
         [Test]
@@ -380,15 +379,6 @@ namespace Rayforge.Core.Collections.Helpers.Tests
             var iterator = IteratorExtensions.Combine(new IIterator<int>[0]);
 
             Assert.IsFalse(iterator.MoveNext(), "Iterator created from empty sources must be immediately exhausted.");
-        }
-
-        [Test]
-        public void Combine_AllInvalidSources_IsSafeToIterate()
-        {
-            // Verify that nulls and Empty-iterators are effectively ignored
-            var iterator = IteratorExtensions.Combine<int>(null, IIterator<int>.Empty(), null);
-
-            Assert.IsFalse(iterator.MoveNext(), "Iterator with only invalid sources must be empty.");
         }
 
         #endregion

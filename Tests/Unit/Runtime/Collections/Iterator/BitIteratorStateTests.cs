@@ -212,6 +212,23 @@ namespace Rayforge.Core.Collections.Iterator.Tests
 
         #endregion
 
+        #region HasNext Tests
+
+        [Test]
+        public void HasNext_DefaultStruct_ReturnsFalse_InsteadOfThrowing()
+        {
+            // Arrange: default(BitIteratorState) hat null-Referenzen (BitArray)
+            var state = default(BitIteratorState);
+
+            // Act & Assert: Muss sicher false zurückgeben, statt abzustürzen
+            Assert.DoesNotThrow(() => {
+                bool hasNext = state.HasNext(ref state);
+                Assert.IsFalse(hasNext);
+            });
+        }
+
+        #endregion
+
         #region MoveNext Tests
 
         [Test]
@@ -225,47 +242,6 @@ namespace Rayforge.Core.Collections.Iterator.Tests
                 Assert.IsFalse(success);
                 Assert.AreEqual(0, result);
             });
-        }
-
-        #endregion
-
-        #region IsValid Tests
-
-        [Test]
-        [TestCase(0, 5, 0, true, Description = "Start of range")]
-        [TestCase(0, 5, 4, true, Description = "End of range")]
-        [TestCase(0, 5, 5, false, Description = "At endIndex boundary")]
-        [TestCase(0, 10, 11, false, Description = "Beyond BitArray length")]
-        [TestCase(0, 5, -1, false, Description = "Negative index")]
-        public void IsValid_ReturnsCorrectState(int start, int count, int testIndex, bool expected)
-        {
-            // Arrange
-            var bits = new BitArray(10);
-            var state = new BitIteratorState(bits, start, count);
-
-            // Act
-            bool result = InvokeIsValid(state, testIndex);
-
-            // Assert
-            Assert.AreEqual(expected, result, $"IsValid failed for index {testIndex} with range [{start}, {start + count})");
-        }
-
-        [Test]
-        [TestCase(0)]
-        [TestCase(-1)]
-        [TestCase(100)]
-        public void IsValid_WhenBitsIsNull_ReturnsFalse_AndDoesNotThrow(int testIndex)
-        {
-            // Arrange: Ein State, dessen BitArray null ist (z.B. durch default(BitIteratorState))
-            var state = new BitIteratorState(null, 0, 10);
-
-            // Act & Assert
-            Assert.DoesNotThrow(() =>
-            {
-                bool result = InvokeIsValid(state, testIndex);
-
-                Assert.IsFalse(result, $"IsValid must return false for index {testIndex} when _bits is null.");
-            }, $"IsValid threw an exception for index {testIndex} when _bits was null!");
         }
 
         #endregion
@@ -321,20 +297,6 @@ namespace Rayforge.Core.Collections.Iterator.Tests
                 bool found = state.MoveNext(ref state, out _);
                 Assert.IsFalse(found, "Null BitArray must be treated as exhausted.");
             }, "MoveNext must handle null _bits safely without throwing.");
-        }
-
-        #endregion
-
-        #region Helper Methods
-
-        private static bool InvokeIsValid(BitIteratorState state, int index)
-        {
-            var method = typeof(BitIteratorState).GetMethod("IsValid",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-
-            if (method == null) throw new System.Exception("Method IsValid not found.");
-
-            return (bool)method.Invoke(null, new object[] { state, index });
         }
 
         #endregion

@@ -22,7 +22,16 @@ namespace Rayforge.Core.Collections.Iterator
         /// <param name="sources">The iterators to be processed sequentially.</param>
         public MultiCompositeState(params IIterator<T>[] sources)
         {
-            _sources = sources ?? Array.Empty<IIterator<T>>();
+            if (sources == null)
+                throw new ArgumentNullException(nameof(sources), "The sources array cannot be null.");
+
+            for (int i = 0; i < sources.Length; i++)
+            {
+                if (sources[i] == null)
+                    throw new ArgumentNullException(nameof(sources), $"Iterator at index {i} cannot be null.");
+            }
+
+            _sources = sources;
             _index = 0;
             _isInitialized = true;
         }

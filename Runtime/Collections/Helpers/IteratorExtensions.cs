@@ -36,12 +36,7 @@ namespace Rayforge.Core.Collections.Helpers
         /// <summary> Returns a high-performance struct iterator for arrays. </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<T, EnumeratorState<T, ArraySegment<T>.Enumerator>> ToIterator<T>(this T[] array)
-        {
-            if (array == null)
-                return new Iterator<T, EnumeratorState<T, ArraySegment<T>.Enumerator>>(default);
-
-            return new ArraySegment<T>(array).GetEnumerator().ToIterator<T, ArraySegment<T>.Enumerator>();
-        }
+            => new ArraySegment<T>(array).GetEnumerator().ToIterator<T, ArraySegment<T>.Enumerator>();
 
         // --- List ---
         /// <summary> Returns a high-performance struct iterator for List. </summary>
@@ -116,23 +111,7 @@ namespace Rayforge.Core.Collections.Helpers
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Iterator<T, MultiCompositeState<T>> Combine<T>(params IIterator<T>[] sources)
-        {
-            if (sources == null || sources.Length == 0)
-                return new Iterator<T, MultiCompositeState<T>>(default);
-
-            int validCount = 0;
-            for (int i = 0; i < sources.Length; i++)
-            {
-                if (sources[i] != null && sources[i] != IIterator<T>.Empty())
-                {
-                    validCount++;
-                }
-            }
-
-            if (validCount == 0)
-                return new Iterator<T, MultiCompositeState<T>>(default);
-            return new Iterator<T, MultiCompositeState<T>>(new MultiCompositeState<T>(sources));
-        }
+            => new Iterator<T, MultiCompositeState<T>>(new MultiCompositeState<T>(sources));
 
         #endregion
     }

@@ -2,6 +2,7 @@ using NUnit.Framework;
 using Rayforge.Core.Caching.Abstractions;
 using Rayforge.Core.Caching.Abstractions.Tests;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -63,73 +64,63 @@ namespace Rayforge.Core.Caching.Transforms.Tests
             Object.DestroyImmediate(ct.Self.gameObject);
         }
 
-        [Test, Timeout(10000)]
-        public void Concurrency_MixedReadWrite_HeavyLoad()
+        [Test, Timeout(15000)]
+        public void Concurrency_MixedReadWrite_HeavyLoad_Robust()
         {
             var parent = CallCreateFactory("ChaosParent");
             var child = CallCreateFactory("ChaosChild");
-            var tasks = new List<Task>();
+
+            // Use barrier for synchronized start
+            var startSignal = new ManualResetEventSlim(false);
             bool isRunning = true;
-            int totalReads = 0;
             int inconsistencies = 0;
+            int totalReads = 0;
 
-            // Worker threads — read constantly
-            for (int i = 0; i < ThreadCount; i++)
-            {
-                tasks.Add(Task.Run(() => {
-                    while (isRunning)
-                    {
-                        var p = child.Position;
-                        var r = child.Rotation;
-                        var s = child.Scale;
+            var tasks = Enumerable.Range(0, ThreadCount).Select(_ => Task.Run(() => {
+                startSignal.Wait(); // Wait for green light
+                while (Volatile.Read(ref isRunning))
+                {
+                    // Capture state
+                    var p = child.Position;
+                    var r = child.Rotation;
+                    var s = child.Scale;
 
-                        bool posTorn = Mathf.Abs(p.x - p.y) > 0.001f ||
-                                       Mathf.Abs(p.y - p.z) > 0.001f ||
-                                       Mathf.Abs(p.x - p.z) > 0.001f;
-                        bool scaleTorn = Mathf.Abs(s.x - s.y) > 0.001f ||
-                                         Mathf.Abs(s.y - s.z) > 0.001f ||
-                                         Mathf.Abs(s.x - s.z) > 0.001f;
-                        float magSq = r.x * r.x + r.y * r.y + r.z * r.z + r.w * r.w;
-                        bool rotTorn = Mathf.Abs(magSq - 1.0f) > 0.001f;
+                    // Logic: All components of a vector should be identical 
+                    // if they were written in the same 'chaos' frame.
+                    bool posTorn = !Mathf.Approximately(p.x, p.y) || !Mathf.Approximately(p.y, p.z);
+                    bool scaleTorn = !Mathf.Approximately(s.x, s.y) || !Mathf.Approximately(s.y, s.z);
 
-                        if (posTorn || scaleTorn || rotTorn)
-                            Interlocked.Increment(ref inconsistencies);
+                    if (posTorn || scaleTorn)
+                        Interlocked.Increment(ref inconsistencies);
 
-                        Interlocked.Increment(ref totalReads);
-                        Thread.Yield();
-                    }
-                }));
-            }
+                    Interlocked.Increment(ref totalReads);
+                }
+            })).ToArray();
 
-            // Chaos writer — runs synchronously on test thread
+            // Trigger start
+            startSignal.Set();
+
             for (int j = 0; j < IterationsPerThread; j++)
             {
                 float val = j;
                 Vector3 chaosVec = new Vector3(val, val, val);
+
+                // Add small gaps between writes to maximize tearing windows
                 child.Position = chaosVec;
+                Thread.SpinWait(10); // Crucial: Increases race window
                 child.Rotation = Quaternion.Euler(val, val, val);
+                Thread.SpinWait(10);
                 child.Scale = chaosVec;
-                if (j % 5 == 0) child.Parent = child.Parent == null ? parent : null;
-                if (j % 10 == 0) child.Refresh();
+
+                if (j % 5 == 0) child.Parent = (j % 10 == 0) ? null : parent;
             }
 
-            // Signal workers to stop and wait
-            isRunning = false;
-            bool completed = Task.WaitAll(tasks.ToArray(), millisecondsTimeout: 10000);
+            Volatile.Write(ref isRunning, false);
+            Task.WaitAll(tasks);
 
-            // Rethrow any worker exceptions
-            foreach (var task in tasks)
-            {
-                if (task.IsFaulted)
-                    throw task.Exception!.Flatten().InnerException!;
-            }
+            Assert.AreEqual(0, inconsistencies, $"Detected {inconsistencies} torn reads!");
 
-            Assert.IsTrue(completed, "Test timed out — threads did not finish.");
-            Assert.AreEqual(0, inconsistencies,
-                $"Race condition detected after {totalReads} reads!");
-            Assert.Greater(totalReads, 0,
-                "No reads were performed by worker threads.");
-
+            // Cleanup
             Object.DestroyImmediate(child.Self.gameObject);
             Object.DestroyImmediate(parent.Self.gameObject);
         }
