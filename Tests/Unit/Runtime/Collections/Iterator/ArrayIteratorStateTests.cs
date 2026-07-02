@@ -12,11 +12,11 @@ namespace Rayforge.Core.Collections.Iterator.Tests
     {
         #region IIterationLogic Impl
 
-        protected override IterationData<T, ArrayIteratorState<T>> CreateLogic(int count)
+        protected override IterationTestData<T, ArrayIteratorState<T>> CreateLogic(int count)
         {
             T[] items = TestUtility.CreateSampleItems<T>(count);
             var logic = new ArrayIteratorState<T>(items, 0, items.Length);
-            return new IterationData<T, ArrayIteratorState<T>>
+            return new IterationTestData<T, ArrayIteratorState<T>>
             {
                 logic = logic,
                 expected = items

@@ -19,7 +19,7 @@ namespace Rayforge.Core.Collections.Iterator.Tests
     {
         #region IIterationLogic Impl
 
-        protected override IterationData<T, MockLogic<T>> CreateLogic(int count)
+        protected override IterationTestData<T, MockLogic<T>> CreateLogic(int count)
             => CreateDefaultMockLogic(count);
 
         #endregion

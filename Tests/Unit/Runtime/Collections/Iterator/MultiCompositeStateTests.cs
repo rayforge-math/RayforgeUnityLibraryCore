@@ -15,7 +15,7 @@ namespace Rayforge.Core.Collections.Iterator.Tests
     {
         #region IIterationLogic Implementation
 
-        protected override IterationData<T, MultiCompositeState<T>> CreateLogic(int count)
+        protected override IterationTestData<T, MultiCompositeState<T>> CreateLogic(int count)
         {
             var samples = TestUtility.CreateSampleItems<T>(count);
             var logicSources = new IIterator<T>[count];
@@ -27,7 +27,7 @@ namespace Rayforge.Core.Collections.Iterator.Tests
                 logicSources[i] = new Iterator<T, MockLogic<T>>(logic);
             }
 
-            return new IterationData<T, MultiCompositeState<T>>
+            return new IterationTestData<T, MultiCompositeState<T>>
             {
                 logic = new MultiCompositeState<T>(logicSources),
                 expected = samples

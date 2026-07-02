@@ -13,12 +13,12 @@ namespace Rayforge.Core.Collections.Iterator.Tests
     {
         #region IIterationLogic Impl
 
-        protected override IterationData<T, EnumeratorState<T, List<T>.Enumerator>> CreateLogic(int count)
+        protected override IterationTestData<T, EnumeratorState<T, List<T>.Enumerator>> CreateLogic(int count)
         {
             T[] items = TestUtility.CreateSampleItems<T>(count);
             var list = items.ToList();
             var logic = new EnumeratorState<T, List<T>.Enumerator>(list.GetEnumerator());
-            return new IterationData<T, EnumeratorState<T, List<T>.Enumerator>>
+            return new IterationTestData<T, EnumeratorState<T, List<T>.Enumerator>>
             {
                 logic = logic,
                 expected = items

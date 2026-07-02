@@ -8,7 +8,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
     /// </summary>
     /// <typeparam name="T">The element type.</typeparam>
     /// <typeparam name="TLogic">The specific iteration logic struct.</typeparam>
-    public struct IterationData<T, TLogic>
+    public struct IterationTestData<T, TLogic>
         where TLogic : struct, IIterationLogic<T, TLogic>
     {
         #region Fields
@@ -28,11 +28,11 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         #region Constructor
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="IterationData{T, TLogic}"/> struct.
+        /// Initializes a new instance of the <see cref="IterationTestData{T, TLogic}"/> struct.
         /// </summary>
         /// <param name="logic">The logic state.</param>
         /// <param name="expected">The expected output collection.</param>
-        public IterationData(TLogic logic, T[] expected)
+        public IterationTestData(TLogic logic, T[] expected)
         {
             this.logic = logic;
             this.expected = expected;

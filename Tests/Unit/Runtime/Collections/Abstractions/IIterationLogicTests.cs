@@ -8,9 +8,9 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
     {
         #region Create Test Env
 
-        protected abstract IterationData<T, TLogic> CreateLogic(int count);
+        protected abstract IterationTestData<T, TLogic> CreateLogic(int count);
 
-        public static IterationData<T, MockLogic<T>> CreateDefaultMockLogic(int count)
+        public static IterationTestData<T, MockLogic<T>> CreateDefaultMockLogic(int count)
         {
             T[] items = TestUtility.CreateSampleItems<T>(count);
 
@@ -20,7 +20,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
                 Index = 0
             };
 
-            return new IterationData<T, MockLogic<T>>
+            return new IterationTestData<T, MockLogic<T>>
             {
                 logic = logic,
                 expected = items

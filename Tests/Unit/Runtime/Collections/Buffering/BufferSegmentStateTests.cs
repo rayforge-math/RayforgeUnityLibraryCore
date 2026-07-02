@@ -15,7 +15,7 @@ namespace Rayforge.Core.Collections.Buffering.Tests
     {
         #region IIterationLogic Impl
 
-        protected override IterationData<BufferSegmentMeta<T>, BufferSegmentState<T>> CreateLogic(int count)
+        protected override IterationTestData<BufferSegmentMeta<T>, BufferSegmentState<T>> CreateLogic(int count)
         {
             T[] items = TestUtility.CreateSampleItems<T>(count);
             var logic = new BufferSegmentState<T>(items, 0, items.Length, 1);
@@ -31,7 +31,7 @@ namespace Rayforge.Core.Collections.Buffering.Tests
                 };
             }
 
-            return new IterationData<BufferSegmentMeta<T>, BufferSegmentState<T>>
+            return new IterationTestData<BufferSegmentMeta<T>, BufferSegmentState<T>>
             {
                 logic = logic,
                 expected = expected

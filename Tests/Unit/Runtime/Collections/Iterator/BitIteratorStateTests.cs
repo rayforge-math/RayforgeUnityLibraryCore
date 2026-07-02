@@ -10,11 +10,11 @@ namespace Rayforge.Core.Collections.Iterator.Tests
     {
         #region IIterationLogic Impl
 
-        protected override IterationData<int, BitIteratorState> CreateLogic(int count)
+        protected override IterationTestData<int, BitIteratorState> CreateLogic(int count)
         {
             if (count <= 0)
             {
-                return new IterationData<int, BitIteratorState>
+                return new IterationTestData<int, BitIteratorState>
                 {
                     logic = new BitIteratorState(new BitArray(0), 0, 0),
                     expected = Array.Empty<int>()
@@ -39,7 +39,7 @@ namespace Rayforge.Core.Collections.Iterator.Tests
             }
 
             var logic = new BitIteratorState(bits, 0, bitArrayLength, targetState: true);
-            return new IterationData<int, BitIteratorState>
+            return new IterationTestData<int, BitIteratorState>
             {
                 logic = logic,
                 expected = expectedList.ToArray()
