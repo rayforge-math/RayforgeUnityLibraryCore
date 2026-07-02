@@ -16,24 +16,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// </summary>
     public class TextureChunkCoordinator
     {
-        /*
-        private struct BakeSession : IDisposable
-        {
-            public Iterator<BufferSegmentMeta, DirtyBufferSegmentState> RenderIterator;
-            public Iterator<BufferSegmentMeta, DirtyBufferSegmentState> CullingIterator;
-
-            public bool IsActive => RenderIterator.HasNext || CullingIterator.HasNext;
-
-            public void Dispose()
-            {
-                RenderIterator.Dispose();
-                CullingIterator.Dispose();
-            }
-        }*/
-
-        private const string Tag = "[TextureCoordinator]";
-
-        private readonly LodAtlasMapper<Vector3Int> _mapper = new();
+        private readonly SphereLodAtlasMapper<Vector3Int> _mapper = new();
         private readonly LODChunkRegistry<TextureLodChunk> _chunkRegistry = new();
 
         #region GPU Buffer Metadata Access
@@ -65,12 +48,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <summary>
         /// Gets the stride (byte size) for the culling data buffer.
         /// </summary>
-        public int CullingStride => _mapper?.Registry.CullingMetadata.Stride ?? 0;
+        public int CullingStride => _mapper?.Registry.GetStride<SphereSpatialData>() ?? 0;
 
         /// <summary>
         /// Gets the stride (byte size) for the render mapping buffer.
         /// </summary>
-        public int RenderStride => _mapper?.Registry.RenderMetadata.Stride ?? 0;
+        public int RenderStride => _mapper?.Registry.GetStride<TextureMappingData>() ?? 0;
 
         /// <summary>
         /// Gets the highest index currently in use to optimize Compute Shader dispatch.
@@ -128,7 +111,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             }
             catch (Exception e)
             {
-                throw new Exception($"{Tag} Initialization failed. Check your LOD settings and spatial configuration: {e.Message}", e);
+                throw new Exception($"Initialization failed. Check your LOD settings and spatial configuration: {e.Message}", e);
             }
         }
 
@@ -325,7 +308,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             }
             catch (Exception e)
             {
-                throw new Exception($"{Tag} Topology update failed: {e.Message}", e);
+                throw new Exception($"Topology update failed: {e.Message}", e);
             }
         }
 
@@ -358,7 +341,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             }
             catch (Exception e)
             {
-                throw new Exception($"{Tag} Bake execution failed: {e.Message}", e);
+                throw new Exception($"Bake execution failed: {e.Message}", e);
             }
             finally
             {

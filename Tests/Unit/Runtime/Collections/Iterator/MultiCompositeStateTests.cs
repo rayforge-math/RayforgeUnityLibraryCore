@@ -2,7 +2,6 @@ using NUnit.Framework;
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Helpers;
 using Rayforge.Core.Collections.Abstractions.Tests;
-using Rayforge.Core.Collections.Iterator;
 using System;
 
 using Rayforge.Core.TestEnv;

@@ -14,7 +14,10 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     /// Manages a multi-LOD texture atlas by calculating slice requirements.
     /// </summary>
     /// <typeparam name="TKey">The unique identifier type for tiles (must be equatable).</typeparam>
-    public class LodAtlasMapper<TKey> where TKey : struct, IEquatable<TKey>
+    public abstract class LodAtlasMapper<TKey, TSpatial, TRegistry>
+        where TKey : struct, IEquatable<TKey>
+        where TSpatial : unmanaged, ISpatialData
+        where TRegistry : SpatialMetadataRegistry<TKey, TSpatial, TextureMappingData>
     {
         #region Internal Types
 
@@ -32,7 +35,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             public TKey Key;
             public int LodIndex;
             public Vector3 WorldPos;
-            public float Radius;
+            public float Extent;
         }
 
         #endregion
@@ -40,7 +43,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         #region Private State
 
         private LodAtlasLayout m_Layout;
-        private SphereMetadataRegistry<TKey, TextureMappingData> m_Registry;
+        private TRegistry m_Registry;
         private LinearSlotAllocator[] m_Allocators;
 
         private readonly RequestQueue<TKey, TileUpdateRequest> m_Queue = new();
@@ -80,7 +83,15 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <summary>
         /// Provides read-only access to the underlying metadata registry.
         /// </summary>
-        public ISpatialMetadataRegistry Registry => m_Registry; 
+        public IReadOnlySpatialMetadataProvider<TKey, TSpatial, TextureMappingData> Registry => m_Registry;
+
+        #endregion
+
+        #region Abstract Methods
+
+        protected abstract TRegistry CreateRegistry(int totalCapacity, int batchSize);
+
+        protected abstract TSpatial CreateSpatialEntry(Vector3 worldPos, float extent);
 
         #endregion
 
@@ -204,7 +215,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             }
 
             if (m_Registry == null)
-                m_Registry = new SphereMetadataRegistry<TKey, TextureMappingData>(m_Layout.TotalCombinedCapacity, batchSize);
+                CreateRegistry(m_Layout.TotalCombinedCapacity, batchSize);
             else
                 m_Registry.Reconfigure(m_Layout.TotalCombinedCapacity, batchSize);
 
@@ -222,12 +233,12 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <param name="key">The unique identifier for the tile.</param>
         /// <param name="lodIndex">The target LOD level index.</param>
         /// <param name="worldPos">The world space position for spatial culling.</param>
-        /// <param name="radius">The bounding radius for spatial culling.</param>
+        /// <param name="extent">The bounding extent for spatial culling.</param>
         /// <remarks>
         /// If the tile was previously queued for removal in the same frame, the removal is cancelled.
         /// If multiple updates are queued for the same key, only the last one is preserved.
         /// </remarks>
-        public void RequestTile(TKey key, int lodIndex, Vector3 worldPos, float radius)
+        public void RequestTile(TKey key, int lodIndex, Vector3 worldPos, float extent)
         {
             if (lodIndex < 0 || lodIndex >= m_Allocators.Length) return;
 
@@ -236,7 +247,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 Key = key,
                 LodIndex = lodIndex,
                 WorldPos = worldPos,
-                Radius = radius
+                Extent = extent
             });
         }
 
@@ -292,14 +303,14 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// Provides a fresh iterator for all segments that need a GPU update (metadata or texture).
         /// </summary>
         /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
-        public IIterator<BufferSegmentMeta> GetCullingDirtyIterator(bool merge = false)
+        public IIterator<BufferSegmentMeta<TSpatial>> GetCullingDirtyIterator(bool merge = false)
             => m_Registry.GetCullingDirtyIterator(merge);
 
         /// <summary>
         /// Provides a fresh iterator for all segments that need a GPU update (metadata or texture).
         /// </summary>
         /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
-        public IIterator<BufferSegmentMeta> GetRenderDirtyIterator(bool merge = false)
+        public IIterator<BufferSegmentMeta<TextureMappingData>> GetRenderDirtyIterator(bool merge = false)
             => m_Registry.GetRenderDirtyIterator(merge);
 
         /// <summary>
@@ -310,7 +321,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// How many dirty batches to process in one sync window. 
         /// Higher values reduce SetData calls, lower values improve time-slicing granularity.
         /// </param>
-        public IIterator<SyncedBufferSegmentMeta> GetSyncedDirtyIterator(int batchesPerWindow = 1)
+        public IIterator<SyncedSegmentMeta<TSpatial, TextureMappingData>> GetSyncedDirtyIterator(int batchesPerWindow = 1)
             => m_Registry.GetSyncedDirtyIterator(batchesPerWindow);
 
         /// <summary>
@@ -365,7 +376,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             }
 
             var atlasMapping = m_Layout.GetMapping(mapping.lodIndex, mapping.slotIndex);
-            var spatialData = new SphereSpatialData { Position = req.WorldPos, Radius = req.Radius };
+            var spatialData = CreateSpatialEntry(req.WorldPos, req.Extent);
 
             int bufferIndex = m_Registry.SetMetadata(req.Key, spatialData, atlasMapping);
             m_BakeLookup[bufferIndex] = new TileMetadata 

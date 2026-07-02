@@ -13,11 +13,21 @@ namespace Rayforge.Core.Collections.Buffering
     public struct BufferSegmentState<T> : IIterationLogic<BufferSegmentMeta<T>, BufferSegmentState<T>>
         where T : unmanaged
     {
+        #region Properties
+
+        /// <summary> The reference to the data source being scanned. </summary>
         private readonly T[] _sourceArray;
+
+        /// <summary> The size of each segment batch. </summary>
         private readonly int _batchSize;
+
+        /// <summary> The starting offset within the buffer for this scanner. </summary>
         private readonly int _offset;
+
+        /// <summary> The total number of elements to process. </summary>
         private readonly int _size;
 
+        /// <summary> The current iteration index relative to the start of the buffer. </summary>
         private int _currentRelativeIndex;
 
         /// <summary>
@@ -39,6 +49,10 @@ namespace Rayforge.Core.Collections.Buffering
         /// Gets the reference to the raw source array.
         /// </summary>
         public T[] SourceArray => _sourceArray;
+
+        #endregion
+
+        #region Constructor
 
         /// <summary>
         /// Initializes a new linear iterator state with validation checks.
@@ -73,6 +87,10 @@ namespace Rayforge.Core.Collections.Buffering
             _batchSize = batchSize;
             _currentRelativeIndex = 0;
         }
+
+        #endregion
+
+        #region IIterationLogic Impl
 
         /// <summary>
         /// Performs a direct bounds check to determine if more segments are available.
@@ -133,6 +151,10 @@ namespace Rayforge.Core.Collections.Buffering
             return true;
         }
 
+        #endregion
+
+        #region Private Helpers
+
         /// <summary>
         /// Calculates the size of the next segment based on the remaining capacity and the configured batch size.
         /// </summary>
@@ -150,5 +172,7 @@ namespace Rayforge.Core.Collections.Buffering
                     ? remaining
                     : batchSize;
         }
+
+        #endregion
     }
 }

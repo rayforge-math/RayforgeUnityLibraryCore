@@ -1,5 +1,5 @@
 {
-    "name": "Rayforge.Core.Tests.Unit.Runtime",
+    "name": "Rayforge.Core.Runtime.Tests.Unit",
     "rootNamespace": "Rayforge.Core.Tests",
     "references": [
         "Unity.RenderPipelines.Core.Runtime",

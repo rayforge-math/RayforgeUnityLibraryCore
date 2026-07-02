@@ -5,10 +5,6 @@ namespace Rayforge.Core.Collections.Helpers.Tests
     [TestFixture]
     public class BufferMathTests
     {
-        // ================================================================
-        // Standard Cases
-        // ================================================================
-
         [Test]
         public void GetTotalBatches_Standard_CalculatesCorrectly()
         {

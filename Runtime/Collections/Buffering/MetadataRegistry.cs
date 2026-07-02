@@ -1,3 +1,4 @@
+using Mono.Cecil;
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Execution.Abstractions;
 using System;
@@ -11,15 +12,13 @@ namespace Rayforge.Core.Collections.Buffering
     /// Bridges logical keys to multiple typed data stores (Spatial, Visual, etc.).
     /// </summary>
     /// <typeparam name="TKey">The unique identifier type (e.g., Vector3Int for Chunks).</typeparam>
-    public class MetadataRegistry<TKey> : IMetadataRegistry
+    public abstract class MetadataRegistry<TKey> : IMetadataProvider<TKey>
         where TKey : struct, IEquatable<TKey>
     {
         #region Properties
 
-        private const string Tag = "[MetadataRegistry]";
-
         private readonly KeyedSlotMapper<TKey> m_Mapper = new();
-        private readonly Dictionary<Type, IMetadataStoreController> m_Stores = new();
+        private readonly Dictionary<Type, IMetadataController> m_Stores = new();
 
         private int m_Capacity;
         private int m_BatchSize;
@@ -46,6 +45,43 @@ namespace Rayforge.Core.Collections.Buffering
 
         #endregion
 
+        #region Store Diagnostics & Raw Access
+
+        /// <inheritdoc />
+        public int GetStride<T>() where T : unmanaged 
+            => Unsafe.SizeOf<T>();
+
+        /// <inheritdoc />
+        public bool IsDirty<T>() where T : unmanaged 
+            => GetStore<T>()?.AnyDirty ?? false;
+
+        /// <summary>
+        /// Gets the underlying raw data array of a specific store.
+        /// Essential for interop with APIs like ComputeBuffer.SetData.
+        /// </summary>
+        public Array GetUntypedBuffer<T>() where T : unmanaged 
+            => GetStore<T>()?.UntypedBuffer;
+
+        /// <summary>
+        /// Gets the typed array for CPU-side interop and manual buffer manipulation for a given store.
+        /// Returns null if no store is registered for the specified type.
+        /// </summary>
+        /// <typeparam name="T">The unmanaged data type.</typeparam>
+        public T[] GetTypedBuffer<T>() where T : unmanaged
+            => GetStore<T>()?.TypedBuffer;
+
+        /// <summary>
+        /// Gets the data of a specific store as a ReadOnlySpan for high-performance access.
+        /// </summary>
+        public ReadOnlySpan<T> AsSpan<T>() 
+            where T : unmanaged
+        {
+            var store = GetStore<T>();
+            return store != null ? store.AsSpan() : ReadOnlySpan<T>.Empty;
+        }
+
+        #endregion
+
         #region Init
 
         /// <summary>
@@ -67,10 +103,10 @@ namespace Rayforge.Core.Collections.Buffering
         public bool Reconfigure(int capacity, int batchSize)
         {
             if (capacity <= 0)
-                throw new ArgumentOutOfRangeException(nameof(capacity), $"{Tag} Capacity must be greater than zero.");
+                throw new ArgumentOutOfRangeException(nameof(capacity), $"Capacity must be greater than zero.");
 
             if (batchSize <= 0)
-                throw new ArgumentOutOfRangeException(nameof(batchSize), $"{Tag} BatchSize must be at least 1.");
+                throw new ArgumentOutOfRangeException(nameof(batchSize), $"BatchSize must be at least 1.");
 
             if (m_Capacity == capacity && m_BatchSize == batchSize)
             {
@@ -151,7 +187,7 @@ namespace Rayforge.Core.Collections.Buffering
         {
             if (m_Mapper.TryGetIndex(key, out int index))
             {
-                GetStoreInternal<TMain>()?.Set(index, default);
+                GetStore<TMain>()?.Set(index, default);
                 m_Mapper.Release(key);
                 return index;
             }
@@ -187,10 +223,6 @@ namespace Rayforge.Core.Collections.Buffering
         /// </summary>
         public int GetOrAllocateIndex(TKey key) => m_Mapper.GetOrAllocate(key);
 
-        #endregion
-
-        #region IMetadataStoreController Implementation
-
         /// <summary>
         /// Resizes all registered stores and the internal mapper to a new capacity.
         /// </summary>
@@ -199,7 +231,7 @@ namespace Rayforge.Core.Collections.Buffering
         public bool Resize(int newCapacity)
         {
             if (newCapacity <= 0)
-                throw new ArgumentOutOfRangeException(nameof(newCapacity), $"{Tag} Capacity must be greater than zero.");
+                throw new ArgumentOutOfRangeException(nameof(newCapacity), $"Capacity must be greater than zero.");
 
             if (m_Capacity == newCapacity)
                 return false;
@@ -223,7 +255,7 @@ namespace Rayforge.Core.Collections.Buffering
         public bool UpdateBatchSize(int newBatchSize)
         {
             if (newBatchSize <= 0)
-                throw new ArgumentOutOfRangeException(nameof(newBatchSize), $"{Tag} BatchSize must be at least 1.");
+                throw new ArgumentOutOfRangeException(nameof(newBatchSize), $"BatchSize must be at least 1.");
 
             if (m_BatchSize == newBatchSize)
                 return false;
@@ -240,15 +272,15 @@ namespace Rayforge.Core.Collections.Buffering
 
         #endregion
 
-        #region Iteration (Implementation of IMetadataRegistry)
+        #region Iteration
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ForEachDirtySegment<T, TAction>(ref TAction action, bool mergeContiguous = true)
             where T : unmanaged
-            where TAction : struct, IExecutionHandler<BufferSegmentMeta>
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta<T>>
         {
-            var store = GetStoreInternal<T>();
+            var store = GetStore<T>();
             if (store != null && store.AnyDirty)
             {
                 // Wir delegieren den ref call direkt an den Store, 
@@ -263,7 +295,7 @@ namespace Rayforge.Core.Collections.Buffering
             where T : unmanaged
             where TAction : struct, IExecutionHandler<int>
         {
-            var store = GetStoreInternal<T>();
+            var store = GetStore<T>();
             if (store != null && store.AnyDirty)
             {
                 store.ForEachDirtyIndex(ref action);
@@ -275,12 +307,10 @@ namespace Rayforge.Core.Collections.Buffering
         /// CAUTION: This implementation boxes the internal iterator. 
         /// Use <see cref="ForEachDirtySegment{T, TAction}"/> for performance-critical paths.
         /// </remarks>
-        public IIterator<BufferSegmentMeta> GetDirtySegmentIterator<T>(bool mergeContiguous = true)
+        public IIterator<BufferSegmentMeta<T>> GetDirtySegmentIterator<T>(bool mergeContiguous = true)
             where T : unmanaged
         {
-            var store = GetStoreInternal<T>();
-            // Falls kein Store oder keine Änderungen vorhanden, geben wir einen leeren/default Iterator zurück.
-            // Das Interface erzwingt hier leider das Boxing.
+            var store = GetStore<T>();
             return store?.GetDirtySegmentIterator(mergeContiguous) ?? default;
         }
 
@@ -291,7 +321,7 @@ namespace Rayforge.Core.Collections.Buffering
         public IIterator<int> GetDirtySegmentIndices<T>()
             where T : unmanaged
         {
-            var store = GetStoreInternal<T>();
+            var store = GetStore<T>();
             return store?.GetDirtySegmentIndices() ?? default;
         }
 
@@ -319,21 +349,11 @@ namespace Rayforge.Core.Collections.Buffering
         /// Use this for external systems like renderers that should not 
         /// be able to call Resize or UpdateBatchSize.
         /// </summary>
-        protected MetadataStore<T> GetStoreInternal<T>() where T : unmanaged
+        protected MetadataStore<T> GetStore<T>() where T : unmanaged
         {
             if (m_Stores.TryGetValue(typeof(T), out var storeObj))
                 return (MetadataStore<T>)storeObj;
             return null;
-        }
-
-        /// <summary>
-        /// Retrieves an existing store as a read-only interface.
-        /// Use this for external systems like renderers that should not 
-        /// be able to call Resize or UpdateBatchSize.
-        /// </summary>
-        protected IMetadataStore GetStore<T>() where T : unmanaged
-        {
-            return GetStoreInternal<T>();
         }
 
         #endregion

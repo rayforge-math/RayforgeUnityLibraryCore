@@ -10,6 +10,8 @@ namespace Rayforge.Core.Collections.Buffering
     /// </summary>
     public class LinearSlotAllocator
     {
+        #region Properties
+
         private int m_NextLocalIndex = 0;
         private int m_Capacity;
         private int m_BaseOffset;
@@ -29,6 +31,10 @@ namespace Rayforge.Core.Collections.Buffering
         /// The number of slots currently available for acquisition (recycled + remaining linear space).
         /// </summary>
         public int AvailableCount => m_FreeSlots.Count + (m_Capacity - m_NextLocalIndex);
+
+        #endregion
+
+        #region Init
 
         /// <summary>
         /// Initializes a new instance of the <see cref="LinearSlotAllocator"/> class.
@@ -52,6 +58,10 @@ namespace Rayforge.Core.Collections.Buffering
             m_BaseOffset = newBaseOffset;
             Reset();
         }
+
+        #endregion
+
+        #region Public API
 
         /// <summary>
         /// Claims the next available slot index. 
@@ -87,6 +97,10 @@ namespace Rayforge.Core.Collections.Buffering
             m_FreeSlots.Push(globalIndex);
         }
 
+        #endregion
+
+        #region Management API
+
         /// <summary>
         /// Resets the allocator to its initial state.
         /// </summary>
@@ -95,5 +109,7 @@ namespace Rayforge.Core.Collections.Buffering
             m_NextLocalIndex = 0;
             m_FreeSlots.Clear();
         }
+
+        #endregion
     }
 }

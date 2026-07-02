@@ -1,8 +1,8 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Buffering;
 using Rayforge.Core.Collections.Iterator;
-using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Execution.Abstractions;
+using Rayforge.Core.Environment.Abstractions;
 using System;
 
 namespace Rayforge.Core.Environment.Spatial
@@ -14,25 +14,34 @@ namespace Rayforge.Core.Environment.Spatial
     /// <typeparam name="TKey">The unique identifier type for the entities (e.g., Vector3Int for Chunks).</typeparam>
     /// <typeparam name="TCulling">The struct type used for GPU culling (e.g., SphereSpatialData).</typeparam>
     /// <typeparam name="TRender">The struct type used for GPU rendering (e.g., MatrixSpatialData).</typeparam>
-    public abstract class SpatialMetadataRegistry<TKey, TCulling, TRender> : MetadataRegistry<TKey>, ISpatialMetadataRegistry
+    public class SpatialMetadataRegistry<TKey, TCulling, TRender>
+        : MetadataRegistry<TKey>, IIterable<SyncedArrayMeta<TCulling, TRender>>, ISpatialMetadataProvider<TKey, TCulling, TRender>
         where TKey : struct, IEquatable<TKey>
-        where TCulling : unmanaged
+        where TCulling : unmanaged, ISpatialData
         where TRender : unmanaged
     {
-        #region Members
+        #region Properties
 
         private MetadataStore<TCulling> m_CullingStore;
         private MetadataStore<TRender> m_RenderStore;
 
-        #endregion
+        // --- Culling API (High-Performance & Interop) ---
 
-        #region ISpatialMetadataRegistry Properties
+        /// <summary> Gets the untyped array for legacy/UI operations. </summary>
+        public Array CullingUntypedBuffer => m_CullingStore.UntypedBuffer;
+        /// <summary> Gets the typed array for CPU-side interop. </summary>
+        public TCulling[] CullingTypedBuffer => m_CullingStore.TypedBuffer;
+        /// <summary> Gets the zero-allocation span for hot-path iteration. </summary>
+        public ReadOnlySpan<TCulling> CullingAsSpan() => m_CullingStore.AsSpan();
 
-        /// <inheritdoc />
-        public IMetadataStore CullingMetadata => m_CullingStore;
+        // --- Render API (High-Performance & Interop) ---
 
-        /// <inheritdoc />
-        public IMetadataStore RenderMetadata => m_RenderStore;
+        /// <summary> Gets the untyped array for legacy/UI operations. </summary>
+        public Array RenderUntypedBuffer => m_RenderStore.UntypedBuffer;
+        /// <summary> Gets the typed array for CPU-side interop. </summary>
+        public TRender[] RenderTypedBuffer => m_RenderStore.TypedBuffer;
+        /// <summary> Gets the zero-allocation span for hot-path iteration. </summary>
+        public ReadOnlySpan<TRender> RenderAsSpan() => m_RenderStore.AsSpan();
 
         #endregion
 
@@ -43,7 +52,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         /// <param name="capacity">Maximum number of slots available in the registry.</param>
         /// <param name="batchSize">Size of a single dirty-tracking batch for optimized GPU uploads.</param>
-        protected SpatialMetadataRegistry(int capacity, int batchSize) : base(capacity, batchSize)
+        public SpatialMetadataRegistry(int capacity, int batchSize) : base(capacity, batchSize)
         {
             SetupStores();
         }
@@ -184,54 +193,52 @@ namespace Rayforge.Core.Environment.Spatial
         {
             if (TryGetIndex(key, out int index))
             {
-                m_CullingStore.Set(index, GetInvalidCullingData());
+                m_CullingStore.Set(index, default);
                 return Release(key);
             }
             return -1;
         }
 
-        /// <summary>
-        /// Must be implemented by child classes to define what "inactive" means for TSpatial.
-        /// </summary>
-        protected abstract TCulling GetInvalidCullingData();
-
         #endregion
-
-        #region ISpatialMetadataRegistry Implementation
 
         #region High-Performance Sync (Zero-Allocation)
 
         /// <inheritdoc />
         public void ForEachCullingDirty<TAction>(ref TAction action, bool merge = true)
-            where TAction : struct, IExecutionHandler<BufferSegmentMeta>
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta<TCulling>>
         {
             m_CullingStore.ForEachDirtySegment(ref action, merge);
         }
 
         /// <inheritdoc />
         public void ForEachRenderDirty<TAction>(ref TAction action, bool merge = true)
-            where TAction : struct, IExecutionHandler<BufferSegmentMeta>
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta<TRender>>
         {
             m_RenderStore.ForEachDirtySegment(ref action, merge);
         }
 
         /// <inheritdoc />
         public void ForEachSyncedDirty<TAction>(ref TAction action, int batchesPerWindow = 1)
-            where TAction : struct, IExecutionHandler<SyncedBufferSegmentMeta>
+            where TAction : struct, IExecutionHandler<SyncedSegmentMeta<TCulling, TRender>>
         {
-            int effectiveBatchCount = Math.Max(1, batchesPerWindow);
-            int windowSizeInElements = effectiveBatchCount * BatchSize;
+            if (batchesPerWindow < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(batchesPerWindow),
+                    "The number of batches per window must be at least 1.");
+            }
 
-            var cullingScanner = m_CullingStore.GetDirtySegmentScanner(false);
-            var renderScanner = m_RenderStore.GetDirtySegmentScanner(false);
-
-            var syncState = new SyncedBufferIteratorState(
-                cullingScanner,
-                renderScanner,
-                windowSizeInElements
+            var syncState = new SyncedDirtySegmentState<TCulling, TRender>(
+                m_CullingStore.TypedBuffer,
+                m_RenderStore.TypedBuffer,
+                m_CullingStore.DirtyBits,
+                m_RenderStore.DirtyBits,
+                0,
+                m_CullingStore.Capacity,
+                m_CullingStore.BatchSize,
+                batchesPerWindow
             );
 
-            var it = new Iterator<SyncedBufferSegmentMeta, SyncedBufferIteratorState>(syncState);
+            var it = new Iterator<SyncedSegmentMeta<TCulling, TRender>, SyncedDirtySegmentState<TCulling, TRender>>(syncState);
             while (it.MoveNext())
             {
                 action.Execute(it.Current);
@@ -240,32 +247,75 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
-        #region Flexible Iteration (Boxing)
+        #region Flexible Dirty Iteration (Boxing)
 
         /// <inheritdoc />
-        public IIterator<BufferSegmentMeta> GetCullingDirtyIterator(bool merge = true)
+        public IIterator<BufferSegmentMeta<TCulling>> GetCullingDirtyIterator(bool merge = true)
             => m_CullingStore.GetDirtySegmentIterator(merge);
 
         /// <inheritdoc />
-        public IIterator<BufferSegmentMeta> GetRenderDirtyIterator(bool merge = true)
+        public IIterator<BufferSegmentMeta<TRender>> GetRenderDirtyIterator(bool merge = true)
             => m_RenderStore.GetDirtySegmentIterator(merge);
 
         /// <inheritdoc />
-        public IIterator<SyncedBufferSegmentMeta> GetSyncedDirtyIterator(int batchesPerWindow = 1)
+        public IIterator<SyncedSegmentMeta<TCulling, TRender>> GetSyncedDirtyIterator(int batchesPerWindow = 1)
         {
-            int effectiveBatchCount = Math.Max(1, batchesPerWindow);
-            int windowSizeInElements = effectiveBatchCount * BatchSize;
+            if (batchesPerWindow < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(batchesPerWindow),
+                    "The number of batches per window must be at least 1.");
+            }
 
-            var cullingScanner = m_CullingStore.GetDirtySegmentScanner(false);
-            var renderScanner = m_RenderStore.GetDirtySegmentScanner(false);
-
-            var syncState = new SyncedBufferIteratorState(
-                cullingScanner,
-                renderScanner,
-                windowSizeInElements
+            var syncState = new SyncedDirtySegmentState<TCulling, TRender>(
+                m_CullingStore.TypedBuffer,
+                m_RenderStore.TypedBuffer,
+                m_CullingStore.DirtyBits,
+                m_RenderStore.DirtyBits,
+                0,
+                m_CullingStore.Capacity,
+                m_CullingStore.BatchSize,
+                batchesPerWindow
             );
 
-            return new Iterator<SyncedBufferSegmentMeta, SyncedBufferIteratorState>(syncState);
+            return new Iterator<SyncedSegmentMeta<TCulling, TRender>, SyncedDirtySegmentState<TCulling, TRender>>(syncState);
+        }
+
+        #endregion
+
+        #region IIterable<SyncedArrayMeta<TCulling, TRender>> Implementation
+
+        /// <inheritdoc />
+        public IIterator<SyncedArrayMeta<TCulling, TRender>> GetIterator()
+        {
+            var state = new SyncedArrayIteratorState<TCulling, TRender>(
+                m_CullingStore.TypedBuffer,
+                m_RenderStore.TypedBuffer,
+                0,
+                HighestIndex + 1
+            );
+
+            var iter = new Iterator<SyncedArrayMeta<TCulling, TRender>, SyncedArrayIteratorState<TCulling, TRender>>(state);
+
+            return iter;
+        }
+
+        /// <inheritdoc />
+        public void ForEach<TAction>(ref TAction action) 
+            where TAction : struct, IExecutionHandler<SyncedArrayMeta<TCulling, TRender>>
+        {
+            var state = new SyncedArrayIteratorState<TCulling, TRender>(
+                m_CullingStore.TypedBuffer,
+                m_RenderStore.TypedBuffer,
+                0,
+                HighestIndex + 1
+            );
+
+            var iter = new Iterator<SyncedArrayMeta<TCulling, TRender>, SyncedArrayIteratorState<TCulling, TRender>>(state);
+
+            foreach (var meta in iter)
+            {
+                action.Execute(meta);
+            }
         }
 
         #endregion
@@ -284,8 +334,6 @@ namespace Rayforge.Core.Environment.Spatial
             m_CullingStore.ClearDirty();
             m_RenderStore.ClearDirty();
         }
-
-        #endregion
 
         #endregion
     }

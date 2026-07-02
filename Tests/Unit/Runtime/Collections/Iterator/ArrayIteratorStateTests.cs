@@ -28,94 +28,59 @@ namespace Rayforge.Core.Collections.Iterator.Tests
         #region Constructor Tests
 
         [Test]
-        public void Constructor_HandlesNullAndEmptyArrays_Gracefully()
+        public void Constructor_NullArray_ThrowsArgumentNullException()
         {
-            // Scenario 1: Null array should act as an empty iterator
-            var nullState = new ArrayIteratorState<T>(null, 0, 10);
-            Assert.IsFalse(nullState.HasNext(ref nullState), "Null array should be treated as empty.");
-
-            // Scenario 2: Empty array should act as an empty iterator
-            var emptyState = new ArrayIteratorState<T>(Array.Empty<T>(), 0, 10);
-            Assert.IsFalse(emptyState.HasNext(ref emptyState), "Empty array should have no next elements.");
-        }
-
-        [Test]
-        [TestCase(-10, 5, 5, Description = "Start < 0 -> clamped to 0, count remains 5")]
-        [TestCase(100, 5, 0, Description = "Start > Length -> clamped to Length, count becomes 0")]
-        [TestCase(10, 0, 0, Description = "Start exactly at Length -> empty iteration")]
-        public void Constructor_ClampsStartBoundary(int start, int count, int expectedCount)
-        {
-            T[] array = new T[10];
-            var state = new ArrayIteratorState<T>(array, start, count);
-
-            // Verify count by consuming the iterator
-            int consumed = 0;
-            while (state.MoveNext(ref state, out _)) consumed++;
-
-            Assert.AreEqual(expectedCount, consumed, "The number of consumed elements does not match the clamped range.");
-        }
-
-        [Test]
-        [TestCase(0, -5, 0, Description = "Count < 0 -> clamped to 0")]
-        [TestCase(0, 100, 10, Description = "Count > Length -> clamped to remaining")]
-        public void Constructor_ClampsCountBoundary(int start, int count, int expectedCount)
-        {
-            T[] array = new T[10];
-            var state = new ArrayIteratorState<T>(array, start, count);
-
-            int consumed = 0;
-            while (state.MoveNext(ref state, out _)) consumed++;
-
-            Assert.AreEqual(expectedCount, consumed, "Count not clamped correctly to available array space.");
-        }
-
-        [Test]
-        [TestCase(-50, -50, 0, Description = "Both extremely negative -> Clamped to empty")]
-        [TestCase(100, 100, 0, Description = "Both extremely positive -> Clamped to empty")]
-        [TestCase(int.MinValue, int.MaxValue, 10, Description = "Extreme overflow potential -> Should cover full array")]
-        public void Constructor_HandlesNonsensicalCombinations(int start, int count, int expectedCount)
-        {
-            // Arrange: Array length is 10
-            T[] array = new T[10];
-            var state = new ArrayIteratorState<T>(array, start, count);
-
-            // Act: Count how many elements the iterator actually yields
-            int consumed = 0;
-            while (state.MoveNext(ref state, out _))
+            Assert.Throws<ArgumentNullException>(() =>
             {
-                consumed++;
-            }
-
-            // Assert: Verify that the state behaves as expected despite nonsense input
-            Assert.AreEqual(expectedCount, consumed,
-                $"Iterator yielded {consumed} elements, but expected {expectedCount} based on clamping logic.");
-        }
-
-        #endregion
-
-        #region HasNext Tests
-
-        [Test]
-        public void HasNext_WorksWithClampedNegativeStart()
-        {
-            // Arrange: Start -5 will be clamped to 0
-            T[] array = TestUtility.CreateSampleItems<T>(2);
-            var state = new ArrayIteratorState<T>(array, -5, 2);
-
-            // Assert
-            Assert.IsTrue(state.HasNext(ref state), "HasNext should work correctly even if the original start was negative (clamped to 0).");
+                var state = new ArrayIteratorState<T>(null, 0, 10);
+            }, "Passing a null array must throw ArgumentNullException.");
         }
 
         [Test]
-        public void HasNext_ReturnsFalse_ForEmptyOrNullArray()
+        public void Constructor_EmptyArray_ValidatesBounds()
         {
-            // Scenario 1: Empty Array
-            var emptyState = new ArrayIteratorState<T>(Array.Empty<T>(), 0, 0);
-            Assert.IsFalse(emptyState.HasNext(ref emptyState), "Empty array must never have a next element.");
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                var state = new ArrayIteratorState<T>(Array.Empty<T>(), 0, 10);
+            }, "Requesting elements from an empty array must throw ArgumentOutOfRangeException.");
+        }
 
-            // Scenario 2: Null Array
-            var nullState = new ArrayIteratorState<T>(null, 0, 0);
-            Assert.IsFalse(nullState.HasNext(ref nullState), "Null array must never have a next element.");
+        [Test]
+        [TestCase(0, -5, Description = "Count < 0 must throw")]
+        [TestCase(0, 11, Description = "Count too large must throw")]
+        public void Constructor_InvalidCount_ThrowsArgumentOutOfRangeException(int start, int count)
+        {
+            T[] array = new T[10];
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                var state = new ArrayIteratorState<T>(array, start, count);
+            }, "Constructor should throw when count is out of bounds or negative.");
+        }
+
+        [Test]
+        [TestCase(-1, 5, Description = "Start < 0 must throw")]
+        [TestCase(10, 1, Description = "Start exactly at length must throw")]
+        [TestCase(11, 0, Description = "Start > length must throw")]
+        public void Constructor_InvalidStart_ThrowsArgumentOutOfRangeException(int start, int count)
+        {
+            T[] array = new T[10];
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                var state = new ArrayIteratorState<T>(array, start, count);
+            }, "Constructor should throw when start index is invalid.");
+        }
+
+        [Test]
+        [TestCase(-50, -50, Description = "Negative start and count must throw")]
+        [TestCase(100, 100, Description = "Extreme positive overflow must throw")]
+        [TestCase(int.MinValue, int.MaxValue, Description = "Extreme integer overflow must throw")]
+        public void Constructor_NonsensicalCombinations_ThrowsArgumentOutOfRangeException(int start, int count)
+        {
+            T[] array = new T[10];
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                var state = new ArrayIteratorState<T>(array, start, count);
+            }, "Constructor should throw on nonsensical or overflow-prone combinations.");
         }
 
         #endregion
@@ -190,24 +155,6 @@ namespace Rayforge.Core.Collections.Iterator.Tests
             Assert.AreEqual(3, peeked, "Should peek at the third element after moving twice.");
         }
 
-        [Test]
-        public void TryPeekNext_ReturnsFalse_AndDefault_ForEmptyOrNullArray()
-        {
-            // Scenario 1: Empty Array
-            var emptyState = new ArrayIteratorState<string>(new string[0], 0, 0);
-            bool peekEmpty = emptyState.TryPeekNext(ref emptyState, out string resultEmpty);
-
-            Assert.IsFalse(peekEmpty);
-            Assert.IsNull(resultEmpty, "Should return default(T) for empty arrays.");
-
-            // Scenario 2: Null Array
-            var nullState = new ArrayIteratorState<int>(null, 0, 0);
-            bool peekNull = nullState.TryPeekNext(ref nullState, out int resultNull);
-
-            Assert.IsFalse(peekNull);
-            Assert.AreEqual(0, resultNull, "Should return default(T) for null arrays.");
-        }
-
         #endregion
 
         #region MoveNext Tests
@@ -251,20 +198,6 @@ namespace Rayforge.Core.Collections.Iterator.Tests
             Assert.AreEqual(items[1], v1);
             Assert.AreEqual(items[2], v2);
             Assert.IsFalse(hasMore, "Should stop at clamped range end, not array end.");
-        }
-
-        [Test]
-        public void MoveNext_HandlesEmptyAndNullArrays_WithoutCrashing()
-        {
-            // Empty
-            var emptyState = new ArrayIteratorState<T>(Array.Empty<T>(), 0, 0);
-            Assert.IsFalse(emptyState.MoveNext(ref emptyState, out T r1));
-            Assert.AreEqual(default(T), r1);
-
-            // Null
-            var nullState = new ArrayIteratorState<T>(null, 0, 0);
-            Assert.IsFalse(nullState.MoveNext(ref nullState, out T r2));
-            Assert.AreEqual(default(T), r2);
         }
 
         #endregion

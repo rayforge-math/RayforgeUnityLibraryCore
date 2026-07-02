@@ -14,13 +14,14 @@ namespace Rayforge.Core.Collections.Buffering
     /// Tracks modified segments (batches) to allow for optimized, partial GPU buffer updates.
     /// This is now a class to ensure stable references when managed by a Registry.
     /// </summary>
-    /// <typeparam name="TValue">The unmanaged metadata struct (e.g., SpatialData or AtlasVisualData).</typeparam>
-    public sealed class MetadataStore<TValue> : IMetadataStoreController
-        where TValue : unmanaged
+    /// <typeparam name="T">The unmanaged metadata struct (e.g., SpatialData or AtlasVisualData).</typeparam>
+    public sealed class MetadataStore<T>
+        : IMetadataController, IIterable<T>, IRawBuffer<T>
+        where T : unmanaged
     {
         #region Properties
 
-        private TValue[] m_CpuData;
+        private T[] m_CpuData;
         private BitArray m_DirtyBits;
         private int m_BatchSize;
         private int m_TotalBatches;
@@ -35,7 +36,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// Gets the byte size of a single element in the underlying data store.
         /// Directly used as the 'stride' parameter when creating a ComputeBuffer.
         /// </summary>
-        public int Stride => Marshal.SizeOf(typeof(TValue));
+        public int Stride => Marshal.SizeOf(typeof(T));
 
         /// <summary>
         /// Gets the number of elements per dirty-tracking segment.
@@ -52,31 +53,61 @@ namespace Rayforge.Core.Collections.Buffering
         /// </summary>
         public bool AnyDirty => m_AnyDirty;
 
+        /// <summary> Provides access to the dirty bit tracking state. </summary>
+        public BitArray DirtyBits => DirtyBits;
+
         /// <summary>
-        /// Gets the underlying data as a raw Array.
-        /// English comment: Use this for untyped operations like ComputeBuffer.SetData.
+        /// Gets the underlying data as a raw <see cref="Array"/>.
         /// </summary>
-        public Array RawData => m_CpuData;
+        /// <remarks>
+        /// Use this for untyped, managed operations such as <c>ComputeBuffer.SetData</c>,
+        /// which require a reference to the underlying storage array.
+        /// </remarks>
+        public Array UntypedBuffer => m_CpuData;
+
+        /// <summary>
+        /// Gets the underlying data as a regular <see cref="T[]"/>.
+        /// </summary>
+        /// <remarks>
+        /// Use this for untyped, managed operations such as <c>ComputeBuffer.SetData</c>,
+        /// which require a reference to the underlying storage array.
+        /// </remarks>
+        public T[] TypedBuffer => m_CpuData;
+
+        /// <summary>
+        /// Gets the underlying data as a <see cref="ReadOnlySpan{T}"/>.
+        /// </summary>
+        /// <remarks>
+        /// Provides high-performance, stack-only access to the store's data. 
+        /// Use this for rapid, heap-free read operations or when performing 
+        /// buffer manipulations that require safe memory boundary checks.
+        /// </remarks>
+        public ReadOnlySpan<T> AsSpan() => m_CpuData;
 
         #endregion
 
+        #region Constructor
+
         /// <summary>
-        /// Initializes a new instance of the <see cref="MetadataStore{TValue}"/> class.
+        /// Initializes a new instance of the <see cref="MetadataStore{T}"/> class.
         /// </summary>
         /// <param name="capacity">The number of slots to manage.</param>
         /// <param name="batchSize">The size of one segment for dirty tracking.</param>
         public MetadataStore(int capacity, int batchSize)
         {
             if (capacity <= 0) throw new ArgumentException("Capacity must be positive.");
+            if (batchSize < 0) throw new ArgumentException("Batch Size must be positive or 0.");
 
-            m_CpuData = new TValue[capacity];
+            m_CpuData = new T[capacity];
             m_BatchSize = Math.Max(1, batchSize);
             m_TotalBatches = BufferMath.GetTotalBatches(capacity, m_BatchSize);
             m_DirtyBits = new BitArray(m_TotalBatches);
             m_AnyDirty = false;
         }
 
-        #region Public Configuration API (IMetadataStoreController Impl)
+        #endregion
+
+        #region Public Configuration API (IMetadataController Impl)
 
         /// <summary>
         /// Resizes the underlying data array to a new capacity.
@@ -89,7 +120,7 @@ namespace Rayforge.Core.Collections.Buffering
             if (newCapacity <= 0) throw new ArgumentException("Capacity must be positive.");
             if (m_CpuData != null && m_CpuData.Length == newCapacity) return;
 
-            m_CpuData = new TValue[newCapacity];
+            m_CpuData = new T[newCapacity];
 
             m_TotalBatches = BufferMath.GetTotalBatches(newCapacity, m_BatchSize);
 
@@ -170,7 +201,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// Returns the internal CPU array for direct access (e.g., for SetData).
         /// </summary>
         /// <returns>The raw CPU-side data array.</returns>
-        public TValue[] GetInternalArray() => m_CpuData;
+        public T[] GetInternalArray() => m_CpuData;
 
         /// <summary>
         /// Resets the store by zeroing the CPU array and clearing all dirty tracking markers.
@@ -191,7 +222,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// </summary>
         /// <param name="index">The slot index (usually provided by a SlotMapper).</param>
         /// <param name="value">The metadata value to store.</param>
-        public void Set(int index, TValue value)
+        public void Set(int index, T value)
         {
             m_CpuData[index] = value;
             MarkDirty(index);
@@ -202,7 +233,11 @@ namespace Rayforge.Core.Collections.Buffering
         /// </summary>
         /// <param name="index">The index to look up.</param>
         /// <returns>The stored metadata value.</returns>
-        public TValue Get(int index) => m_CpuData[index];
+        public T Get(int index) => m_CpuData[index];
+
+        #endregion
+
+        #region IIterable<T> Implementation
 
         /// <summary>
         /// Executes a specialized action for every single element in the store.
@@ -212,16 +247,16 @@ namespace Rayforge.Core.Collections.Buffering
         /// resulting in zero-allocation, stack-only execution.
         /// </para>
         /// </summary>
-        /// <typeparam name="TAction">A struct implementing the <see cref="IExecutionHandler{TValue}"/> contract.</typeparam>
+        /// <typeparam name="TAction">A struct implementing the <see cref="IExecutionHandler{T}"/> contract.</typeparam>
         /// <param name="action">The action to execute for each element.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ForEach<TAction>(ref TAction action)
-            where TAction : struct, IExecutionHandler<TValue>
+            where TAction : struct, IExecutionHandler<T>
         {
             if (m_CpuData == null || m_CpuData.Length == 0) return;
 
             var scanner = GetElementScanner();
-            var it = new Iterator<TValue, ArrayIteratorState<TValue>>(scanner);
+            var it = new Iterator<T, ArrayIteratorState<T>>(scanner);
 
             while (it.MoveNext())
             {
@@ -237,20 +272,20 @@ namespace Rayforge.Core.Collections.Buffering
         /// </para>
         /// </summary>
         /// <returns>A boxed iterator instance or an empty iterator if no data is present.</returns>
-        public IIterator<TValue> GetIterator()
+        public IIterator<T> GetIterator()
         {
             if (m_CpuData == null || m_CpuData.Length == 0)
             {
-                return IIterator<TValue>.Empty();
+                return IIterator<T>.Empty();
             }
 
-            var logic = new ArrayIteratorState<TValue>(m_CpuData, 0, m_CpuData.Length);
-            return new Iterator<TValue, ArrayIteratorState<TValue>>(logic);
+            var logic = new ArrayIteratorState<T>(m_CpuData, 0, m_CpuData.Length);
+            return new Iterator<T, ArrayIteratorState<T>>(logic);
         }
 
         #endregion
 
-        #region Iteration (IMetadataStore Impl)
+        #region Iteration
 
         /// <summary>
         /// Executes a specialized action for each dirty segment range.
@@ -265,12 +300,12 @@ namespace Rayforge.Core.Collections.Buffering
         /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into a single segment to optimize GPU commands.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ForEachDirtySegment<TAction>(ref TAction action, bool mergeContiguous = true)
-            where TAction : struct, IExecutionHandler<BufferSegmentMeta>
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta<T>>
         {
             if (!m_AnyDirty) return;
 
             var scanner = GetDirtySegmentScanner(mergeContiguous);
-            var it = new Iterator<BufferSegmentMeta, DirtyBufferSegmentState>(scanner);
+            var it = new Iterator<BufferSegmentMeta<T>, DirtySegmentState<T>>(scanner);
 
             while (it.MoveNext())
             {
@@ -313,10 +348,10 @@ namespace Rayforge.Core.Collections.Buffering
         /// <param name="action">The action to execute for each batch segment.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ForEachSegment<TAction>(ref TAction action)
-            where TAction : struct, IExecutionHandler<BufferSegmentMeta>
+            where TAction : struct, IExecutionHandler<BufferSegmentMeta<T>>
         {
             var scanner = GetSegmentScanner();
-            var it = new Iterator<BufferSegmentMeta, BufferSegmentState<TValue>>(scanner);
+            var it = new Iterator<BufferSegmentMeta<T>, BufferSegmentState<T>>(scanner);
 
             while (it.MoveNext())
             {
@@ -333,7 +368,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// </summary>
         /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into a single segment.</param>
         /// <returns>A boxed iterator instance or an empty one if no segments are dirty.</returns>
-        public IIterator<BufferSegmentMeta> GetDirtySegmentIterator(bool mergeContiguous = true)
+        public IIterator<BufferSegmentMeta<T>> GetDirtySegmentIterator(bool mergeContiguous = true)
         {
             if (!m_AnyDirty)
             {
@@ -341,7 +376,7 @@ namespace Rayforge.Core.Collections.Buffering
             }
 
             var scanner = GetDirtySegmentScanner(mergeContiguous);
-            return new Iterator<BufferSegmentMeta, DirtyBufferSegmentState>(scanner);
+            return new Iterator<BufferSegmentMeta<T>, DirtySegmentState<T>>(scanner);
         }
 
         /// <summary>
@@ -371,7 +406,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// </para>
         /// </summary>
         /// <returns>A boxed iterator instance or an empty one if no segments are present.</returns>
-        public IIterator<BufferSegmentMeta> GetSegmentIterator()
+        public IIterator<BufferSegmentMeta<T>> GetSegmentIterator()
         {
             if (!m_AnyDirty)
             {
@@ -379,7 +414,7 @@ namespace Rayforge.Core.Collections.Buffering
             }
 
             var scanner = GetSegmentScanner();
-            return new Iterator<BufferSegmentMeta, BufferSegmentState<TValue>>(scanner);
+            return new Iterator<BufferSegmentMeta<T>, BufferSegmentState<T>>(scanner);
         }
 
         #endregion
@@ -393,13 +428,14 @@ namespace Rayforge.Core.Collections.Buffering
         /// </summary>
         /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into segments.</param>
         /// <returns>A stack-allocated state struct ready for iteration.</returns>
-        internal DirtyBufferSegmentState GetDirtySegmentScanner(bool mergeContiguous = false)
+        internal DirtySegmentState<T> GetDirtySegmentScanner(bool mergeContiguous = false)
         {
-            return new DirtyBufferSegmentState(
+            return new DirtySegmentState<T>(
                 m_CpuData,
                 m_DirtyBits,
-                m_BatchSize,
+                0,
                 m_CpuData.Length,
+                m_BatchSize,
                 mergeContiguous
             );
         }
@@ -410,12 +446,13 @@ namespace Rayforge.Core.Collections.Buffering
         /// to avoid heap allocations and interface overhead.
         /// </summary>
         /// <returns>A stack-allocated state struct ready for iteration.</returns>
-        internal BufferSegmentState<TValue> GetSegmentScanner()
+        internal BufferSegmentState<T> GetSegmentScanner()
         {
-            return new BufferSegmentState<TValue>(
+            return new BufferSegmentState<T>(
                 m_CpuData,
-                m_BatchSize,
-                m_CpuData.Length
+                0,
+                m_CpuData.Length,
+                m_BatchSize
             );
         }
 
@@ -424,9 +461,9 @@ namespace Rayforge.Core.Collections.Buffering
         /// Use this for high-performance composition to avoid heap allocations and interface overhead.
         /// </summary>
         /// <returns>A stack-allocated state struct ready for iteration.</returns>
-        internal ArrayIteratorState<TValue> GetElementScanner()
+        internal ArrayIteratorState<T> GetElementScanner()
         {
-            return new ArrayIteratorState<TValue>(
+            return new ArrayIteratorState<T>(
                 m_CpuData,
                 0,
                 m_CpuData.Length

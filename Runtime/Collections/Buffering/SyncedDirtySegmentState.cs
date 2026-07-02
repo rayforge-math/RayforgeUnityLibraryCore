@@ -1,67 +1,90 @@
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Collections.Buffering;
 using Rayforge.Core.Collections.Helpers;
-using Rayforge.Core.Environment.Abstractions;
 using System;
+using System.Collections;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Collections.Buffering
 {
     /// <summary>
     /// A synchronized iterator state that merges two independent dirty-segment scanners into fixed-size windows.
     /// Aligns buffer segments. Enforces compatibility checks and grid-based slicing.
     /// </summary>
-    public struct SyncedBufferIteratorState : IIterationLogic<SyncedBufferSegmentMeta, SyncedBufferIteratorState>
+    public struct SyncedDirtySegmentState<TValueA, TValueB> 
+        : IIterationLogic<SyncedSegmentMeta<TValueA, TValueB>, SyncedDirtySegmentState<TValueA, TValueB>>
+        where TValueA : unmanaged
+        where TValueB : unmanaged
     {
-        private DirtyBufferSegmentState _scannerA;
-        private DirtyBufferSegmentState _scannerB;
+        #region Properties
+
+        private DirtySegmentState<TValueA> _scannerA;
+        private DirtySegmentState<TValueB> _scannerB;
 
         private int _resumeA;
         private int _resumeB;
 
         private int _currentWindowStart;
 
-        private SyncedBufferSegmentMeta _peekCache;
+        private SyncedSegmentMeta<TValueA, TValueB> _peekCache;
         private bool _hasPeeked;
 
         private readonly int _syncWindow;
         private readonly int _totalCapacity;
 
+        #endregion
+
+        #region Constructor
+
         /// <summary>
-        /// Initializes a new sync state. Validates that both scanners share the same capacity and aligned batch sizes.
+        /// Initializes a new instance with validation checks to ensure consistency across streams.
         /// </summary>
-        /// <param name="a">The first dirty segment scanner (e.g., Spatial).</param>
-        /// <param name="b">The second dirty segment scanner (e.g., Visual).</param>
-        /// <param name="requestedWindowSize">The target size for the synchronization grid slots.</param>
-        /// <exception cref="ArgumentException">Thrown if capacities or batch sizes are incompatible.</exception>
-        public SyncedBufferIteratorState(DirtyBufferSegmentState a, DirtyBufferSegmentState b, int requestedWindowSize)
+        /// <param name="sourceA">Raw data array for stream A.</param>
+        /// <param name="sourceB">Raw data array for stream B.</param>
+        /// <param name="bitsA">Dirty-bit mask for stream A.</param>
+        /// <param name="bitsB">Dirty-bit mask for stream B.</param>
+        /// <param name="offset">Shared starting index.</param>
+        /// <param name="size">Shared total size.</param>
+        /// <param name="batchSize">Shared batch size (elements per bit).</param>
+        /// <param name="batchesPerWindow">Target number of batches per synchronization window.</param>
+        /// <param name="merge">Merge adjacent segments.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if batchesPerWindow is less than 1.</exception>
+        public SyncedDirtySegmentState(
+            TValueA[] sourceA, TValueB[] sourceB, BitArray bitsA, BitArray bitsB,
+            int offset, int size, int batchSize, int batchesPerWindow, bool merge = false)
         {
-            if (a.TotalCapacity != b.TotalCapacity)
-            {
-                throw new ArgumentException(
-                    $"Scanner capacity mismatch: {a.TotalCapacity} vs {b.TotalCapacity}");
-            }
+            // 1. Null-Checks
+            if (sourceA == null || sourceB == null) throw new ArgumentNullException("Source arrays cannot be null.");
+            if (bitsA == null || bitsB == null) throw new ArgumentNullException("BitArrays cannot be null.");
 
-            if (!BufferMath.IsPowerOfAligned(a.BatchSize, b.BatchSize))
-            {
-                throw new ArgumentException(
-                    $"BatchSizes must be multiples of each other. Found {a.BatchSize} and {b.BatchSize}.");
-            }
+            // 2. Range-Checks
+            if (offset < 0 || offset >= sourceA.Length || offset >= sourceB.Length)
+                throw new ArgumentOutOfRangeException(nameof(offset), "Offset is out of bounds.");
 
-            int effectiveRequest = Math.Max(1, requestedWindowSize);
-            _syncWindow = BufferMath.GetAlignedBatchSize(effectiveRequest, a.BatchSize, b.BatchSize);
-            _totalCapacity = Math.Max(a.TotalCapacity, b.TotalCapacity);
+            if (size < 0 || (offset + size) > sourceA.Length || (offset + size) > sourceB.Length)
+                throw new ArgumentOutOfRangeException(nameof(size), "Size exceeds buffer boundaries.");
 
-            _scannerA = a;
-            _scannerB = b;
+            if (batchSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(batchSize), "Batch size must be positive.");
+
+            if (batchesPerWindow < 1)
+                throw new ArgumentOutOfRangeException(nameof(batchesPerWindow), "Window must contain at least 1 batch.");
+
+            // 3. Logic initialization
+            _scannerA = new DirtySegmentState<TValueA>(sourceA, bitsA, offset, size, batchSize, merge);
+            _scannerB = new DirtySegmentState<TValueB>(sourceB, bitsB, offset, size, batchSize, merge);
+
+            _totalCapacity = size;
+
+            // Hier erfolgt die Umrechnung: Grid-Größe = Batches * Element-pro-Batch
+            _syncWindow = batchesPerWindow * batchSize;
 
             _resumeA = 0;
             _resumeB = 0;
-
             _currentWindowStart = 0;
-
             _peekCache = default;
             _hasPeeked = false;
         }
+
+        #endregion
 
         #region IIterationLogic Implementation
 
@@ -70,7 +93,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         /// <param name="self">Reference to the current iterator state.</param>
         /// <returns>True if more data is available; otherwise, false.</returns>
-        public bool HasNext(ref SyncedBufferIteratorState self)
+        public bool HasNext(ref SyncedDirtySegmentState<TValueA, TValueB> self)
         {
             return self._hasPeeked || self._currentWindowStart < self._totalCapacity;
         }
@@ -82,7 +105,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="self">Reference to the current iterator state.</param>
         /// <param name="result">The peeked synchronization metadata.</param>
         /// <returns>True if data was available to peek; otherwise, false.</returns>
-        public bool TryPeekNext(ref SyncedBufferIteratorState self, out SyncedBufferSegmentMeta result)
+        public bool TryPeekNext(ref SyncedDirtySegmentState<TValueA, TValueB> self, out SyncedSegmentMeta<TValueA, TValueB> result)
         {
             if (!self._hasPeeked)
             {
@@ -104,7 +127,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="self">Reference to the current iterator state.</param>
         /// <param name="result">The synchronized metadata for the window being entered.</param>
         /// <returns>True if a window with dirty data was found; otherwise, false.</returns>
-        public bool MoveNext(ref SyncedBufferIteratorState self, out SyncedBufferSegmentMeta result)
+        public bool MoveNext(ref SyncedDirtySegmentState<TValueA, TValueB> self, out SyncedSegmentMeta<TValueA, TValueB> result)
         {
             if (TryPeekNext(ref self, out result))
             {
@@ -116,7 +139,7 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
-        #region Static Helpers
+        #region Private Static Helpers
 
         /// <summary>
         /// Internal logic to slide the fixed window grid until dirty data is found or capacity is reached.
@@ -124,7 +147,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="self">Reference to the iterator state to advance.</param>
         /// <param name="result">The metadata container to fill.</param>
         /// <returns>True if data was found within a window; false if the end was reached.</returns>
-        private static bool ComputeNextWindow(ref SyncedBufferIteratorState self, out SyncedBufferSegmentMeta result)
+        private static bool ComputeNextWindow(ref SyncedDirtySegmentState<TValueA, TValueB> self, out SyncedSegmentMeta<TValueA, TValueB> result)
         {
             result = default;
 
@@ -160,11 +183,12 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="resumeIndex">The index to resume from if a segment was previously clipped.</param>
         /// <param name="windowEnd">The exclusive upper boundary of the current grid window.</param>
         /// <param name="result">The segment metadata to populate.</param>
-        private static void SpanWindowForScanner(
-            ref DirtyBufferSegmentState scanner,
+        private static void SpanWindowForScanner<TValue>(
+            ref DirtySegmentState<TValue> scanner,
             ref int resumeIndex,
             int windowEnd,
-            ref BufferSegmentMeta result)
+            ref BufferSegmentMeta<TValue> result)
+            where TValue : unmanaged
         {
             result.Source = null;
             result.Start = 0;
@@ -185,7 +209,7 @@ namespace Rayforge.Core.Environment.Spatial
                 return;
             }
 
-            Array buffer = null;
+            TValue[] buffer = null;
             int effectiveEnd = effectiveStart;
             while (scanner.TryPeekNext(ref scanner, out var segment))
             {

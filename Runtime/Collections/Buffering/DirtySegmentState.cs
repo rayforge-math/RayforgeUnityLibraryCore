@@ -13,18 +13,33 @@ namespace Rayforge.Core.Collections.Buffering
     /// while managing the dirty-bit scanning lifecycle.
     /// </summary>
     /// <typeparam name="T">The unmanaged type of the elements in the buffer.</typeparam>
-    public struct DirtyBufferSegmentState<T> : IIterationLogic<BufferSegmentMeta<T>, DirtyBufferSegmentState<T>>
+    public struct DirtySegmentState<T> : IIterationLogic<BufferSegmentMeta<T>, DirtySegmentState<T>>
         where T : unmanaged
     {
+        #region Properties
+
+        /// <summary> The reference to the raw data source for range validation. </summary>
         private readonly T[] _sourceArray;
+
+        /// <summary> The number of elements covered by a single dirty bit. </summary>
         private readonly int _batchSize;
+
+        /// <summary> The starting index of the scan slice within the buffer. </summary>
         private readonly int _offset;
+
+        /// <summary> The total number of elements to process. </summary>
         private readonly int _size;
+
+        /// <summary> Flag indicating if adjacent dirty bits should be merged into a single segment. </summary>
         private readonly bool _mergeContiguous;
 
+        /// <summary> The underlying bit-scanner orchestrating the bit traversal. </summary>
         private BitIteratorState _bitScanner;
 
+        /// <summary> Stores the currently computed segment result for the iterator. </summary>
         private BufferSegmentMeta<T> _cachedSegment;
+
+        /// <summary> Tracks if a valid segment has been computed and is ready to be consumed. </summary>
         private bool _hasCachedSegment;
 
         /// <summary>
@@ -52,6 +67,10 @@ namespace Rayforge.Core.Collections.Buffering
         /// </summary>
         public bool IsMergingEnabled => _mergeContiguous;
 
+        #endregion
+
+        #region Constructor
+
         /// <summary>
         /// Initializes a new iterator for scanning dirty segments within a defined buffer slice with validation.
         /// </summary>
@@ -63,7 +82,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// <param name="merge">Determines whether contiguous batches will be combined.</param>
         /// <exception cref="ArgumentNullException">Thrown when source or dirtyBits is null.</exception>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when inputs are invalid or inconsistent.</exception>
-        public DirtyBufferSegmentState(T[] source, BitArray dirtyBits, int offset, int size, int batchSize, bool merge)
+        public DirtySegmentState(T[] source, BitArray dirtyBits, int offset, int size, int batchSize, bool merge = false)
         {
             _sourceArray = source ?? throw new ArgumentNullException(nameof(source), "Source array cannot be null.");
             if (dirtyBits == null) throw new ArgumentNullException(nameof(dirtyBits), "BitArray cannot be null.");
@@ -97,12 +116,16 @@ namespace Rayforge.Core.Collections.Buffering
             _hasCachedSegment = false;
         }
 
+        #endregion
+
+        #region IIterationLogic Impl
+
         /// <summary>
         /// Checks if another dirty segment exists by pre-calculating the next range.
         /// </summary>
         /// <param name="self">The current iterator state reference.</param>
         /// <returns>True if a dirty segment is available; otherwise, false.</returns>
-        public bool HasNext(ref DirtyBufferSegmentState<T> self)
+        public bool HasNext(ref DirtySegmentState<T> self)
         {
             MoveBeforeNext(ref self);
             return self._hasCachedSegment;
@@ -115,7 +138,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// <param name="self">The current iterator state reference.</param>
         /// <param name="result">When this method returns, contains the metadata for the upcoming segment.</param>
         /// <returns>True if a segment is available to peek; otherwise, false.</returns>
-        public bool TryPeekNext(ref DirtyBufferSegmentState<T> self, out BufferSegmentMeta<T> result)
+        public bool TryPeekNext(ref DirtySegmentState<T> self, out BufferSegmentMeta<T> result)
         {
             MoveBeforeNext(ref self);
             result = self._cachedSegment;
@@ -128,7 +151,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// <param name="self">The current iterator state reference.</param>
         /// <param name="result">When this method returns, contains the metadata for the next segment.</param>
         /// <returns>True if a segment was successfully retrieved; false if no more segments exist.</returns>
-        public bool MoveNext(ref DirtyBufferSegmentState<T> self, out BufferSegmentMeta<T> result)
+        public bool MoveNext(ref DirtySegmentState<T> self, out BufferSegmentMeta<T> result)
         {
             MoveBeforeNext(ref self);
 
@@ -144,12 +167,16 @@ namespace Rayforge.Core.Collections.Buffering
             return false;
         }
 
+        #endregion
+
+        #region Private Helpers
+
         /// <summary>
         /// Core optimization: Scans the BitArray for the next dirty bit and expands the range if merging is enabled.
         /// This aligns the state by pre-calculating the full BufferSegmentMeta before the MoveNext call.
         /// </summary>
         /// <param name="self">The current iterator state reference.</param>
-        private static void MoveBeforeNext(ref DirtyBufferSegmentState<T> self)
+        private static void MoveBeforeNext(ref DirtySegmentState<T> self)
         {
             // If we already have a segment cached, do nothing.
             if (self._hasCachedSegment) return;
@@ -186,5 +213,7 @@ namespace Rayforge.Core.Collections.Buffering
             };
             self._hasCachedSegment = true;
         }
+
+        #endregion
     }
 }

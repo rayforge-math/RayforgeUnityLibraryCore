@@ -7,7 +7,8 @@ namespace Rayforge.Core.Collections.Abstractions
     /// Provides helper methods for index calculations and segment access.
     /// </summary>
     /// <typeparam name="T">The unmanaged type of the elements in the buffer.</typeparam>
-    public struct BufferSegmentMeta<T> where T : unmanaged
+    public struct BufferSegmentMeta<T> 
+        where T : unmanaged
     {
         /// <summary>
         /// The reference to the underlying data array.

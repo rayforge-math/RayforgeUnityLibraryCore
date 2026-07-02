@@ -1,28 +1,40 @@
 using NUnit.Framework;
 using Rayforge.Core.Collections.Abstractions.Tests;
-using Rayforge.Core.Collections.Buffering;
+using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.TestEnv;
 using System.Collections.Generic;
 using Rayforge.Core.Collections.Abstractions;
 
-namespace Rayforge.Core.Collections.Iterator.Tests
+namespace Rayforge.Core.Collections.Buffering.Tests
 {
     [TestFixture(typeof(int))]
     [TestFixture(typeof(float))]
-    [TestFixture(typeof(string))]
-    public class BufferSegmentStateTests<T> : IIterationLogicTests<T, BufferSegmentState<T>>
+    [TestFixture(typeof(bool))]
+    public class BufferSegmentStateTests<T> : IIterationLogicTests<BufferSegmentMeta<T>, BufferSegmentState<T>>
         where T : unmanaged
     {
         #region IIterationLogic Impl
 
-        protected override IterationData<T, BufferSegmentState<T>> CreateLogic(int count)
+        protected override IterationData<BufferSegmentMeta<T>, BufferSegmentState<T>> CreateLogic(int count)
         {
             T[] items = TestUtility.CreateSampleItems<T>(count);
             var logic = new BufferSegmentState<T>(items, 0, items.Length, 1);
+
+            var expected = new BufferSegmentMeta<T>[count];
+            for(int i = 0; i < items.Length; ++i)
+            {
+                expected[i] = new BufferSegmentMeta<T>
+                {
+                    Source = items,
+                    Start = i,
+                    Count = 1
+                };
+            }
+
             return new IterationData<BufferSegmentMeta<T>, BufferSegmentState<T>>
             {
                 logic = logic,
-                expected = items
+                expected = expected
             };
         }
 
@@ -64,7 +76,7 @@ namespace Rayforge.Core.Collections.Iterator.Tests
         {
             // default(List<int>.Enumerator) is a valid struct, 
             // but typically throws on MoveNext/Current. 
-            // This tests if our state handles a "broken" internal struct safely.
+            // This tests if the state handles a "broken" internal struct safely.
             var state = new EnumeratorState<int, List<int>.Enumerator>(default);
 
             // Act & Assert: Should not throw on simple initialization

@@ -10,6 +10,8 @@ namespace Rayforge.Core.Collections.Buffering
     /// <typeparam name="TKey">The type of the unique identifier (must be a struct and equatable).</typeparam>
     public class KeyedSlotMapper<TKey> where TKey : struct, IEquatable<TKey>
     {
+        #region Properties
+
         private readonly Dictionary<TKey, int> m_KeyToSlot = new();
         private readonly Stack<int> m_ReuseStack = new();
         private int m_Capacity;
@@ -37,6 +39,10 @@ namespace Rayforge.Core.Collections.Buffering
         /// </summary>
         public bool IsInitialized => m_KeyToSlot != null && m_ReuseStack != null;
 
+        #endregion
+
+        #region Init
+
         /// <summary>
         /// Reconfigures the mapper with a new capacity.
         /// Completely clears all mappings and rebuilds the internal structures.
@@ -47,6 +53,10 @@ namespace Rayforge.Core.Collections.Buffering
             m_Capacity = newCapacity;
             Reset();
         }
+
+        #endregion
+
+        #region Management
 
         /// <summary>
         /// Resets the mapper by clearing all active mappings and returning all indices to the pool.
@@ -123,5 +133,7 @@ namespace Rayforge.Core.Collections.Buffering
             }
             return m_KeyToSlot.TryGetValue(key, out index);
         }
+
+        #endregion
     }
 }

@@ -4,7 +4,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
 {
     [TestFixture(typeof(int))]
     [TestFixture(typeof(float))]
-    [TestFixture(typeof(string))]
+    [TestFixture(typeof(bool))]
     public class BufferSegmentMetaTests<T>
         where T : unmanaged
     {

@@ -1,0 +1,23 @@
+{
+    "name": "Rayforge.Core.Runtime.Tests.Performance",
+    "rootNamespace": "Rayforge.Core.Tests",
+    "references": [
+        "Unity.PerformanceTesting",
+        "UnityEngine.TestRunner",
+        "Unity.Burst",
+        "Rayforge.Core.Runtime"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

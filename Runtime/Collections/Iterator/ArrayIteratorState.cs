@@ -4,8 +4,11 @@ using System;
 namespace Rayforge.Core.Collections.Iterator
 {
     /// <summary>
-    /// Optimized iteration logic for raw arrays. 
-    /// Avoids the overhead of IEnumerator and works directly with indices.
+    /// Optimized iteration logic for raw arrays.
+    /// <para>
+    /// Provides zero-allocation, index-based iteration over an array. 
+    /// Designed for compatibility with Unity/IL2CPP by avoiding ref-struct constraints.
+    /// </para>
     /// </summary>
     /// <typeparam name="T">The element type.</typeparam>
     public struct ArrayIteratorState<T> : IIterationLogic<T, ArrayIteratorState<T>>
@@ -16,34 +19,42 @@ namespace Rayforge.Core.Collections.Iterator
 
         /// <summary>
         /// Initializes the state with a target array and a specific range.
+        /// Validates that the provided start and count are within the bounds of the array.
         /// </summary>
         /// <param name="array">The source array.</param>
         /// <param name="start">The starting index.</param>
         /// <param name="count">The number of elements to iterate.</param>
+        /// <exception cref="ArgumentNullException">Thrown if the array is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when start or count are invalid.</exception>
         public ArrayIteratorState(T[] array, int start, int count)
         {
-            _array = array;
+            if (array == null) throw new ArgumentNullException(nameof(array));
 
-            if (array == null || array.Length == 0)
+            if (start < 0 || (start > array.Length && array.Length > 0))
             {
-                _index = -1;
-                _end = 0;
-                return;
+                throw new ArgumentOutOfRangeException(nameof(start),
+                    $"Start index {start} is out of range for array of length {array.Length}.");
             }
 
-            int clampedStart = Math.Max(0, Math.Min(start, array.Length));
-            int maxRemaining = array.Length - clampedStart;
-            int clampedCount = Math.Max(0, Math.Min(count, maxRemaining));
+            if (count < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count), "Iteration count cannot be negative.");
+            }
 
-            _index = clampedStart - 1;
-            _end = clampedStart + clampedCount;
+            if (start + count > array.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count),
+                    $"The requested range (start: {start}, count: {count}) exceeds the array length of {array.Length}.");
+            }
+
+            _array = array;
+            _index = start - 1;
+            _end = start + count;
         }
 
         /// <summary>
         /// Non-destructive check if more elements are available in the specified range.
         /// </summary>
-        /// <param name="self">Reference to the current state.</param>
-        /// <returns>True if the next index is within bounds; false otherwise.</returns>
         public bool HasNext(ref ArrayIteratorState<T> self)
         {
             return IsValid(ref self, self._index + 1);
@@ -51,7 +62,6 @@ namespace Rayforge.Core.Collections.Iterator
 
         /// <summary>
         /// Peeks at the next element (+1) without advancing the internal pointer.
-        /// Critical for synchronization between multiple array-based streams.
         /// </summary>
         public bool TryPeekNext(ref ArrayIteratorState<T> self, out T result)
         {
@@ -69,13 +79,9 @@ namespace Rayforge.Core.Collections.Iterator
         /// <summary>
         /// Advances the internal index and retrieves the next element.
         /// </summary>
-        /// <param name="self">Reference to the current state.</param>
-        /// <param name="result">The element at the new index.</param>
-        /// <returns>True if an element was retrieved; false if the end was reached.</returns>
         public bool MoveNext(ref ArrayIteratorState<T> self, out T result)
         {
             self._index++;
-
             if (IsValid(ref self, self._index))
             {
                 result = self._array[self._index];
@@ -87,12 +93,11 @@ namespace Rayforge.Core.Collections.Iterator
         }
 
         /// <summary>
-        /// Centralized bounds check. 
-        /// Static to ensure no accidental 'this' capture and to encourage inlining.
+        /// Centralized bounds check.
         /// </summary>
         private static bool IsValid(ref ArrayIteratorState<T> self, int index)
         {
-            return self._array != null && index >= 0 && index < self._end && index < self._array.Length;
+            return index >= 0 && index < self._end;
         }
     }
 }
