@@ -8,8 +8,6 @@ namespace Rayforge.Core.Collections.Abstractions
     /// that are processed within the same synchronization window.
     /// </summary>
     public struct SyncedSegmentMeta<TValueA, TValueB>
-        where TValueA : unmanaged
-        where TValueB : unmanaged
     {
         /// <summary> The dirty range for the first data stream (e.g., Spatial/Culling). </summary>
         public BufferSegmentMeta<TValueA> SegmentA;

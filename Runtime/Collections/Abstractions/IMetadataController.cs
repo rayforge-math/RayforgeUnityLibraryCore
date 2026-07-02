@@ -7,7 +7,7 @@ namespace Rayforge.Core.Collections.Abstractions
     /// Defines the contract for metadata stores, allowing centralized management,
     /// modifications, and synchronization tracking.
     /// </summary>
-    public interface IMetadataController : IReadOnlyMetadata
+    public interface IMetadataController
     {
         #region State Management
 

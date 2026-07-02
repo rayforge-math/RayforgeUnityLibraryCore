@@ -1,5 +1,3 @@
-using UnityEngine;
-
 namespace Rayforge.Core.Collections.Abstractions
 {
     /// <summary>

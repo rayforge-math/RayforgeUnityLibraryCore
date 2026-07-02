@@ -16,7 +16,7 @@ namespace Rayforge.Core.Collections.Buffering
     /// </summary>
     /// <typeparam name="T">The unmanaged metadata struct (e.g., SpatialData or AtlasVisualData).</typeparam>
     public sealed class MetadataStore<T>
-        : IMetadataController, IIterable<T>, IRawBuffer<T>
+        : IMetadataController, IReadOnlyMetadata, IIterable<T>, IRawBuffer<T>
         where T : unmanaged
     {
         #region Properties

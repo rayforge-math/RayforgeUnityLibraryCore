@@ -8,7 +8,6 @@ namespace Rayforge.Core.Collections.Abstractions
     /// </summary>
     /// <typeparam name="T">The unmanaged type of the elements in the buffer.</typeparam>
     public struct BufferSegmentMeta<T> 
-        where T : unmanaged
     {
         /// <summary>
         /// The reference to the underlying data array.

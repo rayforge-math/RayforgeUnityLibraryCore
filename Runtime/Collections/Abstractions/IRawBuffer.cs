@@ -13,7 +13,7 @@ namespace Rayforge.Core.Collections.Abstractions
     /// infrastructure for zero-allocation, high-performance memory operations.
     /// </para>
     /// <typeparam name="T">The element type, must be unmanaged for memory safety.</typeparam>
-    public interface IRawBuffer<T> where T : unmanaged
+    public interface IRawBuffer<T>
     {
         /// <summary>
         /// 1. Array: The lowest common denominator for reflection, 

@@ -15,8 +15,6 @@ namespace Rayforge.Core.Collections.Iterator
     /// <typeparam name="TValueB">The type of the second data stream.</typeparam>
     public struct SyncedArrayIteratorState<TValueA, TValueB> 
         : IIterationLogic<SyncedArrayMeta<TValueA, TValueB>, SyncedArrayIteratorState<TValueA, TValueB>>
-        where TValueA : unmanaged
-        where TValueB : unmanaged
     {
         private ArrayIteratorState<TValueA> _stateA;
         private ArrayIteratorState<TValueB> _stateB;
