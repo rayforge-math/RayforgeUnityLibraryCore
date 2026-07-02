@@ -614,5 +614,92 @@ namespace Rayforge.Core.Collections.Buffering.Tests
         }
 
         #endregion
+
+        #region HasNext Tests
+
+        [Test]
+        public void HasNext_NoDirtyBitsSet_ReturnsFalse()
+        {
+            var items = TestUtility.CreateSampleItems<T>(10);
+            var bits = new BitArray(5); // All false
+            var state = new DirtySegmentState<T>(items, bits, 0, 10, batchSize: 2);
+
+            Assert.IsFalse(state.HasNext(ref state), "Should be empty if no bits are set.");
+        }
+
+        [Test]
+        public void HasNext_SingleDirtyBitSet_ReturnsTrue()
+        {
+            var items = TestUtility.CreateSampleItems<T>(10);
+            var bits = new BitArray(5);
+            bits.Set(2, true);
+            var state = new DirtySegmentState<T>(items, bits, 0, 10, batchSize: 2);
+
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _);
+            Assert.IsFalse(state.HasNext(ref state), "Should be exhausted after consuming the only dirty bit.");
+        }
+
+        [Test]
+        public void HasNext_MultipleDisjointDirtyBits_ReturnsTrueUntilAllConsumed()
+        {
+            var items = TestUtility.CreateSampleItems<T>(10);
+            var bits = new BitArray(5);
+            bits.Set(0, true);
+            bits.Set(4, true);
+            var state = new DirtySegmentState<T>(items, bits, 0, 10, batchSize: 2);
+
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Consumes index 0
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Consumes index 4
+            Assert.IsFalse(state.HasNext(ref state), "Should be exhausted after all dirty bits processed.");
+        }
+
+        [Test]
+        public void HasNext_WithMerging_ReturnsTrueUntilMergedSegmentConsumed()
+        {
+            // 5 batches, merge enabled. Set 0 and 1 dirty -> 1 combined segment.
+            var items = TestUtility.CreateSampleItems<T>(10);
+            var bits = new BitArray(5);
+            bits.Set(0, true);
+            bits.Set(1, true);
+            var state = new DirtySegmentState<T>(items, bits, 0, 10, batchSize: 2, merge: true);
+
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Consumes both bits as 1 segment
+            Assert.IsFalse(state.HasNext(ref state), "Should be exhausted after the merged segment.");
+        }
+
+        [Test]
+        public void HasNext_MixedWithMerge_CorrectlyTracksMultipleMergedSegments()
+        {
+            // Pattern: T, T, F, T, T
+            var items = TestUtility.CreateSampleItems<T>(10);
+            var bits = new BitArray(5);
+            bits.Set(0, true); bits.Set(1, true);
+            bits.Set(3, true); bits.Set(4, true);
+            var state = new DirtySegmentState<T>(items, bits, 0, 10, batchSize: 2, merge: true);
+
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Consumes 0-3
+            Assert.IsTrue(state.HasNext(ref state), "Still has the second merged segment (6-9).");
+            state.MoveNext(ref state, out _); // Consumes 6-9
+            Assert.IsFalse(state.HasNext(ref state), "Exhausted.");
+        }
+
+        [Test]
+        public void HasNext_BitOutsideRange_ReturnsFalse()
+        {
+            // Set bit for batch 4, but size is only 4 elements (batches 0 and 1)
+            var items = TestUtility.CreateSampleItems<T>(4);
+            var bits = new BitArray(5);
+            bits.Set(4, true);
+            var state = new DirtySegmentState<T>(items, bits, 0, 4, batchSize: 2);
+
+            Assert.IsFalse(state.HasNext(ref state), "Should ignore dirty bits that fall outside the defined size.");
+        }
+
+        #endregion
     }
 }
