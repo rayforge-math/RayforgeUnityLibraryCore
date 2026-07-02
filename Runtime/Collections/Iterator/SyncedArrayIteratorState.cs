@@ -14,7 +14,7 @@ namespace Rayforge.Core.Collections.Iterator
     /// <typeparam name="TValueA">The type of the first data stream.</typeparam>
     /// <typeparam name="TValueB">The type of the second data stream.</typeparam>
     public struct SyncedArrayIteratorState<TValueA, TValueB> 
-        : IIterationLogic<SyncedArrayMeta<TValueA, TValueB>, SyncedArrayIteratorState<TValueA, TValueB>>
+        : IIterationLogic<SyncedArrayIteratorMeta<TValueA, TValueB>, SyncedArrayIteratorState<TValueA, TValueB>>
     {
         private ArrayIteratorState<TValueA> _stateA;
         private ArrayIteratorState<TValueB> _stateB;
@@ -50,13 +50,13 @@ namespace Rayforge.Core.Collections.Iterator
         /// <summary>
         /// Peeks at the next synchronized segment without advancing the state.
         /// </summary>
-        public bool TryPeekNext(ref SyncedArrayIteratorState<TValueA, TValueB> self, out SyncedArrayMeta<TValueA, TValueB> result)
+        public bool TryPeekNext(ref SyncedArrayIteratorState<TValueA, TValueB> self, out SyncedArrayIteratorMeta<TValueA, TValueB> result)
         {
             if (self._stateA.TryPeekNext(ref self._stateA, out var valA) &&
                 self._stateB.TryPeekNext(ref self._stateB, out var valB))
             {
                 int nextIndex = self._currentIndex + 1;
-                result = new SyncedArrayMeta<TValueA, TValueB>(
+                result = new SyncedArrayIteratorMeta<TValueA, TValueB>(
                     nextIndex,
                     nextIndex - self._startOffset,
                     valA,
@@ -72,13 +72,13 @@ namespace Rayforge.Core.Collections.Iterator
         /// <summary>
         /// Advances the iterator and yields the synchronized data pair.
         /// </summary>
-        public bool MoveNext(ref SyncedArrayIteratorState<TValueA, TValueB> self, out SyncedArrayMeta<TValueA, TValueB> result)
+        public bool MoveNext(ref SyncedArrayIteratorState<TValueA, TValueB> self, out SyncedArrayIteratorMeta<TValueA, TValueB> result)
         {
             if (self._stateA.MoveNext(ref self._stateA, out var valA) &&
                 self._stateB.MoveNext(ref self._stateB, out var valB))
             {
                 self._currentIndex++;
-                result = new SyncedArrayMeta<TValueA, TValueB>(
+                result = new SyncedArrayIteratorMeta<TValueA, TValueB>(
                     self._currentIndex,
                     self._currentIndex - self._startOffset,
                     valA,

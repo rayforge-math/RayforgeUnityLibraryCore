@@ -7,24 +7,24 @@ namespace Rayforge.Core.Collections.Abstractions
     /// absolute and relative position information within the buffer.
     /// </para>
     /// </summary>
-    public readonly struct SyncedArrayMeta<TValueA, TValueB>
+    public struct SyncedArrayIteratorMeta<TValueA, TValueB>
     {
         /// <summary> The absolute index in the underlying backing array. </summary>
-        public readonly int AbsoluteIndex;
+        public int AbsoluteIndex;
 
         /// <summary> The index relative to the start of the iterator's range. </summary>
-        public readonly int RelativeIndex;
+        public int RelativeIndex;
 
         /// <summary> The value from the primary data stream. </summary>
-        public readonly TValueA ValueA;
+        public TValueA ValueA;
 
         /// <summary> The value from the secondary data stream. </summary>
-        public readonly TValueB ValueB;
+        public TValueB ValueB;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="SyncedArrayMeta{TValueA, TValueB}"/> struct.
+        /// Initializes a new instance of the <see cref="SyncedArrayIteratorMeta{TValueA, TValueB}"/> struct.
         /// </summary>
-        public SyncedArrayMeta(int absoluteIndex, int relativeIndex, TValueA valueA, TValueB valueB)
+        public SyncedArrayIteratorMeta(int absoluteIndex, int relativeIndex, TValueA valueA, TValueB valueB)
         {
             AbsoluteIndex = absoluteIndex;
             RelativeIndex = relativeIndex;

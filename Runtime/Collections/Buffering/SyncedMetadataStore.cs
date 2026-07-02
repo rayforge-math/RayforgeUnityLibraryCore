@@ -323,13 +323,13 @@ namespace Rayforge.Core.Collections.Buffering
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ForEachDirtyIndex<TAction>(ref TAction action)
-            where TAction : struct, IExecutionHandler<SyncedBitMeta>
+            where TAction : struct, IExecutionHandler<SyncedBitIteratorMeta>
         {
             if (!(StoreA.AnyDirty || StoreB.AnyDirty)) return;
 
             var syncedState = new SyncedBitIteratorState(StoreA.DirtyBits, StoreB.DirtyBits, 0, StoreA.TotalBatchCount);
 
-            var it = new Iterator<SyncedBitMeta, SyncedBitIteratorState>(syncedState);
+            var it = new Iterator<SyncedBitIteratorMeta, SyncedBitIteratorState>(syncedState);
 
             while (it.MoveNext())
             {

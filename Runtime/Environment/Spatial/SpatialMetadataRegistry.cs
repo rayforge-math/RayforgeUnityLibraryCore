@@ -15,7 +15,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// <typeparam name="TCulling">The struct type used for GPU culling (e.g., SphereSpatialData).</typeparam>
     /// <typeparam name="TRender">The struct type used for GPU rendering (e.g., MatrixSpatialData).</typeparam>
     public class SpatialMetadataRegistry<TKey, TCulling, TRender>
-        : MetadataRegistry<TKey>, IIterable<SyncedArrayMeta<TCulling, TRender>>, ISpatialMetadataProvider<TKey, TCulling, TRender>
+        : MetadataRegistry<TKey>, IIterable<SyncedArrayIteratorMeta<TCulling, TRender>>, ISpatialMetadataProvider<TKey, TCulling, TRender>
         where TKey : struct, IEquatable<TKey>
         where TCulling : unmanaged, ISpatialData
         where TRender : unmanaged
@@ -282,10 +282,10 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
-        #region IIterable<SyncedArrayMeta<TCulling, TRender>> Implementation
+        #region IIterable<SyncedArrayIteratorMeta<TCulling, TRender>> Implementation
 
         /// <inheritdoc />
-        public IIterator<SyncedArrayMeta<TCulling, TRender>> GetIterator()
+        public IIterator<SyncedArrayIteratorMeta<TCulling, TRender>> GetIterator()
         {
             var state = new SyncedArrayIteratorState<TCulling, TRender>(
                 m_CullingStore.TypedBuffer,
@@ -294,14 +294,14 @@ namespace Rayforge.Core.Environment.Spatial
                 HighestIndex + 1
             );
 
-            var iter = new Iterator<SyncedArrayMeta<TCulling, TRender>, SyncedArrayIteratorState<TCulling, TRender>>(state);
+            var iter = new Iterator<SyncedArrayIteratorMeta<TCulling, TRender>, SyncedArrayIteratorState<TCulling, TRender>>(state);
 
             return iter;
         }
 
         /// <inheritdoc />
         public void ForEach<TAction>(ref TAction action) 
-            where TAction : struct, IExecutionHandler<SyncedArrayMeta<TCulling, TRender>>
+            where TAction : struct, IExecutionHandler<SyncedArrayIteratorMeta<TCulling, TRender>>
         {
             var state = new SyncedArrayIteratorState<TCulling, TRender>(
                 m_CullingStore.TypedBuffer,
@@ -310,7 +310,7 @@ namespace Rayforge.Core.Environment.Spatial
                 HighestIndex + 1
             );
 
-            var iter = new Iterator<SyncedArrayMeta<TCulling, TRender>, SyncedArrayIteratorState<TCulling, TRender>>(state);
+            var iter = new Iterator<SyncedArrayIteratorMeta<TCulling, TRender>, SyncedArrayIteratorState<TCulling, TRender>>(state);
 
             foreach (var meta in iter)
             {
