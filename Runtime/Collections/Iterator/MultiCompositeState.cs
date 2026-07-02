@@ -25,12 +25,6 @@ namespace Rayforge.Core.Collections.Iterator
             if (sources == null)
                 throw new ArgumentNullException(nameof(sources), "The sources array cannot be null.");
 
-            for (int i = 0; i < sources.Length; i++)
-            {
-                if (sources[i] == null)
-                    throw new ArgumentNullException(nameof(sources), $"Iterator at index {i} cannot be null.");
-            }
-
             _sources = sources;
             _index = 0;
             _isInitialized = true;
@@ -102,8 +96,11 @@ namespace Rayforge.Core.Collections.Iterator
             {
                 var current = sources[self._index];
 
+                if (current == null)
+                    throw new NullReferenceException($"Iterator source at index {self._index} is null.");
+
                 // Skip null iterators or iterators without elements
-                if (current != null && current.HasNext)
+                if (current.HasNext)
                 {
                     return;
                 }

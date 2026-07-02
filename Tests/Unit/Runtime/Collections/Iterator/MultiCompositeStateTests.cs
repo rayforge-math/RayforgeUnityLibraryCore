@@ -84,13 +84,13 @@ namespace Rayforge.Core.Collections.Iterator.Tests
         #region Constructor & Boundary Tests
 
         [Test]
-        public void Constructor_WithNullArray_HandlesGracefully()
+        public void Constructor_WithNullArray_ThrowsArgumentNullException()
         {
-            // Act: Initialize with null should result in an empty state
-            var state = new MultiCompositeState<T>(null);
-
-            // Assert: HasNext should return false immediately
-            Assert.IsFalse(state.HasNext(ref state), "A null source array should result in an exhausted iterator.");
+            // Act & Assert: Initializing with null must throw an ArgumentNullException
+            Assert.Throws<ArgumentNullException>(() =>
+            {
+                var state = new MultiCompositeState<T>(null);
+            }, "Constructor should throw ArgumentNullException when sources array is null.");
         }
 
         [Test]
@@ -104,24 +104,6 @@ namespace Rayforge.Core.Collections.Iterator.Tests
                 bool hasNext = state.HasNext(ref state);
                 Assert.IsFalse(hasNext, "Default struct should be treated as empty and not throw.");
             });
-        }
-
-        [Test]
-        public void Constructor_WithNullArray_ThrowsArgumentNullException()
-        {
-            // Act & Assert: Fail-fast bei komplettem Null-Array
-            Assert.Throws<ArgumentNullException>(() => new MultiCompositeState<T>(null!));
-        }
-
-        [Test]
-        public void Constructor_WithNullElementInArray_ThrowsArgumentNullException()
-        {
-            // Arrange: Ein gültiger Iterator und ein null-Eintrag
-            var mockLogic = new MockLogic<T> { Items = new[] { TestUtility.CreateSampleItems<T>(1)[0] } };
-            var iter = new Iterator<T, MockLogic<T>>(mockLogic);
-
-            // Act & Assert: Fail-fast, wenn das Array null-Einträge enthält
-            Assert.Throws<ArgumentNullException>(() => new MultiCompositeState<T>(iter, null!));
         }
 
         [Test]
@@ -155,21 +137,21 @@ namespace Rayforge.Core.Collections.Iterator.Tests
         #region MoveNext Tests
 
         [Test]
-        public void MoveNext_WithNullElementsInArray_SkipsToValidSource()
+        public void MoveNext_WithNullElementsInArray_ThrowsException()
         {
-            // Arrange: Create a valid MockLogic item and inject it into the composite
+            // Arrange: Ein gültiger Iterator und ein null-Eintrag im Composite
             var item = TestUtility.CreateSampleItems<T>(1)[0];
             var mockLogic = new MockLogic<T> { Items = new[] { item } };
             var iter = new Iterator<T, MockLogic<T>>(mockLogic);
 
-            var state = new MultiCompositeState<T>(null, iter);
+            // Composite mit einem null-Eintrag
+            var state = new MultiCompositeState<T>(null!, iter);
 
-            // Act: Consume the first available element
-            bool hasNext = state.MoveNext(ref state, out T result);
-
-            // Assert: Should skip the null and find the item
-            Assert.IsTrue(hasNext, "Should have found the valid item after skipping null.");
-            Assert.AreEqual(item, result);
+            // Act & Assert: Muss beim ersten MoveNext knallen
+            Assert.Throws<NullReferenceException>(() =>
+            {
+                state.MoveNext(ref state, out _);
+            }, "MoveNext should throw if it encounters a null source in the array.");
         }
 
         [Test]
@@ -223,6 +205,24 @@ namespace Rayforge.Core.Collections.Iterator.Tests
         #endregion
 
         #region TryPeekNext Tests
+
+        [Test]
+        public void TryPeekNext_WithNullElementsInArray_ThrowsException()
+        {
+            // Arrange: Ein gültiger Iterator und ein null-Eintrag im Composite
+            var item = TestUtility.CreateSampleItems<T>(1)[0];
+            var mockLogic = new MockLogic<T> { Items = new[] { item } };
+            var iter = new Iterator<T, MockLogic<T>>(mockLogic);
+
+            // Composite mit einem null-Eintrag an erster Stelle
+            var state = new MultiCompositeState<T>(null!, iter);
+
+            // Act & Assert: Muss beim ersten TryPeekNext knallen
+            Assert.Throws<NullReferenceException>(() =>
+            {
+                state.TryPeekNext(ref state, out _);
+            }, "TryPeekNext should throw if it encounters a null source in the array.");
+        }
 
         [Test]
         public void TryPeekNext_WithEmptyIterators_ExhaustsCorrectly()
@@ -298,6 +298,23 @@ namespace Rayforge.Core.Collections.Iterator.Tests
         #endregion
 
         #region HasNext Tests
+
+        [Test]
+        public void HasNext_WithNullElementsInArray_ThrowsException()
+        {
+            // Arrange
+            var item = TestUtility.CreateSampleItems<T>(1)[0];
+            var mockLogic = new MockLogic<T> { Items = new[] { item } };
+            var iter = new Iterator<T, MockLogic<T>>(mockLogic);
+
+            var state = new MultiCompositeState<T>(null!, iter);
+
+            // Act & Assert
+            Assert.Throws<NullReferenceException>(() =>
+            {
+                state.HasNext(ref state);
+            }, "HasNext should throw if it encounters a null source in the array.");
+        }
 
         [Test]
         public void HasNext_WithEmptyIterators_ReturnsFalse()
