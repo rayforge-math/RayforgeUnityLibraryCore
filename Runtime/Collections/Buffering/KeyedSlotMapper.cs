@@ -37,11 +37,26 @@ namespace Rayforge.Core.Collections.Buffering
         /// <summary>
         /// Gets a value indicating whether the mapper has been properly initialized.
         /// </summary>
-        public bool IsInitialized => m_KeyToSlot != null && m_ReuseStack != null;
+        public bool IsInitialized => m_Capacity > 0;
 
         #endregion
 
         #region Init
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="KeyedSlotMapper{TKey}"/> class.
+        /// </summary>
+        public KeyedSlotMapper() { }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="KeyedSlotMapper{TKey}"/> class with a specific capacity.
+        /// </summary>
+        /// <param name="initialCapacity">The maximum number of slots. Must be greater than zero.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if initialCapacity is less than or equal to zero.</exception>
+        public KeyedSlotMapper(int initialCapacity)
+        {
+            Initialize(initialCapacity);
+        }
 
         /// <summary>
         /// Reconfigures the mapper with a new capacity.
@@ -50,6 +65,9 @@ namespace Rayforge.Core.Collections.Buffering
         /// <param name="newCapacity">The new maximum number of slots.</param>
         public void Initialize(int newCapacity)
         {
+            if (newCapacity <= 0)
+                throw new ArgumentOutOfRangeException(nameof(newCapacity), "Capacity must be greater than zero.");
+
             m_Capacity = newCapacity;
             Reset();
         }
@@ -131,7 +149,18 @@ namespace Rayforge.Core.Collections.Buffering
                 index = -1;
                 return false;
             }
-            return m_KeyToSlot.TryGetValue(key, out index);
+            
+            var valid = m_KeyToSlot.TryGetValue(key, out index);
+
+            if (valid)
+            {
+                return true;
+            }
+            else
+            {
+                index = -1;
+                return false;
+            }
         }
 
         #endregion
