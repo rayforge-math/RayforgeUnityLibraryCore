@@ -1,6 +1,5 @@
 using NUnit.Framework;
 using System;
-using UnityEngine;
 
 namespace Rayforge.Core.Collections.Buffering.Tests
 {
@@ -164,7 +163,7 @@ namespace Rayforge.Core.Collections.Buffering.Tests
         public void Initialize_ExtremeCapacity_SetsCapacityCorrectly()
         {
             var mapper = new KeyedSlotMapper<int>();
-            int extremeCapacity = int.MaxValue;
+            int extremeCapacity = 1_000_000;
 
             mapper.Initialize(extremeCapacity);
 

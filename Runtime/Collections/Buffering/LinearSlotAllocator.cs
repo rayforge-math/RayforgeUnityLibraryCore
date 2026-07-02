@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 
 namespace Rayforge.Core.Collections.Buffering
@@ -15,7 +16,8 @@ namespace Rayforge.Core.Collections.Buffering
         private int m_NextLocalIndex = 0;
         private int m_Capacity;
         private int m_BaseOffset;
-        private readonly Stack<int> m_FreeSlots = new();
+        private BitArray m_IsSlotFreed;
+        private Stack<int> m_FreeSlots;
 
         /// <summary>
         /// The current maximum number of slots this allocator can manage.
@@ -32,6 +34,11 @@ namespace Rayforge.Core.Collections.Buffering
         /// </summary>
         public int AvailableCount => m_FreeSlots.Count + (m_Capacity - m_NextLocalIndex);
 
+        /// <summary>
+        /// The number of slots currently available in the recycle stack.
+        /// </summary>
+        public int RecycleCount => m_FreeSlots.Count;
+
         #endregion
 
         #region Init
@@ -43,8 +50,16 @@ namespace Rayforge.Core.Collections.Buffering
         /// <param name="baseOffset">The global starting index for this allocator.</param>
         public LinearSlotAllocator(int capacity, int baseOffset = 0)
         {
+            if (capacity <= 0)
+                throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be at least 1.");
+            if (baseOffset < 0)
+                throw new ArgumentOutOfRangeException(nameof(baseOffset), "BaseOffset cannot be negative.");
+
             m_Capacity = capacity;
             m_BaseOffset = baseOffset;
+
+            m_IsSlotFreed = new BitArray(capacity);
+            m_FreeSlots = new Stack<int>(capacity);
         }
 
         /// <summary>
@@ -54,9 +69,24 @@ namespace Rayforge.Core.Collections.Buffering
         /// <param name="newBaseOffset">The new global starting index.</param>
         public void Reconfigure(int newCapacity, int newBaseOffset)
         {
+            if (newCapacity <= 0)
+                throw new ArgumentOutOfRangeException(nameof(newCapacity), "Capacity must be at least 1.");
+            if (newBaseOffset < 0)
+                throw new ArgumentOutOfRangeException(nameof(newBaseOffset), "BaseOffset cannot be negative.");
+
+            if (newCapacity == m_Capacity)
+            {
+                Reset();
+            }
+            else
+            {
+                m_IsSlotFreed = new BitArray(newCapacity);
+                m_FreeSlots = new Stack<int>(newCapacity);
+                m_NextLocalIndex = 0;
+            }
+
             m_Capacity = newCapacity;
             m_BaseOffset = newBaseOffset;
-            Reset();
         }
 
         #endregion
@@ -71,12 +101,21 @@ namespace Rayforge.Core.Collections.Buffering
         /// <exception cref="OverflowException">Thrown when no slots are available in the current capacity.</exception>
         public int Acquire()
         {
+            // 1. Priority: Recycled slots from the free stack
             if (m_FreeSlots.Count > 0)
-                return m_FreeSlots.Pop();
+            {
+                int index = m_FreeSlots.Pop();
 
+                // Mark as no longer free since we are handing it out
+                m_IsSlotFreed[index - m_BaseOffset] = false;
+                return index;
+            }
+
+            // 2. Linear allocation: Check if we still have room in the linear range
             if (m_NextLocalIndex >= m_Capacity)
                 throw new OverflowException($"[LinearSlotAllocator] Capacity of {m_Capacity} exceeded. No slots available.");
 
+            // Return the next linear slot and increment counter
             return m_BaseOffset + (m_NextLocalIndex++);
         }
 
@@ -89,11 +128,20 @@ namespace Rayforge.Core.Collections.Buffering
         /// </remarks>
         public void Release(int globalIndex)
         {
-            if (globalIndex < m_BaseOffset || globalIndex >= m_BaseOffset + m_Capacity)
-            {
-                return;
-            }
+            int localIndex = globalIndex - m_BaseOffset;
 
+            // Bounds check
+            if (localIndex < 0 || localIndex >= m_Capacity)
+                return;
+
+            if (localIndex >= m_NextLocalIndex)
+                return;
+
+            // Fast check (Idempotency)
+            if (m_IsSlotFreed[localIndex])
+                return;
+
+            m_IsSlotFreed[localIndex] = true;
             m_FreeSlots.Push(globalIndex);
         }
 
@@ -108,6 +156,7 @@ namespace Rayforge.Core.Collections.Buffering
         {
             m_NextLocalIndex = 0;
             m_FreeSlots.Clear();
+            m_IsSlotFreed.SetAll(false);
         }
 
         #endregion
