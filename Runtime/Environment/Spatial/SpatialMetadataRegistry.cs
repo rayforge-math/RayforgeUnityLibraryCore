@@ -15,7 +15,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// <typeparam name="TCulling">The struct type used for GPU culling (e.g., SphereSpatialData).</typeparam>
     /// <typeparam name="TRender">The struct type used for GPU rendering (e.g., MatrixSpatialData).</typeparam>
     public class SpatialMetadataRegistry<TKey, TCulling, TRender>
-        : MetadataRegistry<TKey>, IIterable<SyncedArrayIteratorMeta<TCulling, TRender>>, ISpatialMetadataProvider<TKey, TCulling, TRender>
+        : GpuDataRegistry<TKey>, IIterable<SyncedArrayIteratorMeta<TCulling, TRender>>, ISpatialMetadataProvider<TKey, TCulling, TRender>
         where TKey : struct, IEquatable<TKey>
         where TCulling : unmanaged, ISpatialData
         where TRender : unmanaged

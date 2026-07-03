@@ -8,7 +8,7 @@ namespace Rayforge.Core.Environment.Abstractions
     /// Used by systems that need to consume data (e.g., Renderer, Culling-Systems).
     /// </summary>
     public interface IReadOnlySpatialMetadataProvider<TKey, TCulling, TRender>
-        : IReadOnlyMetadataProvider<TKey>
+        : IReadOnlyGpuDataProvider<TKey>
         where TKey : struct, IEquatable<TKey>
         where TCulling : unmanaged, ISpatialData
         where TRender : unmanaged

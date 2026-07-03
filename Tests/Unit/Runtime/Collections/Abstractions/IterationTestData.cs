@@ -1,5 +1,3 @@
-using Rayforge.Core.Collections.Abstractions;
-
 namespace Rayforge.Core.Collections.Abstractions.Tests
 {
     /// <summary>

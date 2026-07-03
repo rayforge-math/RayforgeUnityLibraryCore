@@ -12,7 +12,7 @@ namespace Rayforge.Core.Collections.Buffering
     /// Bridges logical keys to multiple typed data stores (Spatial, Visual, etc.).
     /// </summary>
     /// <typeparam name="TKey">The unique identifier type (e.g., Vector3Int for Chunks).</typeparam>
-    public abstract class MetadataRegistry<TKey> : IMetadataProvider<TKey>
+    public class GpuDataRegistry<TKey> : IGpuDataProvider<TKey>
         where TKey : struct, IEquatable<TKey>
     {
         #region Properties
@@ -87,7 +87,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// <summary>
         /// Initializes a new registry with a fixed capacity and batch size for all its stores.
         /// </summary>
-        public MetadataRegistry(int capacity, int batchSize)
+        public GpuDataRegistry(int capacity, int batchSize)
         {
             Reconfigure(capacity, batchSize);
         }

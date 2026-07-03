@@ -1,5 +1,4 @@
 using System;
-using Rayforge.Core.Execution.Abstractions;
 
 namespace Rayforge.Core.Collections.Abstractions
 {
@@ -8,7 +7,7 @@ namespace Rayforge.Core.Collections.Abstractions
     /// Reserved for systems responsible for registry orchestration.
     /// </summary>
     /// <typeparam name="TKey">The unique identifier type.</typeparam>
-    public interface IMetadataProvider<TKey> : IReadOnlyMetadataProvider<TKey>
+    public interface IGpuDataProvider<TKey> : IReadOnlyGpuDataProvider<TKey>
         where TKey : struct, IEquatable<TKey>
     {
         #region Management

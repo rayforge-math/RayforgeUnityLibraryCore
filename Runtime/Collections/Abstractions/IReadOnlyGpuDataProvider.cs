@@ -8,7 +8,7 @@ namespace Rayforge.Core.Collections.Abstractions
     /// Acts as the safe, immutable view for external systems.
     /// </summary>
     /// <typeparam name="TKey">The unique identifier type.</typeparam>
-    public interface IReadOnlyMetadataProvider<TKey>
+    public interface IReadOnlyGpuDataProvider<TKey>
         where TKey : struct, IEquatable<TKey>
     {
         #region Properties

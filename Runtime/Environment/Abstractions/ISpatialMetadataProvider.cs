@@ -12,7 +12,7 @@ namespace Rayforge.Core.Environment.Abstractions
     /// <typeparam name="TCulling">The struct type used for GPU culling (e.g., SphereSpatialData).</typeparam>
     /// <typeparam name="TRender">The struct type used for GPU rendering (e.g., MatrixSpatialData).</typeparam>
     public interface ISpatialMetadataProvider<TKey, TCulling, TRender>
-        : IMetadataProvider<TKey>, IReadOnlySpatialMetadataProvider<TKey, TCulling, TRender>
+        : IGpuDataProvider<TKey>, IReadOnlySpatialMetadataProvider<TKey, TCulling, TRender>
         where TKey : struct, IEquatable<TKey>
         where TCulling : unmanaged, ISpatialData
         where TRender : unmanaged
