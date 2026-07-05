@@ -465,7 +465,7 @@ namespace Rayforge.Core.Collections.Buffering
         {
             if (!m_AnyDirty)
             {
-                return default;
+                return IIterator<BufferSegmentMeta<T>>.Empty();
             }
 
             var scanner = GetDirtySegmentScanner(mergeContiguous);
@@ -484,7 +484,7 @@ namespace Rayforge.Core.Collections.Buffering
         {
             if (!m_AnyDirty)
             {
-                return default;
+                return IIterator<int>.Empty();
             }
 
             var logic = new BitIteratorState(m_DirtyBits, 0, m_TotalBatches);

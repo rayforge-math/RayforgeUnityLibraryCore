@@ -1,8 +1,11 @@
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using Rayforge.Core.TestEnv;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.ConstrainedExecution;
 using UnityEngine;
 using static UnityEditor.Experimental.GraphView.Port;
 
@@ -1361,6 +1364,23 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             Assert.AreEqual(2, action.CallCount);
         }
 
+        [Test]
+        public void ForEachDirtySegment_FirstAndLastBatchDirty_ProcessesBoth()
+        {
+            int capacity = 20;
+            int batchSize = 5; // Batches: 0, 1, 2, 3
+            var store = new MetadataStore<int>(capacity, batchSize);
+
+            // Dirty first and last batch
+            store.Set(0, 1);   // Batch 0
+            store.Set(15, 1);  // Batch 3
+
+            var action = new DirtyAction<int>();
+            store.ForEachDirtySegment(ref action, mergeContiguous: false);
+
+            Assert.AreEqual(2, action.CallCount, "Should process exactly the first and last batch.");
+        }
+
         #endregion
 
         #region ForEachDirtyIndex Tests
@@ -1427,6 +1447,377 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             Assert.AreEqual(2, action.CallCount);
             Assert.Contains(0, action.Indices);
             Assert.Contains(1, action.Indices);
+        }
+
+        [Test]
+        public void ForEachDirtyIndex_FirstAndLastBatchDirty_ProcessesBoth()
+        {
+            int capacity = 20;
+            int batchSize = 5;
+            var store = new MetadataStore<int>(capacity, batchSize);
+
+            store.Set(0, 1);
+            store.Set(15, 1);
+
+            var action = new IndexAction();
+            store.ForEachDirtyIndex(ref action);
+
+            Assert.AreEqual(2, action.CallCount);
+            Assert.Contains(0, action.Indices);
+            Assert.Contains(3, action.Indices);
+        }
+
+        #endregion
+
+        #region ForEachSegment Tests
+
+        [Test]
+        public void ForEachSegment_ProcessesAllSegments()
+        {
+            // 20 capacity, 5 batch size = exactly 4 segments
+            var store = new MetadataStore<int>(20, 5);
+            var action = new SegmentAction<int>();
+
+            store.ForEachSegment(ref action);
+
+            // Verify that the iterator visits every single batch segment
+            Assert.AreEqual(4, action.SegmentCount, "Should iterate over all 4 segments in the store.");
+        }
+
+        [Test]
+        public void ForEachSegment_ProcessesSingleSegment()
+        {
+            // 5 capacity, 5 batch size = 1 segment
+            var store = new MetadataStore<int>(5, 5);
+            var action = new SegmentAction<int>();
+
+            store.ForEachSegment(ref action);
+
+            Assert.AreEqual(1, action.SegmentCount, "Should iterate over the single segment.");
+        }
+
+        [Test]
+        public void ForEachSegment_IgnoresDirtyState()
+        {
+            var store = new MetadataStore<int>(10, 5); // 2 segments
+
+            // Even if no data is marked dirty, it must process all segments
+            var action = new SegmentAction<int>();
+            store.ForEachSegment(ref action);
+
+            Assert.AreEqual(2, action.SegmentCount, "Should process all segments regardless of dirty state.");
+        }
+
+        [Test]
+        public void ForEachSegment_ProcessesDifferentBatchSizes()
+        {
+            // 10 capacity, 2 batch size = 5 segments
+            var store = new MetadataStore<int>(10, 2);
+            var action = new SegmentAction<int>();
+
+            store.ForEachSegment(ref action);
+
+            Assert.AreEqual(5, action.SegmentCount, "Should correctly identify segments based on smaller batch size.");
+        }
+
+        #endregion
+
+        #region GetDirtySegmentIterator Tests
+
+        [Test]
+        public void GetDirtySegmentIterator_WhenClean_ReturnsEmpty()
+        {
+            var store = new MetadataStore<int>(10, 5);
+            var it = store.GetDirtySegmentIterator();
+
+            int count = 0;
+            while (it.MoveNext()) count++;
+
+            // Verify that the iterator is empty when no data is marked as dirty
+            Assert.AreEqual(0, count, "Should not iterate any segments on a clean store.");
+        }
+
+        [Test]
+        public void GetDirtySegmentIterator_WithDirtyData_ProcessesCorrectly()
+        {
+            var store = new MetadataStore<int>(10, 5);
+            // Mark index 0 as dirty
+            store.Set(0, 42);
+
+            var it = store.GetDirtySegmentIterator();
+            int count = 0;
+            int totalLength = 0;
+
+            while (it.MoveNext())
+            {
+                count++;
+                totalLength += it.Current.Count;
+            }
+
+            // Ensure exactly one segment was identified and processed
+            Assert.AreEqual(1, count);
+            Assert.AreEqual(5, totalLength);
+        }
+
+        [Test]
+        public void GetDirtySegmentIterator_MergeContiguous_HandlesSplitsCorrectly()
+        {
+            // Setup store with capacity 20 and batch size 5
+            var store = new MetadataStore<int>(20, 5);
+
+            // Dirty data in Batch 0 (Index 0) and Batch 2 (Index 10)
+            // These are distinct ranges that should not be merged
+            store.Set(0, 10);
+            store.Set(10, 20);
+
+            var it = store.GetDirtySegmentIterator(mergeContiguous: true);
+            int count = 0;
+
+            while (it.MoveNext()) count++;
+
+            // Verify they remain as 2 separate segments
+            Assert.AreEqual(2, count, "Should be 2 distinct segments.");
+        }
+
+        [Test]
+        public void GetDirtySegmentIterator_MergeContiguous_MergesCorrectly()
+        {
+            var store = new MetadataStore<int>(20, 1);
+
+            // Dirty data in index 0 and 1 (same batch)
+            // These should be merged into a single segment
+            store.Set(0, 10);
+            store.Set(1, 20);
+
+            var it = store.GetDirtySegmentIterator(mergeContiguous: true);
+            int count = 0;
+            int totalLength = 0;
+
+            while (it.MoveNext())
+            {
+                count++;
+                totalLength += it.Current.Count;
+            }
+
+            // Verify that contiguous dirty elements are combined
+            Assert.AreEqual(1, count, "Adjacent dirty elements should be merged into one segment.");
+            Assert.AreEqual(2, totalLength);
+        }
+
+        [Test]
+        public void GetDirtySegmentIterator_MultipleBatches_ProcessesAll()
+        {
+            var store = new MetadataStore<int>(20, 5);
+
+            // Dirty data in Batch 0 and Batch 1
+            store.Set(0, 1);
+            store.Set(6, 1);
+
+            var it = store.GetDirtySegmentIterator(mergeContiguous: false);
+            int count = 0;
+
+            while (it.MoveNext()) count++;
+
+            // Verify that both batches were processed independently
+            Assert.AreEqual(2, count);
+        }
+
+        [Test]
+        public void GetDirtySegmentIterator_FirstAndLastBatchDirty_ProcessesBoth()
+        {
+            // 20 capacity, 5 batch size = 4 batches total (0, 1, 2, 3)
+            int capacity = 20;
+            int batchSize = 5;
+            var store = new MetadataStore<int>(capacity, batchSize);
+
+            // Mark first batch (index 0) and last batch (index 15) as dirty
+            store.Set(0, 1);  // Batch 0
+            store.Set(15, 1); // Batch 3
+
+            var it = store.GetDirtySegmentIterator(mergeContiguous: false);
+
+            int count = 0;
+            while (it.MoveNext())
+            {
+                count++;
+            }
+
+            Assert.AreEqual(2, count, "Iterator should yield exactly the first and last dirty batch segment.");
+        }
+
+        #endregion
+
+        #region GetDirtySegmentIndices Tests
+
+        [Test]
+        public void GetDirtySegmentIndices_WhenClean_ReturnsEmpty()
+        {
+            var store = new MetadataStore<int>(50, 5);
+            var it = store.GetDirtySegmentIndices();
+
+            int count = 0;
+            while (it.MoveNext())
+            {
+                count++;
+            }
+
+            Assert.AreEqual(0, count, "Should not return any indices on a clean store.");
+        }
+
+        [Test]
+        public void GetDirtySegmentIndices_SingleDirtyBatch_ProcessesCorrectly()
+        {
+            var store = new MetadataStore<int>(50, 5);
+            // Mark index 0 as dirty (Batch index 0)
+            store.Set(0, 100);
+
+            var it = store.GetDirtySegmentIndices();
+            var indices = new List<int>();
+
+            while (it.MoveNext())
+            {
+                indices.Add(it.Current);
+            }
+
+            Assert.AreEqual(1, indices.Count);
+            Assert.Contains(0, indices);
+        }
+
+        [Test]
+        public void GetDirtySegmentIndices_MultipleDirtyBatches_ProcessesAll()
+        {
+            var store = new MetadataStore<int>(50, 5);
+
+            // Mark elements in Batch 0 and Batch 2 as dirty
+            store.Set(0, 10);  // Batch 0
+            store.Set(10, 20); // Batch 2 (indices 10-14)
+
+            var it = store.GetDirtySegmentIndices();
+            var indices = new List<int>();
+
+            while (it.MoveNext())
+            {
+                indices.Add(it.Current);
+            }
+
+            Assert.AreEqual(2, indices.Count);
+            Assert.Contains(0, indices);
+            Assert.Contains(2, indices);
+        }
+
+        [Test]
+        public void GetDirtySegmentIndices_AllBatchesDirty_ProcessesAll()
+        {
+            var store = new MetadataStore<int>(10, 5);
+
+            // Mark items in both Batch 0 and Batch 1
+            store.Set(0, 1);
+            store.Set(5, 1);
+
+            var it = store.GetDirtySegmentIndices();
+            var indices = new List<int>();
+
+            while (it.MoveNext())
+            {
+                indices.Add(it.Current);
+            }
+
+            Assert.AreEqual(2, indices.Count);
+            Assert.Contains(0, indices);
+            Assert.Contains(1, indices);
+        }
+
+        [Test]
+        public void GetDirtySegmentIndices_FirstAndLastBatchDirty_ProcessesBoth()
+        {
+            int capacity = 20;
+            int batchSize = 5;
+            var store = new MetadataStore<int>(capacity, batchSize);
+
+            store.Set(0, 1);
+            store.Set(15, 1);
+
+            var it = store.GetDirtySegmentIndices();
+            var indices = new List<int>();
+            while (it.MoveNext()) indices.Add(it.Current);
+
+            Assert.AreEqual(2, indices.Count);
+            Assert.Contains(0, indices);
+            Assert.Contains(3, indices);
+        }
+
+        #endregion
+
+        #region GetSegmentIterator Tests
+
+        [Test]
+        public void GetSegmentIterator_ProcessesAllSegments()
+        {
+            // Capacity 20, BatchSize 5 = 4 segments
+            var store = new MetadataStore<int>(20, 5);
+            var it = store.GetSegmentIterator();
+
+            int count = 0;
+            while (it.MoveNext())
+            {
+                count++;
+            }
+
+            Assert.AreEqual(4, count, "Should iterate over all 4 segments in the store.");
+        }
+
+        [Test]
+        public void GetSegmentIterator_IgnoresDirtyState()
+        {
+            var store = new MetadataStore<int>(10, 5); // 2 segments
+
+            // Even without setting any data to dirty, all segments must be returned
+            var it = store.GetSegmentIterator();
+            int count = 0;
+
+            while (it.MoveNext())
+            {
+                count++;
+            }
+
+            Assert.AreEqual(2, count, "Should process all segments regardless of dirty state.");
+        }
+
+        [Test]
+        public void GetSegmentIterator_ProcessesCorrectBatchSizes()
+        {
+            // 10 capacity, 2 batch size = 5 segments
+            var store = new MetadataStore<int>(10, 2);
+            var it = store.GetSegmentIterator();
+
+            int count = 0;
+            while (it.MoveNext())
+            {
+                count++;
+            }
+
+            Assert.AreEqual(5, count, "Should correctly identify segment count based on batch size.");
+        }
+
+        [Test]
+        public void GetSegmentIterator_CurrentReturnsValidData()
+        {
+            var store = new MetadataStore<int>(10, 5); // 2 segments
+            var it = store.GetSegmentIterator();
+
+            // Verify first segment range
+            if (it.MoveNext())
+            {
+                Assert.AreEqual(0, it.Current.Start);
+                Assert.AreEqual(5, it.Current.Count);
+            }
+
+            // Verify second segment range
+            if (it.MoveNext())
+            {
+                Assert.AreEqual(5, it.Current.Start);
+                Assert.AreEqual(5, it.Current.Count);
+            }
         }
 
         #endregion
