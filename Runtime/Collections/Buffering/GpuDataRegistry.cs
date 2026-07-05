@@ -47,37 +47,79 @@ namespace Rayforge.Core.Collections.Buffering
 
         #region Store Diagnostics & Raw Access
 
-        /// <inheritdoc />
-        public int GetStride<T>() where T : unmanaged 
+        /// <summary>
+        /// Returns the size in bytes of the unmanaged type T.
+        /// Note: This does not depend on a registered store, so it always returns the size.
+        /// </summary>
+        public int GetStride<T>() where T : unmanaged
             => Unsafe.SizeOf<T>();
 
-        /// <inheritdoc />
-        public bool IsDirty<T>() where T : unmanaged 
+        /// <summary>
+        /// Returns true if the store for type T is dirty.
+        /// If no store is registered, it is considered not dirty (false).
+        /// </summary>
+        public bool IsDirty<T>() where T : unmanaged
             => GetStore<T>()?.AnyDirty ?? false;
 
         /// <summary>
-        /// Gets the underlying raw data array of a specific store.
-        /// Essential for interop with APIs like ComputeBuffer.SetData.
+        /// Gets the underlying raw data array.
+        /// Throws InvalidOperationException if the store is not registered.
         /// </summary>
-        public Array GetUntypedBuffer<T>() where T : unmanaged 
-            => GetStore<T>()?.UntypedBuffer;
+        public Array GetUntypedBuffer<T>() where T : unmanaged
+        {
+            var store = GetStore<T>() ?? throw new InvalidOperationException($"No store registered for type {typeof(T).Name}.");
+            return store.UntypedBuffer;
+        }
 
         /// <summary>
-        /// Gets the typed array for CPU-side interop and manual buffer manipulation for a given store.
-        /// Returns null if no store is registered for the specified type.
+        /// Gets the typed array for CPU-side interop and manual buffer manipulation.
+        /// Throws InvalidOperationException if the store is not registered.
         /// </summary>
-        /// <typeparam name="T">The unmanaged data type.</typeparam>
         public T[] GetTypedBuffer<T>() where T : unmanaged
-            => GetStore<T>()?.TypedBuffer;
+        {
+            var store = GetStore<T>() ?? throw new InvalidOperationException($"No store registered for type {typeof(T).Name}.");
+            return store.TypedBuffer;
+        }
 
         /// <summary>
-        /// Gets the data of a specific store as a ReadOnlySpan for high-performance access.
+        /// Gets the data as a ReadOnlySpan.
+        /// Returns ReadOnlySpan.Empty if no store is registered.
         /// </summary>
-        public ReadOnlySpan<T> AsSpan<T>() 
-            where T : unmanaged
+        public ReadOnlySpan<T> AsSpan<T>() where T : unmanaged
         {
             var store = GetStore<T>();
             return store != null ? store.AsSpan() : ReadOnlySpan<T>.Empty;
+        }
+
+        #endregion
+
+        #region Public Store Management
+
+        /// <summary>
+        /// Registers a new data stream for a specific type. 
+        /// Returns the existing store if it was already registered.
+        /// </summary>
+        public MetadataStore<T> AddStore<T>() where T : unmanaged
+        {
+            var type = typeof(T);
+            if (m_Stores.TryGetValue(type, out var existing))
+                return (MetadataStore<T>)existing;
+
+            var store = new MetadataStore<T>(m_Capacity, m_BatchSize);
+            m_Stores[type] = store;
+            return store;
+        }
+
+        /// <summary>
+        /// Retrieves an existing store as a read-only interface.
+        /// Use this for external systems like renderers that should not 
+        /// be able to call Resize or UpdateBatchSize.
+        /// </summary>
+        public MetadataStore<T> GetStore<T>() where T : unmanaged
+        {
+            if (m_Stores.TryGetValue(typeof(T), out var storeObj))
+                return (MetadataStore<T>)storeObj;
+            return null;
         }
 
         #endregion
@@ -157,10 +199,14 @@ namespace Rayforge.Core.Collections.Buffering
         }
 
         /// <summary>
-        /// Updates a value for a specific key and type. 
+        /// Sets the value for a specific key and type. 
         /// Automatically allocates a slot if the key is new.
         /// </summary>
+        /// <typeparam name="T">The unmanaged type of the metadata.</typeparam>
+        /// <param name="key">The key identifying the data slot.</param>
+        /// <param name="value">The value to store.</param>
         /// <returns>The absolute index where the value was stored.</returns>
+        /// <exception cref="InvalidOperationException">Thrown if no store for type T is registered.</exception>
         public int Set<T>(TKey key, T value) where T : unmanaged
         {
             int index = m_Mapper.GetOrAllocate(key);
@@ -175,6 +221,26 @@ namespace Rayforge.Core.Collections.Buffering
             }
 
             return index;
+        }
+
+        /// <summary>
+        /// Retrieves the value for a specific key.
+        /// </summary>
+        /// <typeparam name="T">The unmanaged type of the metadata.</typeparam>
+        /// <param name="key">The key identifying the data slot.</param>
+        /// <returns>The stored value, or default(T) if the key is not found.</returns>
+        /// <exception cref="InvalidOperationException">Thrown if no store for type T is registered.</exception>
+        public T Get<T>(TKey key) where T : unmanaged
+        {
+            if (m_Mapper.TryGetIndex(key, out int index))
+            {
+                if (m_Stores.TryGetValue(typeof(T), out var storeObj))
+                {
+                    return ((MetadataStore<T>)storeObj).Get(index);
+                }
+                throw new InvalidOperationException($"No store registered for type {typeof(T).Name}.");
+            }
+            return default;
         }
 
         /// <summary>
@@ -323,37 +389,6 @@ namespace Rayforge.Core.Collections.Buffering
         {
             var store = GetStore<T>();
             return store?.GetDirtySegmentIndices() ?? default;
-        }
-
-        #endregion
-
-        #region Internal Management
-
-        /// <summary>
-        /// Registers a new data stream for a specific type. 
-        /// Returns the existing store if it was already registered.
-        /// </summary>
-        protected MetadataStore<T> AddStore<T>() where T : unmanaged
-        {
-            var type = typeof(T);
-            if (m_Stores.TryGetValue(type, out var existing))
-                return (MetadataStore<T>)existing;
-
-            var store = new MetadataStore<T>(m_Capacity, m_BatchSize);
-            m_Stores[type] = store;
-            return store;
-        }
-
-        /// <summary>
-        /// Retrieves an existing store as a read-only interface.
-        /// Use this for external systems like renderers that should not 
-        /// be able to call Resize or UpdateBatchSize.
-        /// </summary>
-        protected MetadataStore<T> GetStore<T>() where T : unmanaged
-        {
-            if (m_Stores.TryGetValue(typeof(T), out var storeObj))
-                return (MetadataStore<T>)storeObj;
-            return null;
         }
 
         #endregion

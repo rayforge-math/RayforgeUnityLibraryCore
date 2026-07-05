@@ -7,7 +7,7 @@ namespace Rayforge.Core.Collections.Abstractions
     /// Provides read-only diagnostic and access capabilities for a metadata store.
     /// Used by systems that need to inspect store state without modifying it.
     /// </summary>
-    public interface IReadOnlyMetadata
+    public interface IBufferMetadata
     {
         #region General Properties
 

@@ -6,6 +6,7 @@ using System;
 using System.Collections;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using static UnityEditor.Experimental.GraphView.Port;
 
 namespace Rayforge.Core.Collections.Buffering
 {
@@ -16,7 +17,7 @@ namespace Rayforge.Core.Collections.Buffering
     /// </summary>
     /// <typeparam name="T">The unmanaged metadata struct (e.g., SpatialData or AtlasVisualData).</typeparam>
     public sealed class MetadataStore<T>
-        : IMetadataController, IReadOnlyMetadata, IIterable<T>, IRawBuffer<T>
+        : IMetadataController, IBufferMetadata, IIterable<T>, IRawBuffer<T>
         where T : unmanaged
     {
         #region Properties
@@ -54,7 +55,7 @@ namespace Rayforge.Core.Collections.Buffering
         public bool AnyDirty => m_AnyDirty;
 
         /// <summary> Provides access to the dirty bit tracking state. </summary>
-        public BitArray DirtyBits => DirtyBits;
+        public BitArray DirtyBits => m_DirtyBits;
 
         /// <summary>
         /// Gets the underlying data as a raw <see cref="Array"/>.
@@ -89,6 +90,12 @@ namespace Rayforge.Core.Collections.Buffering
         #region Constructor
 
         /// <summary>
+        /// Default constructor is disabled to ensure the store is properly initialized with valid capacity and batch size.
+        /// </summary>
+        [Obsolete("Use the parameterized constructor instead.", true)]
+        private MetadataStore() { }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="MetadataStore{T}"/> class.
         /// </summary>
         /// <param name="capacity">The number of slots to manage.</param>
@@ -99,7 +106,7 @@ namespace Rayforge.Core.Collections.Buffering
             if (batchSize < 0) throw new ArgumentException("Batch Size must be positive or 0.");
 
             m_CpuData = new T[capacity];
-            m_BatchSize = Math.Max(1, batchSize);
+            m_BatchSize = (batchSize == 0) ? capacity : batchSize;
             m_TotalBatches = BufferMath.GetTotalBatches(capacity, m_BatchSize);
             m_DirtyBits = new BitArray(m_TotalBatches);
             m_AnyDirty = false;
@@ -118,7 +125,11 @@ namespace Rayforge.Core.Collections.Buffering
         public void Resize(int newCapacity)
         {
             if (newCapacity <= 0) throw new ArgumentException("Capacity must be positive.");
-            if (m_CpuData != null && m_CpuData.Length == newCapacity) return;
+            if (m_CpuData != null && m_CpuData.Length == newCapacity)
+            {
+                Clear();
+                return;
+            }
 
             m_CpuData = new T[newCapacity];
 
@@ -132,16 +143,18 @@ namespace Rayforge.Core.Collections.Buffering
         /// Updates the batching logic without losing any data.
         /// Use this for performance tuning at runtime.
         /// </summary>
-        public void UpdateBatchSize(int newBatchSize)
+        public void UpdateBatchSize(int batchSize)
         {
-            newBatchSize = Math.Max(1, newBatchSize);
-            if (m_BatchSize == newBatchSize) return;
+            if (batchSize < 0) throw new ArgumentException("Batch Size must be positive or 0.");
+
+            batchSize = (batchSize == 0) ? m_CpuData.Length : batchSize;
+            if (m_BatchSize == batchSize) return;
 
             int oldBatchSize = m_BatchSize;
             int oldTotal = m_TotalBatches;
             BitArray oldBits = m_DirtyBits;
 
-            m_BatchSize = newBatchSize;
+            m_BatchSize = batchSize;
             m_TotalBatches = BufferMath.GetTotalBatches(m_CpuData.Length, m_BatchSize);
             m_DirtyBits = new BitArray(m_TotalBatches);
 
@@ -170,10 +183,31 @@ namespace Rayforge.Core.Collections.Buffering
         /// Marks a specific index as dirty without changing its value.
         /// </summary>
         /// <param name="index">The index to mark as dirty.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when index is outside the valid range [0, Capacity-1].</exception>
         public void MarkDirty(int index)
         {
+            if (index < 0 || index >= m_CpuData.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index), $"Index {index} is out of range for capacity {m_CpuData.Length}.");
+            }
+
             int batchIndex = BufferMath.GetBatchIndex(index, m_BatchSize);
-            m_DirtyBits.Set(batchIndex, true);
+            MarkDirtyBatch(batchIndex);
+        }
+
+        /// <summary>
+        /// Marks a specific batch as dirty.
+        /// </summary>
+        /// <param name="index">The index to mark as dirty.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when index is outside the valid range [0, TotalBatches-1].</exception>
+        public void MarkDirtyBatch(int index)
+        {
+            if (index < 0 || index >= m_TotalBatches)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index), $"Index {index} is out of range for batch count {m_TotalBatches}.");
+            }
+
+            m_DirtyBits.Set(index, true);
             m_AnyDirty = true;
         }
 
@@ -198,12 +232,6 @@ namespace Rayforge.Core.Collections.Buffering
         }
 
         /// <summary>
-        /// Returns the internal CPU array for direct access (e.g., for SetData).
-        /// </summary>
-        /// <returns>The raw CPU-side data array.</returns>
-        public T[] GetInternalArray() => m_CpuData;
-
-        /// <summary>
         /// Resets the store by zeroing the CPU array and clearing all dirty tracking markers.
         /// Ensures no old data remains and the GPU synchronization starts fresh.
         /// </summary>
@@ -220,10 +248,16 @@ namespace Rayforge.Core.Collections.Buffering
         /// <summary>
         /// Sets the metadata for a specific index and marks the corresponding batch as dirty.
         /// </summary>
-        /// <param name="index">The slot index (usually provided by a SlotMapper).</param>
+        /// <param name="index">The slot index.</param>
         /// <param name="value">The metadata value to store.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when index is outside the valid range [0, Capacity-1].</exception>
         public void Set(int index, T value)
         {
+            if (index < 0 || index >= m_CpuData.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index), $"Index {index} is out of range for capacity {m_CpuData.Length}.");
+            }
+
             m_CpuData[index] = value;
             MarkDirty(index);
         }
@@ -233,7 +267,66 @@ namespace Rayforge.Core.Collections.Buffering
         /// </summary>
         /// <param name="index">The index to look up.</param>
         /// <returns>The stored metadata value.</returns>
-        public T Get(int index) => m_CpuData[index];
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when index is outside the valid range [0, Capacity-1].</exception>
+        public T Get(int index)
+        {
+            if (index < 0 || index >= m_CpuData.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index), $"Index {index} is out of range for capacity {m_CpuData.Length}.");
+            }
+
+            return m_CpuData[index];
+        }
+
+        /// <summary>
+        /// Bulk-sets metadata for a range of indices and marks the corresponding batches as dirty.
+        /// </summary>
+        /// <param name="startIndex">The starting slot index.</param>
+        /// <param name="source">The source array containing the new data.</param>
+        /// <param name="sourceIndex">The starting index in the source array.</param>
+        /// <param name="length">The number of elements to copy.</param>
+        public void SetRange(int startIndex, T[] source, int sourceIndex, int length)
+        {
+            // 1. Check if range is within bounds of MetadataStore
+            if (startIndex < 0 || startIndex + length > m_CpuData.Length)
+                throw new ArgumentOutOfRangeException(nameof(startIndex), "Target range is out of bounds.");
+
+            // 2. Check if source range is valid
+            if (source == null) throw new ArgumentNullException(nameof(source));
+            if (sourceIndex < 0 || sourceIndex + length > source.Length)
+                throw new ArgumentOutOfRangeException(nameof(sourceIndex), "Source range is out of bounds.");
+
+            Array.Copy(source, sourceIndex, m_CpuData, startIndex, length);
+
+            int startBatch = BufferMath.GetBatchIndex(startIndex, m_BatchSize);
+            int endBatch = BufferMath.GetBatchIndex(startIndex + length - 1, m_BatchSize);
+
+            for (int i = startBatch; i <= endBatch; ++i)
+            {
+                MarkDirtyBatch(i);
+            }
+        }
+
+        /// <summary>
+        /// Retrieves a range of metadata from the store into a destination array.
+        /// </summary>
+        /// <param name="startIndex">The starting slot index.</param>
+        /// <param name="destination">The destination array.</param>
+        /// <param name="destinationIndex">The starting index in the destination array.</param>
+        /// <param name="length">The number of elements to copy.</param>
+        public void GetRange(int startIndex, T[] destination, int destinationIndex, int length)
+        {
+            // 1. Check if source range is within bounds of MetadataStore
+            if (startIndex < 0 || startIndex + length > m_CpuData.Length)
+                throw new ArgumentOutOfRangeException(nameof(startIndex), "Source range is out of bounds.");
+
+            // 2. Check if destination range is valid
+            if (destination == null) throw new ArgumentNullException(nameof(destination));
+            if (destinationIndex < 0 || destinationIndex + length > destination.Length)
+                throw new ArgumentOutOfRangeException(nameof(destinationIndex), "Destination range is out of bounds.");
+
+            Array.Copy(m_CpuData, startIndex, destination, destinationIndex, length);
+        }
 
         #endregion
 
@@ -408,11 +501,6 @@ namespace Rayforge.Core.Collections.Buffering
         /// <returns>A boxed iterator instance or an empty one if no segments are present.</returns>
         public IIterator<BufferSegmentMeta<T>> GetSegmentIterator()
         {
-            if (!m_AnyDirty)
-            {
-                return default;
-            }
-
             var scanner = GetSegmentScanner();
             return new Iterator<BufferSegmentMeta<T>, BufferSegmentState<T>>(scanner);
         }
@@ -428,8 +516,13 @@ namespace Rayforge.Core.Collections.Buffering
         /// </summary>
         /// <param name="mergeContiguous">If true, contiguous dirty batches are merged into segments.</param>
         /// <returns>A stack-allocated state struct ready for iteration.</returns>
-        internal DirtySegmentState<T> GetDirtySegmentScanner(bool mergeContiguous = false)
+        private DirtySegmentState<T> GetDirtySegmentScanner(bool mergeContiguous = false)
         {
+            if (!m_AnyDirty)
+            {
+                return default;
+            }
+
             return new DirtySegmentState<T>(
                 m_CpuData,
                 m_DirtyBits,
@@ -446,7 +539,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// to avoid heap allocations and interface overhead.
         /// </summary>
         /// <returns>A stack-allocated state struct ready for iteration.</returns>
-        internal BufferSegmentState<T> GetSegmentScanner()
+        private BufferSegmentState<T> GetSegmentScanner()
         {
             return new BufferSegmentState<T>(
                 m_CpuData,

@@ -12,6 +12,11 @@ namespace Rayforge.Core.Collections.Abstractions
         #region State Management
 
         /// <summary>
+        /// Returns true if any segment in the store is marked as dirty.
+        /// </summary>
+        bool AnyDirty { get; }
+
+        /// <summary>
         /// Resets the store to its initial state, clearing all data and dirty flags.
         /// Essential for full scene reloads.
         /// </summary>

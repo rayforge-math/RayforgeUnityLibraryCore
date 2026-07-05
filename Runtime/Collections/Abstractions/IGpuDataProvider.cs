@@ -23,15 +23,19 @@ namespace Rayforge.Core.Collections.Abstractions
         /// <typeparam name="T">The unmanaged data type.</typeparam>
         Array GetUntypedBuffer<T>() where T : unmanaged;
 
+        /// <summary> Updates or adds a value for a specific key. Allocates a slot if necessary. </summary>
+        /// <returns>The absolute index where the value is stored.</returns>
+        int Set<T>(TKey key, T value) where T : unmanaged;
+
+        /// <summary> Gets a single value for a specific key. </summary>
+        /// <returns> The value associated with the key, or default(T) if not found. </returns>
+        T Get<T>(TKey key) where T : unmanaged;
+
         /// <summary> Resets the registry by clearing all key-to-slot mappings and resetting all data stores. </summary>
         void Clear();
 
         /// <summary> Acknowledges all processed data by resetting the dirty tracking state for all stores. </summary>
         void ClearDirtyState();
-
-        /// <summary> Updates or adds a value for a specific key. Allocates a slot if necessary. </summary>
-        /// <returns>The absolute index where the value is stored.</returns>
-        int Set<T>(TKey key, T value) where T : unmanaged;
 
         /// <summary> Releases the key and its associated index; the slot becomes available for reuse. </summary>
         /// <returns>The index that was released, or -1 if the key was not found.</returns>
