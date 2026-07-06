@@ -371,29 +371,29 @@ namespace Rayforge.Core.Collections.Buffering.Tests
         }
 
         [Test]
-        public void TryGetIndex_NonExistentKey_ReturnsFalseAndNegativeOne()
+        public void TryGetIndex_NonExistentKey_ReturnsFalseAndZero()
         {
             var mapper = new KeyedSlotMapper<int>(10);
 
             bool found = mapper.TryGetIndex(404, out int index);
 
             Assert.IsFalse(found);
-            Assert.AreEqual(-1, index);
+            Assert.AreEqual(0, index);
         }
 
         [Test]
-        public void TryGetIndex_UninitializedMapper_ReturnsFalseAndNegativeOne()
+        public void TryGetIndex_UninitializedMapper_ReturnsFalseAndZero()
         {
             var mapper = new KeyedSlotMapper<int>();
 
             bool found = mapper.TryGetIndex(1, out int index);
 
             Assert.IsFalse(found);
-            Assert.AreEqual(-1, index);
+            Assert.AreEqual(0, index);
         }
 
         [Test]
-        public void TryGetIndex_AfterRelease_ReturnsFalseAndNegativeOne()
+        public void TryGetIndex_AfterRelease_ReturnsFalseAndZero()
         {
             var mapper = new KeyedSlotMapper<int>(10);
             mapper.GetOrAllocate(1);
@@ -402,7 +402,7 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             bool found = mapper.TryGetIndex(1, out int index);
 
             Assert.IsFalse(found);
-            Assert.AreEqual(-1, index);
+            Assert.AreEqual(0, index);
         }
 
         #endregion

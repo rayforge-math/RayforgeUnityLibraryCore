@@ -37,6 +37,13 @@ namespace Rayforge.Core.Collections.Abstractions
         /// <summary> Acknowledges all processed data by resetting the dirty tracking state for all stores. </summary>
         void ClearDirtyState();
 
+        /// <summary>
+        /// Resets the dirty state for the store of the specified type.
+        /// </summary>
+        /// <typeparam name="T">The unmanaged data type.</typeparam>
+        /// <exception cref="InvalidOperationException">Thrown if no store is registered for type T.</exception>
+        void ClearDirty<T>() where T : unmanaged;
+
         /// <summary> Releases the key and its associated index; the slot becomes available for reuse. </summary>
         /// <returns>The index that was released, or -1 if the key was not found.</returns>
         int Release(TKey key);

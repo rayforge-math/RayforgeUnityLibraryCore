@@ -82,6 +82,12 @@ namespace Rayforge.Core.Collections.Abstractions
         /// <typeparam name="T">The unmanaged data type to check.</typeparam>
         bool IsDirty<T>() where T : unmanaged;
 
+        /// <summary> 
+        /// Returns true if any of the registered stores have pending dirty segments 
+        /// that require synchronization. 
+        /// </summary>
+        bool AnyDirty { get; }
+
         #endregion
 
         #region Iteration

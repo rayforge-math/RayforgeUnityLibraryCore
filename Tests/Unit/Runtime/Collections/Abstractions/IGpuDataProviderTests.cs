@@ -227,7 +227,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
 
         #endregion
 
-        #region Clear
+        #region Clear Tests
 
         [Test]
         public void Clear_ResetsAllStoresToDefaultValues()
@@ -322,6 +322,458 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
             // Assert
             Assert.AreEqual(length, provider.Capacity, "Capacity should remain unchanged after Clear.");
             Assert.AreEqual(batchSize, provider.BatchSize, "BatchSize should remain unchanged after Clear.");
+        }
+
+        [Test]
+        public void Clear_ShouldResetDirtyStateForAllRegisteredStores()
+        {
+            // Arrange
+            int length = 10;
+            int batchSize = 4;
+            var testData = CreateTestData(length, batchSize, true);
+            var provider = testData.provider;
+
+            provider.Set(new Vector2Int(0, 0), 42.0f);   // float
+            provider.Set(new Vector2Int(0, 1), 100);     // int
+
+            Assert.IsTrue(provider.IsDirty<float>(), "Float store should be dirty after set.");
+            Assert.IsTrue(provider.IsDirty<int>(), "Int store should be dirty after set.");
+
+            // Act
+            provider.Clear();
+
+            // Assert
+            Assert.IsFalse(provider.IsDirty<float>(), "Float store should NOT be dirty after Clear.");
+            Assert.IsFalse(provider.IsDirty<int>(), "Int store should NOT be dirty after Clear.");
+        }
+
+        #endregion
+
+        #region ClearDirtyState Tests
+
+        [Test]
+        public void ClearDirtyState_ShouldResetAllStoresToClean()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+
+            provider.Set(new Vector2Int(0, 0), 1.0f);   // float store
+            provider.Set(new Vector2Int(0, 1), 10);     // int store
+
+            Assert.IsTrue(provider.IsDirty<float>(), "Float store should be dirty.");
+            Assert.IsTrue(provider.IsDirty<int>(), "Int store should be dirty.");
+
+            Assert.IsTrue(provider.AnyDirty, "Provider should report AnyDirty = true.");
+
+            // Act
+            provider.ClearDirtyState();
+
+            // Assert
+            Assert.IsFalse(provider.IsDirty<float>(), "Float store should be clean after ClearDirtyState.");
+            Assert.IsFalse(provider.IsDirty<int>(), "Int store should be clean after ClearDirtyState.");
+
+            Assert.IsFalse(provider.AnyDirty, "Provider should report AnyDirty = false after ClearDirtyState.");
+        }
+
+        [Test]
+        public void ClearDirtyState_ShouldNotThrow_WhenEverythingIsAlreadyClean()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+
+            // Act & Assert
+            Assert.DoesNotThrow(() => provider.ClearDirtyState(),
+                "ClearDirtyState should be idempotent and not throw if already clean.");
+        }
+
+        #endregion
+
+        #region ClearDirty Tests
+
+        [Test]
+        public void ClearDirty_SpecificType_ShouldOnlyResetThatStore()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+
+            provider.Set(new Vector2Int(0, 0), 1.0f); // Float dirty
+            provider.Set(new Vector2Int(0, 1), 10);   // Int dirty
+
+            Assert.IsTrue(provider.IsDirty<float>(), "Float should be dirty.");
+            Assert.IsTrue(provider.IsDirty<int>(), "Int should be dirty.");
+
+            // Act
+            provider.ClearDirty<float>();
+
+            // Assert
+            Assert.IsFalse(provider.IsDirty<float>(), "Float store should be clean.");
+            Assert.IsTrue(provider.IsDirty<int>(), "Int store should still be dirty.");
+        }
+
+        [Test]
+        public void ClearDirty_ShouldThrow_WhenTypeIsNotRegistered()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() => provider.ClearDirty<byte>(),
+                "Should throw when trying to clear dirty state for an unregistered type.");
+        }
+
+        #endregion
+
+        #region Release Tests
+
+        [Test]
+        public void Release_ShouldRemoveKeyAndReturnCorrectIndex()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            var key = new Vector2Int(1, 1);
+
+            // Set a value to obtain an index
+            int expectedIndex = provider.Set(key, 42.0f);
+
+            // Act
+            int releasedIndex = provider.Release(key);
+
+            // Assert
+            Assert.AreEqual(expectedIndex, releasedIndex, "Release should return the index previously associated with the key.");
+
+            // Verify that the mapper no longer knows this key
+            Assert.IsFalse(provider.TryGetIndex(key, out _), "The key should no longer be present in the mapper after Release.");
+        }
+
+        /// <summary>
+        /// Verifies that Release returns -1 if the key does not exist.
+        /// </summary>
+        [Test]
+        public void Release_ShouldReturnMinusOne_WhenKeyDoesNotExist()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            var key = new Vector2Int(9, 9);
+
+            // Act
+            int releasedIndex = provider.Release(key);
+
+            // Assert
+            Assert.AreEqual(-1, releasedIndex, "Release should return -1 if the key was not found.");
+        }
+
+        [Test]
+        public void Release_ShouldNotClearDataInStore()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            var key = new Vector2Int(2, 2);
+            float value = 123.45f;
+
+            int index = provider.Set(key, value);
+
+            // Act
+            provider.Release(key);
+
+            // Assert
+            // The mapper does not know the key, but the store retains the data at the index.
+            var buffer = provider.GetRawBuffer<float>();
+            Assert.AreEqual(value, buffer.TypedBuffer[index], "The data in the store should persist after Release.");
+        }
+
+        [Test]
+        public void Release_AllowsKeyReaddition()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            var key = new Vector2Int(3, 3);
+
+            // Act
+            provider.Set(key, 10.0f);
+            provider.Release(key);
+
+            // Re-add the key
+            int newIndex = provider.Set(key, 20.0f);
+
+            // Assert
+            Assert.GreaterOrEqual(newIndex, 0, "Should be able to re-add a previously released key.");
+            Assert.AreEqual(20.0f, provider.Get<float>(key), "The new value should be correctly stored for the re-added key.");
+        }
+
+        #endregion
+
+        #region GetOrAllocateIndex Tests
+
+        [Test]
+        public void GetOrAllocateIndex_ShouldReturnExistingIndex_WhenKeyAlreadyExists()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            var key = new Vector2Int(1, 1);
+            int initialIndex = provider.Set(key, 10.0f);
+
+            // Act
+            int retrievedIndex = provider.GetOrAllocateIndex(key);
+
+            // Assert
+            Assert.AreEqual(initialIndex, retrievedIndex, "Should return the existing index for an already allocated key.");
+        }
+
+        [Test]
+        public void GetOrAllocateIndex_ShouldAllocateNewIndex_WhenKeyIsNew()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            var key = new Vector2Int(5, 5);
+
+            // Act
+            int newIndex = provider.GetOrAllocateIndex(key);
+
+            // Assert
+            Assert.GreaterOrEqual(newIndex, 0, "Should allocate a valid non-negative index for a new key.");
+            Assert.IsTrue(provider.TryGetIndex(key, out int actualIndex), "The new key should now be present in the mapper.");
+            Assert.AreEqual(newIndex, actualIndex, "The allocated index should match the mapper's record.");
+        }
+
+        [Test]
+        public void GetOrAllocateIndex_ShouldReturnSameIndex_OnSequentialCalls()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            var key = new Vector2Int(2, 2);
+
+            // Act
+            int firstCall = provider.GetOrAllocateIndex(key);
+            int secondCall = provider.GetOrAllocateIndex(key);
+
+            // Assert
+            Assert.AreEqual(firstCall, secondCall, "Subsequent calls for the same key must return the same index.");
+        }
+
+        [Test]
+        public void GetOrAllocateIndex_ShouldThrowInvalidOperationException_WhenCapacityIsFull()
+        {
+            // Arrange
+            // Create a provider with a very small capacity (e.g., 1 slot)
+            int capacity = 1;
+            var testData = CreateTestData(capacity, 1, true);
+            var provider = testData.provider;
+
+            // Fill the only available slot
+            provider.GetOrAllocateIndex(new Vector2Int(1, 1));
+
+            // Act & Assert
+            // Attempting to allocate a second key should fail
+            var key = new Vector2Int(2, 2);
+
+            var ex = Assert.Throws<InvalidOperationException>(() => provider.GetOrAllocateIndex(key),
+                "Should throw InvalidOperationException when no more capacity is available.");
+        }
+
+        #endregion
+
+        #region Reconfigure Tests
+
+        [Test]
+        public void Reconfigure_ShouldUpdateStateAndReturnTrue_WhenParamsChange()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            int newCapacity = 20;
+            int newBatchSize = 8;
+
+            // Act
+            bool result = provider.Reconfigure(newCapacity, newBatchSize);
+
+            // Assert
+            Assert.IsTrue(result, "Reconfigure should return true when parameters have changed.");
+            Assert.AreEqual(newCapacity, provider.Capacity, "Capacity should be updated.");
+            Assert.AreEqual(newBatchSize, provider.BatchSize, "BatchSize should be updated.");
+        }
+
+        [Test]
+        public void Reconfigure_ShouldClearAndReturnFalse_WhenParamsRemainSame()
+        {
+            // Arrange
+            int capacity = 10;
+            int batchSize = 4;
+            var testData = CreateTestData(capacity, batchSize, true);
+            var provider = testData.provider;
+
+            // Fill with data to verify Clear() is called
+            provider.Set(new Vector2Int(1, 1), 10.0f);
+            Assert.AreEqual(1, provider.Count);
+
+            // Act
+            bool result = provider.Reconfigure(capacity, batchSize);
+
+            // Assert
+            Assert.IsFalse(result, "Reconfigure should return false when parameters are unchanged.");
+            Assert.AreEqual(0, provider.Count, "Provider should be cleared when parameters are unchanged.");
+        }
+
+        [Test]
+        public void Reconfigure_ShouldResizeAllStores()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            int newCapacity = 50;
+
+            // Act
+            provider.Reconfigure(newCapacity, 4);
+
+            // Assert
+            // Assuming GetReadOnlyBuffer exists and exposes the underlying store capacity
+            var buffer = provider.GetRawBuffer<float>();
+            Assert.AreEqual(newCapacity, buffer.TypedBuffer.Length, "The underlying store buffer should be resized.");
+        }
+
+        [Test]
+        public void Reconfigure_ShouldResetInternalStructures()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            provider.Set(new Vector2Int(1, 1), 10.0f);
+
+            // Act
+            provider.Reconfigure(20, 8);
+
+            // Assert
+            Assert.AreEqual(0, provider.Count, "Count should be reset to zero after reconfiguration.");
+            Assert.IsFalse(provider.TryGetIndex(new Vector2Int(1, 1), out _), "Old mapping should be removed.");
+        }
+
+        [Test]
+        public void Reconfigure_OnlyChangesCapacity_UpdatesCorrectly()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            int newCapacity = 20;
+
+            bool result = provider.Reconfigure(newCapacity, 4);
+
+            Assert.IsTrue(result);
+            Assert.AreEqual(newCapacity, provider.Capacity);
+            Assert.AreEqual(4, provider.BatchSize);
+        }
+
+        [Test]
+        public void Reconfigure_OnlyChangesBatchSize_UpdatesCorrectly()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            int newBatchSize = 8;
+
+            bool result = provider.Reconfigure(10, newBatchSize);
+
+            Assert.IsTrue(result);
+            Assert.AreEqual(10, provider.Capacity);
+            Assert.AreEqual(newBatchSize, provider.BatchSize);
+        }
+
+        [Test]
+        public void Reconfigure_InvalidCapacity_ThrowsException()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => provider.Reconfigure(0, 4));
+            Assert.Throws<ArgumentOutOfRangeException>(() => provider.Reconfigure(-5, 4));
+        }
+
+        [Test]
+        public void Reconfigure_InvalidBatchSize_ThrowsException()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => provider.Reconfigure(10, 0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => provider.Reconfigure(10, -2));
+        }
+
+        #endregion
+
+        #region Resize Tests
+
+        [Test]
+        public void Resize_SameCapacity_ReturnsFalse()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+
+            bool result = provider.Resize(10);
+
+            Assert.IsFalse(result);
+            Assert.AreEqual(10, provider.Capacity);
+        }
+
+        [Test]
+        public void Resize_NewCapacity_UpdatesStateAndReturnsTrue()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            int newCapacity = 25;
+
+            bool result = provider.Resize(newCapacity);
+
+            Assert.IsTrue(result);
+            Assert.AreEqual(newCapacity, provider.Capacity);
+        }
+
+        [Test]
+        public void Resize_InvalidCapacity_ThrowsException()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => provider.Resize(0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => provider.Resize(-10));
+        }
+
+        [Test]
+        public void Resize_ResizesMapperAndStores()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            int newCapacity = 50;
+
+            provider.Resize(newCapacity);
+
+            // Verify store resize
+            var buffer = provider.GetRawBuffer<float>();
+            Assert.AreEqual(newCapacity, buffer.TypedBuffer.Length);
+
+            // Verify mapper reset (should not contain old keys)
+            var key = new Vector2Int(1, 1);
+            provider.Set(key, 1.0f);
+            provider.Resize(newCapacity);
+            Assert.IsFalse(provider.TryGetIndex(key, out _));
+        }
+
+        [Test]
+        public void Resize_PreservesBatchSize()
+        {
+            int initialBatchSize = 4;
+            var testData = CreateTestData(10, initialBatchSize, true);
+            var provider = testData.provider;
+
+            provider.Resize(20);
+
+            Assert.AreEqual(initialBatchSize, provider.BatchSize);
         }
 
         #endregion
@@ -571,6 +1023,60 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
 
             Assert.That(ex.Message, Does.Contain(typeof(byte).Name),
                 "Exception should clearly indicate that the store for 'byte' was not registered.");
+        }
+
+        #endregion
+
+        #region TryGetIndex Tests
+
+        [Test]
+        public void TryGetIndex_ShouldReturnTrueAndCorrectIndex_WhenKeyExists()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            var key = new Vector2Int(2, 2);
+            int expectedIndex = provider.Set(key, 10.0f);
+
+            // Act
+            bool success = provider.TryGetIndex(key, out int actualIndex);
+
+            // Assert
+            Assert.IsTrue(success, "TryGetIndex should return true for an existing key.");
+            Assert.AreEqual(expectedIndex, actualIndex, "The returned index should match the allocated index.");
+        }
+
+        [Test]
+        public void TryGetIndex_ShouldReturnFalse_WhenKeyDoesNotExist()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            var key = new Vector2Int(9, 9); // Key that has not been set
+
+            // Act
+            bool success = provider.TryGetIndex(key, out int index);
+
+            // Assert
+            Assert.IsFalse(success, "TryGetIndex should return false for a non-existent key.");
+            Assert.AreEqual(0, index, "The index out-parameter should be 0 (default) when the key is not found.");
+        }
+
+        [Test]
+        public void TryGetIndex_ShouldReturnFalse_AfterKeyIsReleased()
+        {
+            // Arrange
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            var key = new Vector2Int(1, 1);
+            provider.Set(key, 5.0f);
+            provider.Release(key);
+
+            // Act
+            bool success = provider.TryGetIndex(key, out int index);
+
+            // Assert
+            Assert.IsFalse(success, "TryGetIndex should return false after the key has been released.");
         }
 
         #endregion

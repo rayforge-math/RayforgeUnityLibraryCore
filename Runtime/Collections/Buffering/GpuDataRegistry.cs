@@ -89,6 +89,20 @@ namespace Rayforge.Core.Collections.Buffering
         public bool IsDirty<T>() where T : unmanaged
             => GetStore<T>()?.AnyDirty ?? false;
 
+        /// <inheritdoc />
+        public bool AnyDirty
+        {
+            get
+            {
+                foreach(var store in m_Stores.Values)
+                {
+                    if (store.AnyDirty)
+                        return true;
+                }
+                return false;
+            }
+        }
+
         /// <summary>
         /// Registers a new data stream for a specific type. 
         /// Returns the existing store if it was already registered.
@@ -133,6 +147,19 @@ namespace Rayforge.Core.Collections.Buffering
             foreach (var store in m_Stores.Values)
             {
                 store.ClearDirty();
+            }
+        }
+
+        /// <inheritdoc />
+        public void ClearDirty<T>() where T : unmanaged
+        {
+            if (m_Stores.TryGetValue(typeof(T), out var storeObj))
+            {
+                ((MetadataStore<T>)storeObj).ClearDirty();
+            }
+            else
+            {
+                throw new InvalidOperationException($"No store registered for type {typeof(T).Name}.");
             }
         }
 
@@ -277,7 +304,10 @@ namespace Rayforge.Core.Collections.Buffering
                 throw new ArgumentOutOfRangeException(nameof(newCapacity), $"Capacity must be greater than zero.");
 
             if (m_Capacity == newCapacity)
+            {
+                Clear();
                 return false;
+            }
 
             m_Capacity = newCapacity;
             m_Mapper.Initialize(newCapacity);

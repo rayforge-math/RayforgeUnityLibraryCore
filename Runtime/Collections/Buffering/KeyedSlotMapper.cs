@@ -146,7 +146,7 @@ namespace Rayforge.Core.Collections.Buffering
         {
             if (!IsInitialized)
             {
-                index = -1;
+                index = default;
                 return false;
             }
             
@@ -158,7 +158,7 @@ namespace Rayforge.Core.Collections.Buffering
             }
             else
             {
-                index = -1;
+                index = default;
                 return false;
             }
         }
