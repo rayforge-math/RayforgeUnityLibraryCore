@@ -1204,6 +1204,732 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
 
         #endregion
 
+        #region Upload Tests
+
+        [Test]
+        public void Upload_ValidType_UploadsToComputeBuffer()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4);
+            var provider = testData.provider;
+            provider.Set(new Vector2Int(0, 0), 1.0f);
+
+            // Act & Assert: Create local buffer, ensure it gets released
+            using (var buffer = new ComputeBuffer(32, sizeof(float)))
+            {
+                Assert.DoesNotThrow(() => provider.Upload<float>(buffer),
+                    "Upload should succeed for a registered type.");
+            }
+        }
+
+        [Test]
+        public void Upload_UnregisteredType_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4);
+            var provider = testData.provider;
+
+            // Act & Assert
+            using (var buffer = new ComputeBuffer(32, sizeof(uint)))
+            {
+                Assert.Throws<InvalidOperationException>(() => provider.Upload<uint>(buffer),
+                    "Upload should throw InvalidOperationException if the type store is missing.");
+            }
+        }
+
+        [Test]
+        public void Upload_VerifiesBufferRange_IsFullCapacity()
+        {
+            // Arrange
+            int capacity = 32;
+            var testData = CreateTestData(capacity, 4);
+            var provider = testData.provider;
+            provider.Set(new Vector2Int(0, 0), 1.0f);
+
+            // Act
+            using (var buffer = new ComputeBuffer(capacity, sizeof(float)))
+            {
+                provider.Upload<float>(buffer);
+
+                // Assert: Verify that data was transferred by reading it back
+                float[] result = new float[capacity];
+                buffer.GetData(result);
+
+                Assert.AreEqual(1.0f, result[0], "The data at index 0 should match the set value.");
+                // Optional: verify that the full range was addressed
+                Assert.AreEqual(capacity, result.Length, "The buffer data length should match the store capacity.");
+            }
+        }
+
+        [Test]
+        public void Upload_NullBuffer_ThrowsArgumentNullException()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4);
+            var provider = testData.provider;
+
+            // Act & Assert
+            // Verify that passing null for the ComputeBuffer results in an exception
+            Assert.Throws<ArgumentNullException>(() => provider.Upload<float>(null),
+                "Upload should throw ArgumentNullException if the buffer is null.");
+        }
+
+        [TestCase(0, 0, 2)]   // Start: Transfer first 2 elements
+        [TestCase(14, 14, 2)] // End: Transfer last 2 elements (capacity 32)
+        [TestCase(5, 2, 2)]   // Middle: Map source [5,6] to dest [2,3]
+        [TestCase(0, 0, 32)]  // Full Range: Entire buffer
+        [TestCase(10, 10, 1)] // Single element: Just index 10
+        public void UploadRange_ValidParameters_TransfersDataCorrectly(int srcOffset, int destOffset, int count)
+        {
+            // Arrange
+            int capacity = 32;
+            var testData = CreateTestData(capacity, 4);
+            var provider = testData.provider;
+
+            // Fill source range with predictable values (index + 1)
+            for (int i = 0; i < count; i++)
+            {
+                provider.Set(new Vector2Int(srcOffset + i, 0), (float)(srcOffset + i + 1));
+            }
+
+            // Act & Assert
+            using (var buffer = new ComputeBuffer(capacity, sizeof(float)))
+            {
+                provider.Upload<float>(buffer, srcOffset, destOffset, count);
+
+                float[] result = new float[capacity];
+                buffer.GetData(result);
+
+                // Verify the specific range
+                for (int i = 0; i < count; i++)
+                {
+                    float expected = (float)(srcOffset + i + 1);
+                    Assert.AreEqual(expected, result[destOffset + i],
+                        $"Mismatch at index {destOffset + i}. Expected {expected} from source index {srcOffset + i}.");
+                }
+            }
+        }
+
+        [Test]
+        public void UploadRange_UnregisteredType_ThrowsInvalidOperationException()
+        {
+            int capacity = 32;
+            var provider = CreateTestData(capacity, 4).provider;
+
+            using (var buffer = new ComputeBuffer(capacity, sizeof(uint)))
+            {
+                Assert.Throws<InvalidOperationException>(() =>
+                    provider.Upload<uint>(buffer, 0, 0, 1));
+            }
+        }
+
+        [Test]
+        public void UploadRange_NullBuffer_ThrowsArgumentNullException()
+        {
+            int capacity = 32;
+            var provider = CreateTestData(capacity, 4).provider;
+
+            Assert.Throws<ArgumentNullException>(() =>
+                provider.Upload<float>(null, 0, 0, 1));
+        }
+
+        [Test]
+        public void UploadRange_InvalidSourceBounds_ThrowsArgumentOutOfRangeException()
+        {
+            int capacity = 32;
+            var provider = CreateTestData(capacity, 4).provider;
+
+            using (var buffer = new ComputeBuffer(capacity, sizeof(float)))
+            {
+                // Source offset (30) + count (5) > capacity (32)
+                Assert.Throws<ArgumentOutOfRangeException>(() =>
+                    provider.Upload<float>(buffer, 30, 0, 5));
+            }
+        }
+
+        [Test]
+        public void UploadRange_InvalidDestinationBounds_ThrowsArgumentOutOfRangeException()
+        {
+            int capacity = 32;
+            var provider = CreateTestData(capacity, 4).provider;
+
+            using (var buffer = new ComputeBuffer(capacity, sizeof(float)))
+            {
+                // Destination offset (30) + count (5) > buffer count (32)
+                Assert.Throws<ArgumentOutOfRangeException>(() =>
+                    provider.Upload<float>(buffer, 0, 30, 5));
+            }
+        }
+
+        [Test]
+        public void UploadRange_StrideMismatch_ThrowsArgumentException()
+        {
+            int capacity = 32;
+            var provider = CreateTestData(capacity, 4).provider;
+
+            // Create buffer with wrong stride (int vs float) to trigger mismatch
+            int wrongStride = sizeof(long);
+            using (var buffer = new ComputeBuffer(capacity, wrongStride))
+            {
+                Assert.Throws<ArgumentException>(() =>
+                    provider.Upload<float>(buffer, 0, 0, 1),
+                    "Should throw because float store stride does not match int buffer stride.");
+            }
+        }
+
+        #endregion
+
+        #region IsDirty Tests
+
+        [Test]
+        public void IsDirty_InitialState_ReturnsFalse()
+        {
+            var provider = CreateTestData(32, 4, true).provider;
+            Assert.IsFalse(provider.IsDirty<float>(), "Registry should not be dirty after initialization.");
+        }
+
+        [Test]
+        public void IsDirty_AfterSet_ReturnsTrue()
+        {
+            var provider = CreateTestData(32, 4).provider;
+            provider.Set(new Vector2Int(0, 0), 1.0f);
+
+            Assert.IsTrue(provider.IsDirty<float>(), "Registry should be dirty after setting a value.");
+        }
+
+        [Test]
+        public void IsDirty_AfterUpload_RemainsTrue()
+        {
+            // Arrange
+            var provider = CreateTestData(32, 4).provider;
+            provider.Set(new Vector2Int(0, 0), 1.0f);
+
+            using (var buffer = new ComputeBuffer(32, sizeof(float)))
+            {
+                // Act: Perform upload
+                provider.Upload<float>(buffer);
+
+                // Assert: Verify that IsDirty is NOT reset by the upload
+                Assert.IsTrue(provider.IsDirty<float>(), "Registry should remain dirty after upload.");
+            }
+        }
+
+        [Test]
+        public void IsDirty_UnregisteredType_ReturnsFalse()
+        {
+            var provider = CreateTestData(32, 4).provider;
+            Assert.IsFalse(provider.IsDirty<byte>(), "IsDirty should return false for unregistered types.");
+        }
+
+        #endregion
+
+        #region AnyDirty
+
+        [Test]
+        public void AnyDirty_InitialState_ReturnsFalse()
+        {
+            var provider = CreateTestData(32, 4, true).provider;
+            Assert.IsFalse(provider.AnyDirty, "Registry should not be dirty after initialization.");
+        }
+
+        [Test]
+        public void AnyDirty_AfterSetInOneStore_ReturnsTrue()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4);
+            var provider = testData.provider;
+
+            // Act: Set a value (marks only one store dirty)
+            provider.Set(new Vector2Int(0, 0), 1.0f);
+
+            // Assert
+            Assert.IsTrue(provider.AnyDirty, "Registry should be dirty if at least one store is dirty.");
+        }
+
+        [Test]
+        public void AnyDirty_AfterMultipleStoresAreDirty_ReturnsTrue()
+        {
+            // Arrange
+            // Assuming your CreateTestData registers at least two stores (e.g., float and int)
+            var testData = CreateTestData(32, 4);
+            var provider = testData.provider;
+
+            // Act: Dirty multiple stores
+            provider.Set(new Vector2Int(0, 0), 1.0f); // Float store dirty
+            provider.Set(new Vector2Int(0, 0), 1);    // Int store dirty (assuming int is registered)
+
+            // Assert
+            Assert.IsTrue(provider.AnyDirty, "Registry should be dirty when multiple stores are dirty.");
+        }
+
+        [Test]
+        public void AnyDirty_AfterUpload_RemainsTrue()
+        {
+            // Arrange
+            var provider = CreateTestData(32, 4).provider;
+            provider.Set(new Vector2Int(0, 0), 1.0f);
+
+            using (var buffer = new ComputeBuffer(32, sizeof(float)))
+            {
+                // Act
+                provider.Upload<float>(buffer);
+
+                // Assert: Upload should not reset the dirty flag
+                Assert.IsTrue(provider.AnyDirty, "Registry should remain dirty after upload.");
+            }
+        }
+
+        [Test]
+        public void AnyDirty_AfterClearDirtyState_ReturnsFalse()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4);
+            var provider = testData.provider;
+
+            provider.Set(new Vector2Int(0, 0), 1.0f);
+            Assert.IsTrue(provider.AnyDirty, "Registry should be dirty after initial Set.");
+
+            // Act
+            provider.ClearDirtyState();
+
+            // Assert
+            Assert.IsFalse(provider.AnyDirty, "Registry should not be dirty after ClearDirtyState.");
+        }
+
+        #endregion
+
+        #region GetBufferMeta Tests
+
+        [Test]
+        public void GetBufferMetadata_RegisteredType_ReturnsValidMetadata()
+        {
+            // Arrange
+            var provider = CreateTestData(32, 4).provider;
+
+            // Act
+            IBufferMetadata metadata = provider.GetBufferMetadata<float>();
+
+            // Assert
+            Assert.IsNotNull(metadata, "Metadata should not be null for a registered type.");
+            Assert.AreEqual(32, metadata.Capacity, "Metadata capacity should match store capacity.");
+            Assert.AreEqual(4, metadata.BatchSize, "Metadata batch size should match store batch size.");
+        }
+
+        [Test]
+        public void GetBufferMetadata_UnregisteredType_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var provider = CreateTestData(32, 4).provider;
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() => provider.GetBufferMetadata<byte>(),
+                "Should throw exception when requesting metadata for an unregistered type.");
+        }
+
+        [Test]
+        public void GetBufferMetadata_PropertiesMatchStoreState()
+        {
+            // Arrange
+            int capacity = 64;
+            var provider = CreateTestData(capacity, 8).provider;
+
+            // Act
+            var metadata = provider.GetBufferMetadata<float>();
+
+            // Assert: Ensure the returned metadata is a live reference to the store state
+            Assert.AreEqual(capacity, metadata.Capacity);
+            Assert.AreEqual(8, metadata.BatchSize);
+
+            // Test if updating store also updates metadata view
+            provider.UpdateBatchSize(16);
+            Assert.AreEqual(16, metadata.BatchSize, "Metadata should reflect changes in the underlying store.");
+        }
+
+        [Test]
+        public void GetBufferMetadata_ReturnsCorrectInterfaceValues()
+        {
+            // Arrange
+            int capacity = 64;
+            int batchSize = 8;
+
+            int expectedStride = sizeof(float);
+            int expectedTotalBatches = capacity / batchSize;
+
+            var testData = CreateTestData(capacity, batchSize, true);
+            var provider = testData.provider;
+
+            // Act
+            IBufferMetadata metadata = provider.GetBufferMetadata<float>();
+
+            // Assert
+            Assert.AreEqual(capacity, metadata.Capacity, "Capacity mismatch.");
+            Assert.AreEqual(expectedStride, metadata.Stride, "Stride mismatch.");
+            Assert.AreEqual(batchSize, metadata.BatchSize, "BatchSize mismatch.");
+            Assert.AreEqual(expectedTotalBatches, metadata.TotalBatchCount, "TotalBatchCount calculation mismatch.");
+            Assert.IsFalse(metadata.AnyDirty, "Initial state should not be dirty.");
+        }
+
+        [Test]
+        public void GetBufferMetadata_TracksDirtyStateCorrectly()
+        {
+            // Arrange
+            var provider = CreateTestData(32, 4, true).provider;
+            var metadata = provider.GetBufferMetadata<float>();
+
+            // Assert: Initial clean
+            Assert.IsFalse(metadata.AnyDirty);
+
+            // Act: Modify store
+            provider.Set(new Vector2Int(0, 0), 1.0f);
+
+            // Assert: Metadata should reflect the change immediately
+            Assert.IsTrue(metadata.AnyDirty, "Metadata should detect dirty state after Set().");
+        }
+
+        [Test]
+        public void GetBufferMetadata_MultipleStores_AreIndependent()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4, true);
+            var provider = testData.provider;
+
+            var floatMeta = provider.GetBufferMetadata<float>();
+            var intMeta = provider.GetBufferMetadata<int>();
+
+            // Act
+            provider.Set(new Vector2Int(0, 0), 1.0f);
+
+            // Assert
+            Assert.IsTrue(floatMeta.AnyDirty, "Float metadata should be dirty.");
+            Assert.IsFalse(intMeta.AnyDirty, "Int metadata should remain clean.");
+        }
+
+        #endregion
+
+        #region ForEachDirtySegment Tests
+
+        [Test]
+        public void ForEachDirtySegment_WhenClean_SegmentCountIsZero()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4, true);
+            var action = new SegmentAction<float> { SegmentCount = 0 };
+
+            // Act
+            testData.provider.ForEachDirtySegment<float, SegmentAction<float>>(ref action, mergeContiguous: false);
+
+            // Assert
+            Assert.AreEqual(0, action.SegmentCount, "Registry should have no dirty segments when newly created.");
+        }
+
+        [Test]
+        public void ForEachDirtySegment_PartialDirty_ReturnsCorrectBatchCount()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4, true);
+
+            testData.provider.Set(new Vector2Int(0, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(1, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(2, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(3, 0), 1.0f);
+            var action = new SegmentAction<float> { SegmentCount = 0 };
+
+            // Act
+            testData.provider.ForEachDirtySegment<float, SegmentAction<float>>(ref action, mergeContiguous: false);
+
+            // Assert
+            Assert.AreEqual(1, action.SegmentCount, "Should detect exactly one dirty batch for a single batch.");
+        }
+
+        [Test]
+        public void ForEachDirtySegment_FullyDirty_ReturnsAllBatchesIndividually()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4);
+
+            var action = new SegmentAction<float> { SegmentCount = 0 };
+
+            // Act: mergeContiguous = false
+            testData.provider.ForEachDirtySegment<float, SegmentAction<float>>(ref action, mergeContiguous: false);
+
+            // Assert
+            int expectedBatches = 32 / 4;
+            Assert.AreEqual(expectedBatches, action.SegmentCount, "Should detect all dirty batches individually.");
+        }
+
+        [Test]
+        public void ForEachDirtySegment_PartialDirty_MergesCorrectly()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 2, true);
+
+            testData.provider.Set(new Vector2Int(0, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(1, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(2, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(3, 0), 1.0f);
+            var action = new SegmentAction<float> { SegmentCount = 0 };
+
+            // Act
+            testData.provider.ForEachDirtySegment<float, SegmentAction<float>>(ref action, mergeContiguous: true);
+
+            // Assert
+            Assert.AreEqual(1, action.SegmentCount, "Should detect exactly one dirty segment.");
+        }
+
+        #endregion
+
+        #region GetDirtySegmentIterator Tests
+
+        [Test]
+        public void GetDirtySegmentIterator_WhenClean_ReturnsEmptyIterator()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4, true);
+
+            // Act
+            var iterator = testData.provider.GetDirtySegmentIterator<float>(mergeContiguous: false);
+
+            // Assert
+            Assert.IsFalse(iterator.MoveNext(), "Iterator should not have segments when registry is clean.");
+        }
+
+        [Test]
+        public void GetDirtySegmentIterator_PartialDirty_ReturnsCorrectBatchCount()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4, true);
+            testData.provider.Set(new Vector2Int(0, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(1, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(2, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(3, 0), 1.0f);
+
+            // Act
+            var iterator = testData.provider.GetDirtySegmentIterator<float>(mergeContiguous: false);
+
+            int count = 0;
+            while (iterator.MoveNext())
+            {
+                count++;
+            }
+
+            // Assert
+            Assert.AreEqual(1, count, "Iterator should detect exactly one dirty batch.");
+        }
+
+        [Test]
+        public void GetDirtySegmentIterator_FullyDirty_ReturnsAllBatchesIndividually()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4);
+
+            // Act
+            var iterator = testData.provider.GetDirtySegmentIterator<float>(mergeContiguous: false);
+
+            int count = 0;
+            while (iterator.MoveNext())
+            {
+                count++;
+            }
+
+            // Assert
+            int expectedBatches = 32 / 4;
+            Assert.AreEqual(expectedBatches, count, "Iterator should detect all dirty batches individually.");
+        }
+
+        [Test]
+        public void GetDirtySegmentIterator_PartialDirty_MergesCorrectly()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 2, true);
+            testData.provider.Set(new Vector2Int(0, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(1, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(2, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(3, 0), 1.0f);
+
+            // Act
+            var iterator = testData.provider.GetDirtySegmentIterator<float>(mergeContiguous: true);
+
+            int count = 0;
+            while (iterator.MoveNext())
+            {
+                count++;
+            }
+
+            // Assert
+            Assert.AreEqual(1, count, "Iterator should detect exactly one merged dirty segment.");
+        }
+
+        #endregion
+
+        #region ForEachDirtyIndex Tests
+
+        [Test]
+        public void ForEachDirtyIndex_WhenClean_CallCountIsZero()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4, true);
+            var action = new IndexAction();
+
+            // Act
+            testData.provider.ForEachDirtyIndex<float, IndexAction>(ref action);
+
+            // Assert
+            Assert.AreEqual(0, action.CallCount, "Registry should have no dirty indices when clean.");
+        }
+
+        [Test]
+        public void ForEachDirtyIndex_PartialDirty_ReturnsCorrectBatchIndex()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4, true);
+            // Setze in Batch 0 (Elemente 0-3)
+            testData.provider.Set(new Vector2Int(0, 0), 1.0f);
+
+            var action = new IndexAction();
+
+            // Act
+            testData.provider.ForEachDirtyIndex<float, IndexAction>(ref action);
+
+            // Assert
+            Assert.AreEqual(1, action.CallCount);
+            Assert.AreEqual(0, action.Indices[0], "Should report batch index 0.");
+        }
+
+        [Test]
+        public void ForEachDirtyIndex_MultipleBatchesDirty_ReturnsSortedIndices()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 2, true);
+            testData.provider.Set(new Vector2Int(0, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(1, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(2, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(3, 0), 1.0f);
+
+            var action = new IndexAction();
+
+            // Act
+            testData.provider.ForEachDirtyIndex<float, IndexAction>(ref action);
+
+            // Assert
+            Assert.AreEqual(2, action.CallCount);
+            Assert.IsTrue(action.Indices.Contains(0), "Should report batch index 0 as dirty.");
+            Assert.IsTrue(action.Indices.Contains(1), "Should report batch index 1 as dirty.");
+        }
+
+        [Test]
+        public void ForEachDirtyIndex_FullyDirty_ReturnsAllBatchIndices()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4);
+
+            // Markiere jeden Batch als dirty
+            for (int i = 0; i < 32; i += 4)
+            {
+                testData.provider.Set(new Vector2Int(i, 0), 1.0f);
+            }
+
+            var action = new IndexAction();
+
+            // Act
+            testData.provider.ForEachDirtyIndex<float, IndexAction>(ref action);
+
+            // Assert
+            int expectedBatches = 32 / 4;
+            Assert.AreEqual(expectedBatches, action.CallCount);
+            Assert.AreEqual(expectedBatches, action.Indices.Count);
+        }
+
+        #endregion
+
+        #region GetDirtyIndexIterator Tests
+
+        [Test]
+        public void GetDirtySegmentIndices_WhenClean_ReturnsEmptyIterator()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4, true);
+
+            // Act
+            var iterator = testData.provider.GetDirtySegmentIndices<float>();
+
+            // Assert
+            Assert.IsFalse(iterator.MoveNext(), "Iterator should not have segments when registry is clean.");
+        }
+
+        [Test]
+        public void GetDirtySegmentIndices_PartialDirty_ReturnsCorrectBatchIndex()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4, true);
+            testData.provider.Set(new Vector2Int(0, 0), 1.0f);
+
+            // Act
+            var iterator = testData.provider.GetDirtySegmentIndices<float>();
+
+            int count = 0;
+            int index = -1;
+            while (iterator.MoveNext())
+            {
+                index = iterator.Current;
+                count++;
+            }
+
+            // Assert
+            Assert.AreEqual(1, count);
+            Assert.AreEqual(0, index, "Should report batch index 0.");
+        }
+
+        [Test]
+        public void GetDirtySegmentIndices_MultipleBatchesDirty_ReturnsSortedIndices()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 2, true);
+            testData.provider.Set(new Vector2Int(0, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(1, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(2, 0), 1.0f);
+            testData.provider.Set(new Vector2Int(3, 0), 1.0f);
+
+            // Act
+            var iterator = testData.provider.GetDirtySegmentIndices<float>();
+
+            var indices = new List<int>();
+            while (iterator.MoveNext())
+            {
+                indices.Add(iterator.Current);
+            }
+
+            // Assert
+            Assert.AreEqual(2, indices.Count);
+            Assert.Contains(0, indices, "Should report batch index 0.");
+            Assert.Contains(1, indices, "Should report batch index 1.");
+        }
+
+        [Test]
+        public void GetDirtySegmentIndices_FullyDirty_ReturnsAllBatchIndices()
+        {
+            // Arrange
+            var testData = CreateTestData(32, 4);
+            for (int i = 0; i < 32; i += 4)
+            {
+                testData.provider.Set(new Vector2Int(i, 0), 1.0f);
+            }
+
+            // Act
+            var iterator = testData.provider.GetDirtySegmentIndices<float>();
+
+            int count = 0;
+            while (iterator.MoveNext())
+            {
+                count++;
+            }
+
+            // Assert
+            int expectedBatches = 32 / 4;
+            Assert.AreEqual(expectedBatches, count);
+        }
+
+        #endregion
+
         #endregion
     }
 }

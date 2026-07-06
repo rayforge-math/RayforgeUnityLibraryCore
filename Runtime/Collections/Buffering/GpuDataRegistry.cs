@@ -367,8 +367,6 @@ namespace Rayforge.Core.Collections.Buffering
             var store = GetStore<T>();
             if (store != null && store.AnyDirty)
             {
-                // Wir delegieren den ref call direkt an den Store, 
-                // damit der JIT-Compiler die Schleife inlinen kann.
                 store.ForEachDirtySegment(ref action, mergeContiguous);
             }
         }
