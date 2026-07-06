@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using Rayforge.Core.Collections.Buffering;
 using Rayforge.Core.TestEnv;
 using System;
 using System.Collections.Generic;
@@ -774,6 +775,128 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
             provider.Resize(20);
 
             Assert.AreEqual(initialBatchSize, provider.BatchSize);
+        }
+
+        #endregion
+
+        #region UpdateBatchSize
+
+        [Test]
+        public void UpdateBatchSize_SameBatchSize_ReturnsFalse()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+
+            bool result = provider.UpdateBatchSize(4);
+
+            Assert.IsFalse(result);
+            Assert.AreEqual(4, provider.BatchSize);
+        }
+
+        [Test]
+        public void UpdateBatchSize_NewBatchSize_UpdatesStateAndReturnsTrue()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            int newBatchSize = 8;
+
+            bool result = provider.UpdateBatchSize(newBatchSize);
+
+            Assert.IsTrue(result);
+            Assert.AreEqual(newBatchSize, provider.BatchSize);
+        }
+
+        [Test]
+        public void UpdateBatchSize_InvalidBatchSize_ThrowsException()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => provider.UpdateBatchSize(0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => provider.UpdateBatchSize(-1));
+        }
+
+        [Test]
+        public void UpdateBatchSize_PreservesExistingData()
+        {
+            var testData = CreateTestData(10, 4, true);
+            var provider = testData.provider;
+            var key = new Vector2Int(1, 1);
+            float value = 42.0f;
+
+            provider.Set(key, value);
+
+            // Act
+            provider.UpdateBatchSize(8);
+
+            // Assert
+            Assert.IsTrue(provider.TryGetIndex(key, out int index), "Key should still be mapped.");
+            Assert.AreEqual(value, provider.Get<float>(key), "Value should be preserved after updating batch size.");
+        }
+
+        [Test]
+        public void UpdateBatchSize_PreservesDirtyIndices()
+        {
+            // Arrange: Initialize with a small batch size to isolate indices
+            var testData = CreateTestData(32, 1, true);
+            var provider = testData.provider;
+
+            // Slot 0 falls into Batch 0 when BatchSize is 2
+            var key1 = new Vector2Int(0, 0);
+
+            // Slot 5 falls into Batch 2 when BatchSize is 2 (5 / 2 = 2)
+            // This remains clearly separated from Batch 0
+            var key2 = new Vector2Int(5, 5);
+
+            int index1 = provider.Set(key1, 10.0f);
+            int index2 = provider.Set(key2, 20.0f);
+
+            // Initial check: At BatchSize 1, slots 0 and 5 are their own dirty batches
+            var action = new IndexAction();
+            provider.ForEachDirtyIndex<float, IndexAction>(ref action);
+            Assert.AreEqual(2, action.CallCount, "Initial: Should be exactly 2 dirty batches.");
+
+            // Verify that the specific expected batch indices are marked as dirty
+            Assert.IsTrue(action.Indices.Contains(0), "Batch 0 should be dirty.");
+            Assert.IsTrue(action.Indices.Contains(1), "Batch 1 should be dirty.");
+
+            // Act: Update BatchSize from 1 to 2
+            provider.UpdateBatchSize(2);
+
+            // Act 2: Gather dirty batches again after resizing
+            action = new IndexAction();
+            provider.ForEachDirtyIndex<float, IndexAction>(ref action);
+
+            // Assert: Verify that both unique dirty batches are preserved
+            Assert.AreEqual(1, action.CallCount, "After resize: Should be 1 dirty batch.");
+            Assert.IsNotNull(action.Indices, "Indices collection should not be null.");
+
+            // Verify that the specific expected batch indices are marked as dirty
+            Assert.IsTrue(action.Indices.Contains(0), "Batch 0 should be dirty.");
+            Assert.IsFalse(action.Indices.Contains(1), "Batch 1 shouldn't be dirty.");
+        }
+
+        [Test]
+        public void UpdateBatchSize_PropagatesToAllStores()
+        {
+            // Arrange
+            int initialBatchSize = 4;
+            int newBatchSize = 16;
+            var provider = CreateTestData(32, initialBatchSize).provider;
+
+            // Act
+            provider.UpdateBatchSize(newBatchSize);
+
+            // Assert: Use IBufferMetadata to verify state of all stores
+            var floatMeta = provider.GetBufferMetadata<float>();
+            var intMeta = provider.GetBufferMetadata<int>();
+            var longMeta = provider.GetBufferMetadata<long>();
+            var doubleMeta = provider.GetBufferMetadata<double>();
+
+            Assert.AreEqual(newBatchSize, floatMeta.BatchSize, "Float store batch size did not update.");
+            Assert.AreEqual(newBatchSize, intMeta.BatchSize, "Int store batch size did not update.");
+            Assert.AreEqual(newBatchSize, longMeta.BatchSize, "Long store batch size did not update.");
+            Assert.AreEqual(newBatchSize, doubleMeta.BatchSize, "Double store batch size did not update.");
         }
 
         #endregion

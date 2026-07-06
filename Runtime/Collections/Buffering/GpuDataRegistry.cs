@@ -103,6 +103,17 @@ namespace Rayforge.Core.Collections.Buffering
             }
         }
 
+        /// <inheritdoc />
+        public IBufferMetadata GetBufferMetadata<T>() where T : unmanaged
+        {
+            var store = GetStore<T>();
+            if (store == null)
+            {
+                throw new InvalidOperationException($"No store registered for type {typeof(T).Name}.");
+            }
+            return store;
+        }
+
         /// <summary>
         /// Registers a new data stream for a specific type. 
         /// Returns the existing store if it was already registered.

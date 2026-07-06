@@ -88,6 +88,12 @@ namespace Rayforge.Core.Collections.Abstractions
         /// </summary>
         bool AnyDirty { get; }
 
+        /// <summary>
+        /// Retrieves read-only metadata for a specific store.
+        /// Useful for diagnostics, UI rendering, or synchronization monitoring.
+        /// </summary>
+        IBufferMetadata GetBufferMetadata<T>() where T : unmanaged;
+
         #endregion
 
         #region Iteration
