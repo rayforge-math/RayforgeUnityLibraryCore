@@ -85,6 +85,33 @@ namespace Rayforge.Core.Collections.Buffering
 
         #region Store Management
 
+        /// <summary>
+        /// Registers a new data stream for a specific type. 
+        /// Returns the existing store if it was already registered.
+        /// </summary>
+        public MetadataStore<T> AddStore<T>() where T : unmanaged
+        {
+            var type = typeof(T);
+            if (m_Stores.TryGetValue(type, out var existing))
+                return (MetadataStore<T>)existing;
+
+            var store = new MetadataStore<T>(m_Capacity, m_BatchSize);
+            m_Stores[type] = store;
+            return store;
+        }
+
+        /// <summary>
+        /// Retrieves an existing store as a read-only interface.
+        /// Use this for external systems like renderers that should not 
+        /// be able to call Resize or UpdateBatchSize.
+        /// </summary>
+        public MetadataStore<T> GetStore<T>() where T : unmanaged
+        {
+            if (m_Stores.TryGetValue(typeof(T), out var storeObj))
+                return (MetadataStore<T>)storeObj;
+            return null;
+        }
+
         /// <inheritdoc />
         public bool IsDirty<T>() where T : unmanaged
             => GetStore<T>()?.AnyDirty ?? false;
@@ -112,33 +139,6 @@ namespace Rayforge.Core.Collections.Buffering
                 throw new InvalidOperationException($"No store registered for type {typeof(T).Name}.");
             }
             return store;
-        }
-
-        /// <summary>
-        /// Registers a new data stream for a specific type. 
-        /// Returns the existing store if it was already registered.
-        /// </summary>
-        public MetadataStore<T> AddStore<T>() where T : unmanaged
-        {
-            var type = typeof(T);
-            if (m_Stores.TryGetValue(type, out var existing))
-                return (MetadataStore<T>)existing;
-
-            var store = new MetadataStore<T>(m_Capacity, m_BatchSize);
-            m_Stores[type] = store;
-            return store;
-        }
-
-        /// <summary>
-        /// Retrieves an existing store as a read-only interface.
-        /// Use this for external systems like renderers that should not 
-        /// be able to call Resize or UpdateBatchSize.
-        /// </summary>
-        public MetadataStore<T> GetStore<T>() where T : unmanaged
-        {
-            if (m_Stores.TryGetValue(typeof(T), out var storeObj))
-                return (MetadataStore<T>)storeObj;
-            return null;
         }
 
         /// <inheritdoc />
@@ -275,11 +275,7 @@ namespace Rayforge.Core.Collections.Buffering
             throw new KeyNotFoundException($"The key {key} was not found in the registry.");
         }
 
-        /// <summary>
-        /// Releases the index associated with a key. 
-        /// Note: This does not clear the stores. Update data to a 'null' state via Set() before releasing if needed.
-        /// </summary>
-        /// <returns>The index that was released, or -1 if the key was not found.</returns>
+        /// <inheritdoc />
         public int Release(TKey key)
         {
             if (m_Mapper.TryGetIndex(key, out int index))
@@ -290,25 +286,16 @@ namespace Rayforge.Core.Collections.Buffering
             return -1;
         }
 
-        /// <summary>
-        /// Tries to get the current index for a specific key.
-        /// </summary>
+        /// <inheritdoc />
         public bool TryGetIndex(TKey key, out int index)
         {
             return m_Mapper.TryGetIndex(key, out index);
         }
 
-        /// <summary>
-        /// Direct access to the internal index allocation. 
-        /// Useful for high-performance manual updates across multiple cached stores.
-        /// </summary>
+        /// <inheritdoc />
         public int GetOrAllocateIndex(TKey key) => m_Mapper.GetOrAllocate(key);
 
-        /// <summary>
-        /// Resizes all registered stores and the internal mapper to a new capacity.
-        /// </summary>
-        /// <param name="newCapacity">The new maximum number of slots.</param>
-        /// <returns>True if the capacity changed and data was reset; false if already at target capacity.</returns>
+        /// <inheritdoc />
         public bool Resize(int newCapacity)
         {
             if (newCapacity <= 0)
@@ -330,12 +317,7 @@ namespace Rayforge.Core.Collections.Buffering
             return true;
         }
 
-        /// <summary>
-        /// Updates the dirty-tracking granularity for all registered stores.
-        /// This is a non-destructive operation. Metadata values are preserved.
-        /// </summary>
-        /// <param name="newBatchSize">The new size for tracking segments.</param>
-        /// <returns>True if the batch size was changed and migrated; false if already at target size.</returns>
+        /// <inheritdoc />
         public bool UpdateBatchSize(int newBatchSize)
         {
             if (newBatchSize <= 0)
