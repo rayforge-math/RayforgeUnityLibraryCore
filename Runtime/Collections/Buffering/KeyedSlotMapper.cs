@@ -32,7 +32,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// Gets the highest index currently in use. 
         /// This is the "high-water mark" for GPU buffer uploads.
         /// </summary>
-        public int HighestActiveIndex => m_NextAvailableIndex;
+        public int HighestActiveIndex => m_NextAvailableIndex - 1;
 
         /// <summary>
         /// Gets a value indicating whether the mapper has been properly initialized.

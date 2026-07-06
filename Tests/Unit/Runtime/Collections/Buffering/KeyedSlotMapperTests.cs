@@ -101,10 +101,10 @@ namespace Rayforge.Core.Collections.Buffering.Tests
         }
 
         [Test]
-        public void HighestActiveIndex_IsZeroInitially()
+        public void HighestActiveIndex_IsNegativeOneInitially()
         {
             var mapper = new KeyedSlotMapper<int>(10);
-            Assert.AreEqual(0, mapper.HighestActiveIndex);
+            Assert.AreEqual(-1, mapper.HighestActiveIndex);
         }
 
         [Test]
@@ -112,7 +112,7 @@ namespace Rayforge.Core.Collections.Buffering.Tests
         {
             var mapper = new KeyedSlotMapper<int>(10);
             mapper.GetOrAllocate(1);
-            Assert.AreEqual(1, mapper.HighestActiveIndex);
+            Assert.AreEqual(0, mapper.HighestActiveIndex);
         }
 
         [Test]
@@ -121,7 +121,7 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             var mapper = new KeyedSlotMapper<int>(10);
             mapper.GetOrAllocate(1);
             mapper.Release(1);
-            Assert.AreEqual(1, mapper.HighestActiveIndex);
+            Assert.AreEqual(0, mapper.HighestActiveIndex);
         }
 
         [Test]
@@ -130,7 +130,7 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             var mapper = new KeyedSlotMapper<int>(10);
             mapper.GetOrAllocate(1);
             mapper.Reset();
-            Assert.AreEqual(0, mapper.HighestActiveIndex);
+            Assert.AreEqual(-1, mapper.HighestActiveIndex);
         }
 
         #endregion
@@ -196,7 +196,7 @@ namespace Rayforge.Core.Collections.Buffering.Tests
 
             // Assert
             Assert.AreEqual(0, mapper.Count, "Count should be zero after Reset.");
-            Assert.AreEqual(0, mapper.HighestActiveIndex, "NextAvailableIndex should be reset to zero.");
+            Assert.AreEqual(-1, mapper.HighestActiveIndex, "NextAvailableIndex should be reset to zero.");
 
             Assert.AreEqual(0, mapper.GetOrAllocate(3), "Mapper should start allocating from 0 again.");
         }

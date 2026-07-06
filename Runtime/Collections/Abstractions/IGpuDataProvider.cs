@@ -1,4 +1,6 @@
+using Rayforge.Core.Execution.Abstractions;
 using System;
+using UnityEngine;
 
 namespace Rayforge.Core.Collections.Abstractions
 {
@@ -10,26 +12,24 @@ namespace Rayforge.Core.Collections.Abstractions
     public interface IGpuDataProvider<TKey> : IReadOnlyGpuDataProvider<TKey>
         where TKey : struct, IEquatable<TKey>
     {
-        #region Management
-
-        /// <summary> Gets the typed array for CPU-side interop and manual buffer manipulation for a given store. </summary>
-        /// <typeparam name="T">The unmanaged data type.</typeparam>
-        T[] GetTypedBuffer<T>() where T : unmanaged;
+        #region Data Access
 
         /// <summary>
-        /// Gets the underlying raw data array of a specific store.
-        /// Essential for interop with APIs like ComputeBuffer.SetData.
+        /// Gets the full, writable raw buffer interface for a specific store.
+        /// Reserved for systems that need both read access and modification capabilities.
         /// </summary>
         /// <typeparam name="T">The unmanaged data type.</typeparam>
-        Array GetUntypedBuffer<T>() where T : unmanaged;
+        /// <returns>The raw buffer interface, or null if no store is registered.</returns>
+        /// <exception cref="InvalidOperationException">Thrown when no raw buffer is registered for the specified type T.</exception>
+        IRawBuffer<T> GetRawBuffer<T>() where T : unmanaged;
 
         /// <summary> Updates or adds a value for a specific key. Allocates a slot if necessary. </summary>
         /// <returns>The absolute index where the value is stored.</returns>
         int Set<T>(TKey key, T value) where T : unmanaged;
 
-        /// <summary> Gets a single value for a specific key. </summary>
-        /// <returns> The value associated with the key, or default(T) if not found. </returns>
-        T Get<T>(TKey key) where T : unmanaged;
+        #endregion
+
+        #region Management
 
         /// <summary> Resets the registry by clearing all key-to-slot mappings and resetting all data stores. </summary>
         void Clear();

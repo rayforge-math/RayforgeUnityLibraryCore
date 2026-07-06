@@ -48,12 +48,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <summary>
         /// Gets the stride (byte size) for the culling data buffer.
         /// </summary>
-        public int CullingStride => _mapper?.Registry.GetStride<SphereSpatialData>() ?? 0;
+        public int CullingStride => _mapper?.Registry.GetReadOnlyBuffer<SphereSpatialData>().Stride ?? 0;
 
         /// <summary>
         /// Gets the stride (byte size) for the render mapping buffer.
         /// </summary>
-        public int RenderStride => _mapper?.Registry.GetStride<TextureMappingData>() ?? 0;
+        public int RenderStride => _mapper?.Registry.GetReadOnlyBuffer<TextureMappingData>().Stride ?? 0;
 
         /// <summary>
         /// Gets the highest index currently in use to optimize Compute Shader dispatch.

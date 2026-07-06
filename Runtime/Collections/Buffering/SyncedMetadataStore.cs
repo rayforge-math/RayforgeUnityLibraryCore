@@ -3,10 +3,10 @@ using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Execution.Abstractions;
 using System;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace Rayforge.Core.Collections.Buffering
 {
+    /*
     /// <summary>
     /// An abstract base class for a registry managing exactly two distinct metadata stores.
     /// Provides high-performance, type-safe access to store-specific buffers and centralized state management.
@@ -14,7 +14,8 @@ namespace Rayforge.Core.Collections.Buffering
     /// <typeparam name="TKey">The unique identifier type (e.g., Vector3Int).</typeparam>
     /// <typeparam name="TStoreA">The unmanaged data type for the first store.</typeparam>
     /// <typeparam name="TStoreB">The unmanaged data type for the second store.</typeparam>
-    public abstract class SyncedMetadataStore<TKey, TStoreA, TStoreB> : IIterable<SyncedSegmentMeta<TStoreA, TStoreB>>
+    public abstract class SyncedMetadataStore<TKey, TStoreA, TStoreB> 
+        : IIterable<SyncedSegmentMeta<TStoreA, TStoreB>>
         where TKey : struct, IEquatable<TKey>
         where TStoreA : unmanaged
         where TStoreB : unmanaged
@@ -47,6 +48,12 @@ namespace Rayforge.Core.Collections.Buffering
         #endregion
 
         #region Init
+
+        /// <summary>
+        /// Default constructor is disabled to ensure the stores are properly initialized with valid capacity and batch size.
+        /// </summary>
+        [Obsolete("Use the parameterized constructor instead.", true)]
+        private SyncedMetadataStore() { }
 
         /// <summary> 
         /// Initializes a new registry and performs the initial allocation. 
@@ -424,4 +431,5 @@ namespace Rayforge.Core.Collections.Buffering
 
         #endregion
     }
+    */
 }

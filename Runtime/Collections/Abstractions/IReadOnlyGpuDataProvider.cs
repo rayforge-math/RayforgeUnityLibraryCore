@@ -1,5 +1,6 @@
 using Rayforge.Core.Execution.Abstractions;
 using System;
+using UnityEngine;
 
 namespace Rayforge.Core.Collections.Abstractions
 {
@@ -27,39 +28,92 @@ namespace Rayforge.Core.Collections.Abstractions
 
         #endregion
 
-        #region Diagnostics & Access
+        #region Access
 
-        /// <summary> Gets the byte size of a single element for the specified type. </summary>
+        /// <summary>
+        /// Attempts to retrieve a value for the given key.
+        /// </summary>
+        /// <returns>True if the key exists and the store is registered, false otherwise.</returns>
+        public bool TryGet<T>(TKey key, out T value) where T : unmanaged;
+
+        /// <summary>
+        /// Gets the value for the given key. Returns default if not found.
+        /// </summary>
+        public T Get<T>(TKey key) where T : unmanaged;
+        
+        /// <summary> Tries to retrieve the current slot index for a given key. </summary>
+                bool TryGetIndex(TKey key, out int index);
+
+        /// <summary>
+        /// Provides a read-only buffer view for a specific type.
+        /// Useful for external systems that require span-based access 
+        /// without allowing modification of the underlying store.
+        /// </summary>
         /// <typeparam name="T">The unmanaged data type.</typeparam>
-        int GetStride<T>() where T : unmanaged;
+        /// <returns>A read-only buffer view, or null if no store is registered.</returns>
+        IReadOnlyRawBuffer<T> GetReadOnlyBuffer<T>() where T : unmanaged;
+
+        /// <summary>
+        /// Uploads the data from the registered store into the provided <see cref="ComputeBuffer"/>.
+        /// <para>
+        /// This method synchronizes the CPU-side metadata with the GPU buffer.
+        /// It typically uses the buffer's stride and capacity to perform a data transfer.
+        /// </para>
+        /// </summary>
+        /// <param name="target">The target GPU buffer to receive the data.</param>
+        /// <typeparam name="T">The unmanaged data type.</typeparam>
+        void Upload<T>(ComputeBuffer target) where T : unmanaged;
+
+        /// <summary>
+        /// Uploads a partial segment from the registered store into the provided <see cref="ComputeBuffer"/>.
+        /// </summary>
+        /// <typeparam name="T">The unmanaged data type.</typeparam>
+        /// <param name="target">The target GPU buffer.</param>
+        /// <param name="srcOffset">The start index in the store's buffer.</param>
+        /// <param name="destOffset">The start index in the GPU ComputeBuffer.</param>
+        /// <param name="count">The number of elements to copy.</param>
+        void Upload<T>(ComputeBuffer target, int srcOffset, int destOffset, int count) where T : unmanaged;
+        
+        #endregion
+
+        #region Management
 
         /// <summary> Checks if the store for type T has pending dirty segments that require synchronization. </summary>
         /// <typeparam name="T">The unmanaged data type to check.</typeparam>
         bool IsDirty<T>() where T : unmanaged;
 
-        /// <summary> Gets the raw store data as a read-only span for zero-allocation access. </summary>
-        /// <typeparam name="T">The unmanaged data type.</typeparam>
-        ReadOnlySpan<T> AsSpan<T>() where T : unmanaged;
-
-        /// <summary> Tries to retrieve the current slot index for a given key. </summary>
-        bool TryGetIndex(TKey key, out int index);
-
         #endregion
 
-        #region High-Performance Iteration
+        #region Iteration
 
-        /// <summary> Performs a zero-allocation iteration over dirty segments of a store. </summary>
-        /// <param name="action">The handler to execute for each dirty segment.</param>
-        /// <param name="mergeContiguous">If true, adjacent segments are merged to reduce draw calls.</param>
+        /// <summary>
+        /// Executes a specialized action for every dirty segment in the store.
+        /// Uses ref TAction to ensure zero-allocation processing on the stack.
+        /// </summary>
         void ForEachDirtySegment<T, TAction>(ref TAction action, bool mergeContiguous = true)
             where T : unmanaged
             where TAction : struct, IExecutionHandler<BufferSegmentMeta<T>>;
 
-        /// <summary> Performs a high-performance iteration over individual dirty indices. </summary>
-        /// <param name="action">The handler to execute for each dirty index.</param>
+        /// <summary>
+        /// Executes a specialized action for every dirty batch index.
+        /// </summary>
         void ForEachDirtyIndex<T, TAction>(ref TAction action)
             where T : unmanaged
             where TAction : struct, IExecutionHandler<int>;
+
+        /// <summary>
+        /// Returns an iterator over dirty segments.
+        /// CAUTION: Causes boxing of the internal iterator struct.
+        /// </summary>
+        IIterator<BufferSegmentMeta<T>> GetDirtySegmentIterator<T>(bool mergeContiguous = true)
+            where T : unmanaged;
+
+        /// <summary>
+        /// Returns an iterator over indices of dirty segments.
+        /// CAUTION: Causes boxing of the internal iterator struct.
+        /// </summary>
+        IIterator<int> GetDirtySegmentIndices<T>()
+            where T : unmanaged;
 
         #endregion
     }

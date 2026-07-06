@@ -13,16 +13,14 @@ namespace Rayforge.Core.Collections.Buffering.Tests
     {
         #region Create Test Env
 
-        protected override IGpuDataProvider<Vector2> CreateProvider(Dictionary<Type, Array> expected, Vector2[] keys, int length, int batchSize)
+        protected override IGpuDataProvider<Vector2Int> CreateProvider(Dictionary<Type, Array> expected, Vector2Int[] keys, int length, int batchSize)
         {
-            var registry = new GpuDataRegistry<Vector2>(length, batchSize);
+            var registry = new GpuDataRegistry<Vector2Int>(length, batchSize);
 
             registry.AddStore<int>();
             registry.AddStore<float>();
             registry.AddStore<long>();
             registry.AddStore<double>();
-
-            Vector2 startKey = new Vector2(0, 0);
 
             var intArr = (int[])expected[typeof(int)];
             var floatArr = (float[])expected[typeof(float)];
@@ -31,13 +29,25 @@ namespace Rayforge.Core.Collections.Buffering.Tests
 
             for (int i = 0; i < length; i++)
             {
-                Vector2 key = keys[i];
+                Vector2Int key = keys[i];
 
                 registry.Set(key, intArr[i]);
                 registry.Set(key, floatArr[i]);
                 registry.Set(key, longArr[i]);
                 registry.Set(key, doubleArr[i]);
             }
+
+            return registry;
+        }
+
+        protected override IGpuDataProvider<Vector2Int> CreateProvider(int length, int batchSize)
+        {
+            var registry = new GpuDataRegistry<Vector2Int>(length, batchSize);
+
+            registry.AddStore<int>();
+            registry.AddStore<float>();
+            registry.AddStore<long>();
+            registry.AddStore<double>();
 
             return registry;
         }

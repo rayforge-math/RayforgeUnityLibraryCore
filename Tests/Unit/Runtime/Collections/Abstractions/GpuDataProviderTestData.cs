@@ -15,12 +15,12 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         /// <summary>
         /// The keys array used for testing.
         /// </summary>
-        public Vector2[] keys;
+        public Vector2Int[] keys;
 
         /// <summary>
         /// The <see cref="IGpuDataProvider{TKey}"/> instance used for testing.
         /// </summary>
-        public IGpuDataProvider<Vector2> provider;
+        public IGpuDataProvider<Vector2Int> provider;
 
         /// <summary>
         /// A dictionary mapping keys to their expected sample data arrays.
