@@ -37,6 +37,29 @@ namespace Rayforge.Core.Collections.Buffering
 
         #endregion
 
+        #region Constructors
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RequestQueue{TKey, TValue}"/> class.
+        /// </summary>
+        public RequestQueue() : this(0) { }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RequestQueue{TKey, TValue}"/> class 
+        /// with an initial capacity for the internal collections.
+        /// </summary>
+        /// <param name="initialCapacity">The expected number of pending requests.</param>
+        public RequestQueue(int initialCapacity)
+        {
+            if (initialCapacity < 0)
+                throw new ArgumentOutOfRangeException(nameof(initialCapacity), "Capacity must be non-negative.");
+
+            m_PendingRemovals = new HashSet<TKey>(initialCapacity);
+            m_PendingUpdates = new Dictionary<TKey, TValue>(initialCapacity);
+        }
+
+        #endregion
+
         #region Queue Logic
 
         /// <summary>
@@ -68,7 +91,7 @@ namespace Rayforge.Core.Collections.Buffering
 
         #endregion
 
-        #region High-Performance Execution
+        #region Iteration
 
         /// <summary>
         /// Executes an action for each pending removal. 
@@ -99,10 +122,6 @@ namespace Rayforge.Core.Collections.Buffering
                 action.Execute(kvp);
             }
         }
-
-        #endregion
-
-        #region Flexible Iteration
 
         /// <summary>
         /// Provides an iterator over the keys marked for removal.
