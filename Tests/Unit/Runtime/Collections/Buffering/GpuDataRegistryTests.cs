@@ -39,7 +39,7 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             return registry;
         }
 
-        protected override IGpuDataProvider<Vector2Int> CreateProvider(int length, int batchSize)
+        protected override IGpuDataProvider<Vector2Int> CreateEmptyProvider(int length, int batchSize)
         {
             var registry = new GpuDataRegistry<Vector2Int>(length, batchSize);
 
@@ -48,6 +48,13 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             registry.AddStore<long>();
             registry.AddStore<double>();
 
+            return registry;
+        }
+
+        protected override IGpuDataProvider<Vector2Int> CreateCustomProvider<TType>(int length, int batchSize)
+        {
+            var registry = new GpuDataRegistry<Vector2Int>(length, batchSize);
+            registry.AddStore<TType>();
             return registry;
         }
 

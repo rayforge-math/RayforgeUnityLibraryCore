@@ -15,10 +15,10 @@ namespace Rayforge.Core.Environment.Spatial
     /// <typeparam name="TCulling">The struct type used for GPU culling (e.g., SphereSpatialData).</typeparam>
     /// <typeparam name="TRender">The struct type used for GPU rendering (e.g., MatrixSpatialData).</typeparam>
     public class SpatialMetadataRegistry<TKey, TCulling, TRender>
-        : GpuDataRegistry<TKey>, IIterable<SyncedArrayIteratorMeta<TCulling, TRender>>, ISpatialMetadataProvider<TKey, TCulling, TRender>
+        : SyncedGpuDataRegistry<TKey, TCulling, TRender>, IIterable<SyncedArrayIteratorMeta<TCulling, TRender>>, ISpatialMetadataProvider<TKey, TCulling, TRender>
         where TKey : struct, IEquatable<TKey>
-        where TCulling : unmanaged, ISpatialData
-        where TRender : unmanaged
+        where TCulling : unmanaged, IGpuData<TCulling>, ISpatialData
+        where TRender : unmanaged, IGpuData<TRender>
     {
         #region Properties
 
@@ -184,21 +184,6 @@ namespace Rayforge.Core.Environment.Spatial
             m_RenderStore.MarkAllDirty();
         }
 
-        /// <summary>
-        /// Fully releases the key and ensures the GPU data is invalidated.
-        /// This is the "Template Method" that provides a unified API.
-        /// </summary>
-        /// <returns>The index that was released, or -1 if the key was not found.</returns>
-        public int ReleaseAndKill(TKey key)
-        {
-            if (TryGetIndex(key, out int index))
-            {
-                m_CullingStore.Set(index, default);
-                return Release(key);
-            }
-            return -1;
-        }
-
         #endregion
 
         #region High-Performance Sync (Zero-Allocation)
@@ -333,6 +318,11 @@ namespace Rayforge.Core.Environment.Spatial
         {
             m_CullingStore.ClearDirty();
             m_RenderStore.ClearDirty();
+        }
+
+        public int ReleaseAndKill(TKey key)
+        {
+            throw new NotImplementedException();
         }
 
         #endregion

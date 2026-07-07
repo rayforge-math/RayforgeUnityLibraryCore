@@ -12,7 +12,8 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         #region Create Test Env
 
         protected abstract IGpuDataProvider<Vector2Int> CreateProvider(Dictionary<Type, Array> expected, Vector2Int[] keys, int length, int batchSize);
-        protected abstract IGpuDataProvider<Vector2Int> CreateProvider(int length, int batchSize);
+        protected abstract IGpuDataProvider<Vector2Int> CreateEmptyProvider(int length, int batchSize);
+        protected abstract IGpuDataProvider<Vector2Int> CreateCustomProvider<TType>(int length, int batchSize) where TType : unmanaged;
 
         private GpuDataProviderTestData CreateTestData(int length, int batchSize, bool empty = false)
         {
@@ -22,7 +23,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
 
             if (empty)
             {
-                registry = CreateProvider(length, batchSize);
+                registry = CreateEmptyProvider(length, batchSize);
 
                 return new GpuDataProviderTestData
                 {
@@ -442,20 +443,18 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
             int expectedIndex = provider.Set(key, 42.0f);
 
             // Act
-            int releasedIndex = provider.Release(key);
+            bool released = provider.Release(key, out int releasedIndex);
 
             // Assert
+            Assert.IsTrue(released, "Release should return true if the key was found.");
             Assert.AreEqual(expectedIndex, releasedIndex, "Release should return the index previously associated with the key.");
 
             // Verify that the mapper no longer knows this key
             Assert.IsFalse(provider.TryGetIndex(key, out _), "The key should no longer be present in the mapper after Release.");
         }
 
-        /// <summary>
-        /// Verifies that Release returns -1 if the key does not exist.
-        /// </summary>
         [Test]
-        public void Release_ShouldReturnMinusOne_WhenKeyDoesNotExist()
+        public void Release_ShouldReturnFalse_WhenKeyDoesNotExist()
         {
             // Arrange
             var testData = CreateTestData(10, 4, true);
@@ -463,10 +462,11 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
             var key = new Vector2Int(9, 9);
 
             // Act
-            int releasedIndex = provider.Release(key);
+            bool released = provider.Release(key, out int releasedIndex);
 
             // Assert
-            Assert.AreEqual(-1, releasedIndex, "Release should return -1 if the key was not found.");
+            Assert.IsFalse(released, "Release should return false if the key was not found.");
+            Assert.AreEqual(0, releasedIndex, "Released index should be 0 (default) if not found.");
         }
 
         [Test]
@@ -481,7 +481,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
             int index = provider.Set(key, value);
 
             // Act
-            provider.Release(key);
+            provider.Release(key, out _);
 
             // Assert
             // The mapper does not know the key, but the store retains the data at the index.
@@ -499,7 +499,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
 
             // Act
             provider.Set(key, 10.0f);
-            provider.Release(key);
+            provider.Release(key, out _);
 
             // Re-add the key
             int newIndex = provider.Set(key, 20.0f);
@@ -507,6 +507,98 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
             // Assert
             Assert.GreaterOrEqual(newIndex, 0, "Should be able to re-add a previously released key.");
             Assert.AreEqual(20.0f, provider.Get<float>(key), "The new value should be correctly stored for the re-added key.");
+        }
+
+        #endregion
+
+        #region ReleaseAndInvalidate Tests
+
+        private struct TestData : IGpuData<TestData>
+        {
+            public float Value;
+
+            public bool IsValid => Value != float.MinValue;
+            public TestData InvalidData() => new TestData { Value = float.MinValue };
+        }
+
+        private struct NotPresentTestData : IGpuData<NotPresentTestData>
+        {
+            public float Value;
+
+            public bool IsValid => Value != float.MinValue;
+            public NotPresentTestData InvalidData() => new NotPresentTestData { Value = float.MinValue };
+        }
+
+        [Test]
+        public void ReleaseAndInvalidate_ShouldRemoveKeyAndInvalidateData()
+        {
+            // Arrange
+            var provider = CreateCustomProvider<TestData>(10, 4);
+            var key = new Vector2Int(1, 1);
+
+            var data = new TestData { Value = 42.0f };
+            int expectedIndex = provider.Set(key, data);
+
+            // Act
+            bool released = provider.ReleaseAndInvalidate<TestData>(key, out int releasedIndex);
+
+            // Assert
+            Assert.IsTrue(released, "Should return true for successful invalidation.");
+            Assert.AreEqual(expectedIndex, releasedIndex, "Returned index must match.");
+
+            // Verify invalidation
+            var buffer = provider.GetRawBuffer<TestData>();
+            Assert.AreEqual(float.MinValue, buffer.TypedBuffer[releasedIndex].Value, "Buffer value should be float.MinValue.");
+            Assert.IsFalse(provider.TryGetIndex(key, out _), "Key should be removed from mapper.");
+        }
+
+        [Test]
+        public void ReleaseAndInvalidate_ShouldReturnFalse_WhenKeyDoesNotExist()
+        {
+            // Arrange
+            var provider = CreateCustomProvider<TestData>(10, 4);
+            var key = new Vector2Int(9, 9);
+
+            // Act
+            bool released = provider.ReleaseAndInvalidate<TestData>(key, out int releasedIndex);
+
+            // Assert
+            Assert.IsFalse(released, "Should return false for non-existent keys.");
+            Assert.AreEqual(0, releasedIndex, "Index should be 0 (default).");
+        }
+
+        [Test]
+        public void ReleaseAndInvalidate_ShouldThrowException_IfStoreNotRegistered()
+        {
+            // Arrange
+            var provider = CreateCustomProvider<TestData>(10, 4);
+            var key = new Vector2Int(1, 1);
+
+            provider.Set(key, new TestData { Value = 10.0f });
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() =>
+                provider.ReleaseAndInvalidate<NotPresentTestData>(key, out _),
+                "Should throw InvalidOperationException if the store type is missing.");
+        }
+
+        [Test]
+        public void ReleaseAndInvalidate_AllowsKeyReadditionWithCleanState()
+        {
+            // Arrange
+            var provider = CreateCustomProvider<TestData>(10, 4);
+            var key = new Vector2Int(3, 3);
+
+            // Act
+            provider.Set(key, new TestData { Value = 10.0f });
+            provider.ReleaseAndInvalidate<TestData>(key, out _);
+
+            // Re-add
+            int newIndex = provider.Set(key, new TestData { Value = 20.0f });
+
+            // Assert
+            var buffer = provider.GetRawBuffer<TestData>();
+            Assert.AreEqual(20.0f, buffer.TypedBuffer[newIndex].Value, "Re-added key should have clean state.");
         }
 
         #endregion
@@ -1193,7 +1285,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
             var provider = testData.provider;
             var key = new Vector2Int(1, 1);
             provider.Set(key, 5.0f);
-            provider.Release(key);
+            provider.Release(key, out _);
 
             // Act
             bool success = provider.TryGetIndex(key, out int index);

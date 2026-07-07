@@ -276,14 +276,40 @@ namespace Rayforge.Core.Collections.Buffering
         }
 
         /// <inheritdoc />
-        public int Release(TKey key)
+        public bool Release(TKey key, out int index)
         {
-            if (m_Mapper.TryGetIndex(key, out int index))
+            if (m_Mapper.TryGetIndex(key, out index))
             {
                 m_Mapper.Release(key);
-                return index;
+                return true;
             }
-            return -1;
+            return false;
+        }
+
+        /// <inheritdoc />
+        public bool ReleaseAndInvalidate<T>(TKey key, out int index)
+            where T : unmanaged, IGpuData<T>
+        {
+            // 1. Try to resolve the index for the given key
+            if (!TryGetIndex(key, out index))
+            {
+                return false;
+            }
+
+            // 2. Locate the specific store
+            var store = GetStore<T>();
+            if (store == null)
+            {
+                throw new InvalidOperationException(
+                    $"Store of type {typeof(T).Name} not found in registry. " +
+                    "Ensure the store is added via AddStore<T>() before invalidation.");
+            }
+
+            // 3. Invalidate data in the buffer and release the mapping
+            store.Set(index, default(T).InvalidData());
+            Release(key, out _);
+
+            return true;
         }
 
         /// <inheritdoc />

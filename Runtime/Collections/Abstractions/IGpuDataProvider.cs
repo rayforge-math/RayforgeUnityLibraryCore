@@ -44,9 +44,23 @@ namespace Rayforge.Core.Collections.Abstractions
         /// <exception cref="InvalidOperationException">Thrown if no store is registered for type T.</exception>
         void ClearDirty<T>() where T : unmanaged;
 
-        /// <summary> Releases the key and its associated index; the slot becomes available for reuse. </summary>
-        /// <returns>The index that was released, or -1 if the key was not found.</returns>
-        int Release(TKey key);
+        /// <summary>
+        /// Releases the key and its associated index; the slot becomes available for reuse.
+        /// </summary>
+        /// <param name="key">The key to release.</param>
+        /// <param name="index">The index that was released.</param>
+        /// <returns>Returns true if the key existed and was released; otherwise false.</returns>
+        bool Release(TKey key, out int index);
+
+        /// <summary>
+        /// Releases the key and forces a specific store to its invalid state.
+        /// </summary>
+        /// <typeparam name="T">The type of the store to invalidate.</typeparam>
+        /// <param name="key">The key to release.</param>
+        /// <param name="index">The index that was invalidated and released.</param>
+        /// <returns>Returns true if the key existed and was successfully processed.</returns>
+        bool ReleaseAndInvalidate<T>(TKey key, out int index)
+            where T : unmanaged, IGpuData<T>;
 
         /// <summary> Retrieves an existing index or allocates a new slot for the key if it doesn't exist. </summary>
         int GetOrAllocateIndex(TKey key);

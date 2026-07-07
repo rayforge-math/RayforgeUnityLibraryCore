@@ -1,4 +1,6 @@
+using System;
 using System.Runtime.InteropServices;
+using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Environment.Abstractions;
 using UnityEngine;
 
@@ -10,10 +12,21 @@ namespace Rayforge.Core.Environment.Spatial
     /// Use case: Terrain chunks, particles, simple LOD triggers.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public struct SphereSpatialData : ISpatialData
+    public struct SphereSpatialData : ISpatialData, IGpuData<SphereSpatialData>
     {
         public Vector3 Position;    // 12 Bytes
         public float Radius;        // 4 Bytes
+
+        public bool IsValid => Radius > 0f;
+
+        public SphereSpatialData InvalidData()
+        {
+            return new SphereSpatialData
+            {
+                Position = Vector3.zero,
+                Radius = 0f
+            };
+        }
     }
 
     /// <summary>
@@ -22,12 +35,25 @@ namespace Rayforge.Core.Environment.Spatial
     /// Use case: Static world geometry, large terrain sectors.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public struct AabbSpatialData : ISpatialData
+    public struct AabbSpatialData : ISpatialData, IGpuData<AabbSpatialData>
     {
         public Vector3 MinBounds;   // 12 Bytes
         public float LayerMask;     // 4 Bytes
         public Vector3 MaxBounds;   // 12 Bytes
         public float ActiveFlag;    // 4 Bytes
+
+        public bool IsValid => BitConverter.SingleToInt32Bits(ActiveFlag) != 0x0;
+
+        public AabbSpatialData InvalidData()
+        {
+            return new AabbSpatialData
+            {
+                MinBounds = Vector3.zero,
+                MaxBounds = Vector3.zero,
+                LayerMask = BitConverter.Int32BitsToSingle(0x0),
+                ActiveFlag = BitConverter.Int32BitsToSingle(0x0)
+            };
+        }
     }
 
     /// <summary>
@@ -36,8 +62,18 @@ namespace Rayforge.Core.Environment.Spatial
     /// Use case: Anything that is rotated or scaled.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public struct MatrixSpatialData : ISpatialData
+    public struct MatrixSpatialData : ISpatialData, IGpuData<MatrixSpatialData>
     {
         public Matrix4x4 LocalToWorld;  // 64 Bytes
+
+        public bool IsValid => LocalToWorld != Matrix4x4.zero;
+
+        public MatrixSpatialData InvalidData()
+        {
+            return new MatrixSpatialData
+            {
+                LocalToWorld = Matrix4x4.zero
+            };
+        }
     }
 }

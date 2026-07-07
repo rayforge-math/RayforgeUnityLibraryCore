@@ -1,3 +1,4 @@
+using Rayforge.Core.Collections.Abstractions;
 using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
@@ -10,7 +11,7 @@ namespace Rayforge.Core.Rendering.Abstractions
     /// </summary>
     [Serializable]
     [StructLayout(LayoutKind.Sequential)]
-    public struct TextureMappingData
+    public struct TextureMappingData : IGpuData<TextureMappingData>
     {
         /// <summary>
         /// The Z-index (layer) of the Texture2DArray where the data is stored.
@@ -31,19 +32,19 @@ namespace Rayforge.Core.Rendering.Abstractions
         public Vector2 RelativeOffset;
 
         /// <summary>
-        /// Provides a default mapping state representing an inactive or culled chunk.
-        /// SliceIndex is set to -1 to flag it as invalid.
-        /// </summary>
-        public static TextureMappingData Inactive => new TextureMappingData
-        {
-            SliceIndex = -1,
-            RelativeScale = 1f,
-            RelativeOffset = Vector2.zero
-        };
-
-        /// <summary>
         /// Returns true if the SliceIndex is 0 or greater, indicating a valid assigned slot.
         /// </summary>
         public bool IsValid => SliceIndex >= 0;
+
+        /// <inheritdoc />
+        public TextureMappingData InvalidData()
+        {
+            return new TextureMappingData
+            {
+                RelativeOffset = Vector2.zero,
+                RelativeScale = 1f,
+                SliceIndex = -1
+            };
+        }
     }
 }
