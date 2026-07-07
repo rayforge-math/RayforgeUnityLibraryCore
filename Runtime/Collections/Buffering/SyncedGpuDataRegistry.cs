@@ -2,18 +2,20 @@ using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Iterator;
 using Rayforge.Core.Execution.Abstractions;
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
 namespace Rayforge.Core.Collections.Buffering
 {
     /// <summary>
-    /// An abstract base class for a registry managing exactly two distinct metadata stores.
-    /// Provides high-performance, type-safe access to store-specific buffers and centralized state management.
+    /// A high-performance registry managing exactly two distinct metadata stores.
+    /// Provides type-safe access to store-specific buffers, centralized state management, 
+    /// and optimized iteration patterns for synchronized data access.
     /// </summary>
     /// <typeparam name="TKey">The unique identifier type (e.g., Vector3Int).</typeparam>
     /// <typeparam name="TStoreA">The unmanaged data type for the first store.</typeparam>
     /// <typeparam name="TStoreB">The unmanaged data type for the second store.</typeparam>
-    public abstract class SyncedGpuDataRegistry<TKey, TStoreA, TStoreB> 
+    public class SyncedGpuDataRegistry<TKey, TStoreA, TStoreB> 
         : GpuDataRegistry<TKey>, IIterable<SyncedSegmentMeta<TStoreA, TStoreB>>
         where TKey : struct, IEquatable<TKey>
         where TStoreA : unmanaged, IGpuData<TStoreA>
@@ -21,12 +23,28 @@ namespace Rayforge.Core.Collections.Buffering
     {
         #region Properties
 
-        private readonly IMetadataController[] m_AllStores;
-
         /// <summary> The first metadata store instance. </summary>
         protected readonly MetadataStore<TStoreA> StoreA;
         /// <summary> The second metadata store instance. </summary>
         protected readonly MetadataStore<TStoreB> StoreB;
+
+        /// <summary> Gets the metadata interface for the first metadata store. </summary>
+        public IBufferMetadata StoreAMetadata => StoreA;
+
+        /// <summary> Gets the metadata interface for the second metadata store. </summary>
+        public IBufferMetadata StoreBMetadata => StoreB;
+
+        /// <summary> Gets the raw buffer access for the first metadata store. </summary>
+        public IRawBuffer<TStoreA> StoreARawBuffer => StoreA;
+
+        /// <summary> Gets the raw buffer access for the second metadata store. </summary>
+        public IRawBuffer<TStoreB> StoreBRawBuffer => StoreB;
+
+        /// <summary> Gets the iterable interface for the first metadata store. </summary>
+        public IIterable<TStoreA> StoreAIterable => StoreA;
+
+        /// <summary> Gets the iterable interface for the second metadata store. </summary>
+        public IIterable<TStoreB> StoreBIterable => StoreB;
 
         #endregion
 
@@ -41,8 +59,129 @@ namespace Rayforge.Core.Collections.Buffering
         {
             StoreA = AddStore<TStoreA>();
             StoreB = AddStore<TStoreB>();
+        }
 
-            m_AllStores = new IMetadataController[] { StoreA, StoreB };
+        #endregion
+
+        #region Public Access
+
+        /// <summary>
+        /// Sets the data for both metadata stores for the specified key.
+        /// </summary>
+        /// <param name="key">The unique key identifying the segment.</param>
+        /// <param name="valA">The value to set in the first store.</param>
+        /// <param name="valB">The value to set in the second store.</param>
+        /// <returns>The index at which the data was stored.</returns>
+        public int Set(TKey key, TStoreA valA, TStoreB valB)
+        {
+            int index = m_Mapper.GetOrAllocate(key);
+
+            StoreA.Set(index, valA);
+            StoreB.Set(index, valB);
+
+            return index;
+        }
+
+        /// <summary>
+        /// Retrieves the data from both stores for the specified key.
+        /// </summary>
+        /// <param name="key">The unique key identifying the segment.</param>
+        /// <param name="valA">Output for the first store's value.</param>
+        /// <param name="valB">Output for the second store's value.</param>
+        /// <returns>True if the key was found, otherwise false.</returns>
+        public bool TryGet(TKey key, out TStoreA valA, out TStoreB valB)
+        {
+            if (m_Mapper.TryGetIndex(key, out int index))
+            {
+                valA = StoreA.Get(index);
+                valB = StoreB.Get(index);
+                return true;
+            }
+
+            valA = default;
+            valB = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Retrieves the data from both stores. Throws if the key does not exist.
+        /// </summary>
+        public void Get(TKey key, out TStoreA valA, out TStoreB valB)
+        {
+            if (!TryGet(key, out valA, out valB))
+            {
+                throw new KeyNotFoundException($"Key {key} not found in registry.");
+            }
+        }
+
+        /// <summary>
+        /// Retrieves the value from the first metadata store at the index associated with the given key.
+        /// </summary>
+        public TStoreA GetStoreA(TKey key)
+        {
+            if (!m_Mapper.TryGetIndex(key, out int index))
+                throw new KeyNotFoundException($"Key {key} not found.");
+            return StoreA.Get(index);
+        }
+
+        /// <summary>
+        /// Sets the value in the first metadata store for the given key.
+        /// </summary>
+        public void SetStoreA(TKey key, TStoreA value)
+        {
+            int index = m_Mapper.GetOrAllocate(key);
+            StoreA.Set(index, value);
+        }
+
+        /// <summary>
+        /// Retrieves the value from the second metadata store at the index associated with the given key.
+        /// </summary>
+        public TStoreB GetStoreB(TKey key)
+        {
+            if (!m_Mapper.TryGetIndex(key, out int index))
+                throw new KeyNotFoundException($"Key {key} not found.");
+            return StoreB.Get(index);
+        }
+
+        /// <summary>
+        /// Sets the value in the second metadata store for the given key.
+        /// </summary>
+        public void SetStoreB(TKey key, TStoreB value)
+        {
+            int index = m_Mapper.GetOrAllocate(key);
+            StoreB.Set(index, value);
+        }
+
+        /// <summary>
+        /// Attempts to retrieve the value from the first metadata store at the index associated with the given key.
+        /// </summary>
+        /// <returns>True if the key was found, otherwise false.</returns>
+        public bool TryGetStoreA(TKey key, out TStoreA value)
+        {
+            if (m_Mapper.TryGetIndex(key, out int index))
+            {
+                value = StoreA.Get(index);
+                return true;
+            }
+
+            value = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Attempts to retrieve the value from the second metadata store at the index associated with the given key.
+        /// </summary>
+        /// <returns>True if the key was found, otherwise false.</returns>
+        public bool TryGetStoreB(TKey key, out TStoreB value)
+        {
+            if (m_Mapper.TryGetIndex(key, out int index))
+            {
+                value = StoreB.Get(index);
+                return true;
+            }
+
+            value = default;
+            return false;
         }
 
         #endregion
@@ -58,7 +197,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// iteration of modified buffer segments.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ForEachDirtySegment<TAction>(ref TAction action)
+        public void ForEachSyncedDirtySegment<TAction>(ref TAction action)
             where TAction : struct, IExecutionHandler<SyncedSegmentMeta<TStoreA, TStoreB>>
         {
             if (!(StoreA.AnyDirty || StoreB.AnyDirty)) return;
@@ -89,7 +228,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// It leverages static type dispatch to ensure the iteration remains strictly on the stack.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ForEachDirtyIndex<TAction>(ref TAction action)
+        public void ForEachSyncedDirtyIndex<TAction>(ref TAction action)
             where TAction : struct, IExecutionHandler<SyncedBitIteratorMeta>
         {
             if (!(StoreA.AnyDirty || StoreB.AnyDirty)) return;
@@ -112,7 +251,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// onto the heap. For performance-critical synchronization loops, use <see cref="ForEachDirtySegment{T, TAction}"/> 
         /// to maintain stack-only execution.
         /// </remarks>
-        public IIterator<SyncedSegmentMeta<TStoreA, TStoreB>> GetDirtySegmentIterator()
+        public IIterator<SyncedSegmentMeta<TStoreA, TStoreB>> GetSyncedDirtySegmentIterator()
         {
             if (!(StoreA.AnyDirty || StoreB.AnyDirty)) return IIterator<SyncedSegmentMeta<TStoreA, TStoreB>>.Empty();
 
@@ -138,16 +277,15 @@ namespace Rayforge.Core.Collections.Buffering
         /// onto the heap. For high-frequency polling, use <see cref="ForEachDirtyIndex{T, TAction}"/> 
         /// to avoid memory pressure.
         /// </remarks>
-        public IIterator<int> GetDirtySegmentIndices<T>()
+        public IIterator<SyncedBitIteratorMeta> GetSyncedDirtyIndices<T>()
             where T : unmanaged
         {
-            if (typeof(T) == typeof(TStoreA))
-                return StoreA.GetDirtySegmentIndices();
+            if (!(StoreA.AnyDirty || StoreB.AnyDirty)) return IIterator<SyncedBitIteratorMeta>.Empty();
 
-            if (typeof(T) == typeof(TStoreB))
-                return StoreB.GetDirtySegmentIndices();
+            var syncedState = new SyncedBitIteratorState(StoreA.DirtyBits, StoreB.DirtyBits, 0, StoreA.TotalBatchCount);
 
-            return default;
+            var it = new Iterator<SyncedBitIteratorMeta, SyncedBitIteratorState>(syncedState);
+            return it;
         }
 
         #endregion

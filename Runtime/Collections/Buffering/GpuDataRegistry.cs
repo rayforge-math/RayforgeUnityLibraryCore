@@ -17,8 +17,8 @@ namespace Rayforge.Core.Collections.Buffering
     {
         #region Properties
 
-        private readonly KeyedSlotMapper<TKey> m_Mapper = new();
-        private readonly Dictionary<Type, IMetadataController> m_Stores = new();
+        protected readonly KeyedSlotMapper<TKey> m_Mapper = new();
+        protected readonly Dictionary<Type, IMetadataController> m_Stores = new();
 
         private int m_Capacity;
         private int m_BatchSize;
