@@ -76,9 +76,12 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             BitArray bitsA = new BitArray(10);
             BitArray bitsB = new BitArray(10);
 
+            bitsA[0] = true;
+
             var state = new SyncedDirtySegmentState<int, int>(sourceA, sourceB, bitsA, bitsB, 0, 10);
 
             Assert.IsTrue(state.HasNext(ref state));
+            Assert.IsTrue(state.TryPeekNext(ref state, out _));
         }
 
         [Test]
@@ -136,13 +139,13 @@ namespace Rayforge.Core.Collections.Buffering.Tests
         }
 
         [Test]
-        public void Constructor_BitArrayTooShort_ThrowsArgumentException()
+        public void Constructor_BitArrayTooShort_ThrowsArgumentOutOfRangeException()
         {
             int[] source = new int[10];
             BitArray shortBits = new BitArray(9);
             BitArray validBits = new BitArray(10);
 
-            Assert.Throws<ArgumentException>(() =>
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
                 new SyncedDirtySegmentState<int, int>(source, source, shortBits, validBits, 0, 10));
         }
 
@@ -207,6 +210,37 @@ namespace Rayforge.Core.Collections.Buffering.Tests
                 new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 0, 5, 1, 0));
         }
 
+        [Test]
+        public void Constructor_InvalidOffsetAlignment_ThrowsArgumentException()
+        {
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+
+            // BatchSize 3, Offset 5 -> 5 ist kein Vielfaches von 3
+            Assert.Throws<ArgumentException>(() =>
+                new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 5, 5, 3, 1));
+        }
+
+        [Test]
+        public void Constructor_InvalidSizeAlignment_ThrowsArgumentException()
+        {
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            // Offset 0 ist ok, aber 7 ist kein Vielfaches von 3
+            Assert.Throws<ArgumentException>(() =>
+                new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 0, 7, 3, 1));
+        }
+
+        [Test]
+        public void Constructor_ValidAlignment_DoesNotThrow()
+        {
+            int[] source = new int[12];
+            BitArray bits = new BitArray(12);
+            // Offset 3, Size 6, Batch 3 -> Alles durch 3 teilbar
+            Assert.DoesNotThrow(() =>
+                new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 3, 6, 3, 1));
+        }
+
         #endregion
 
         #region HasNext Tests
@@ -251,17 +285,23 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             Assert.IsFalse(state.HasNext(ref state), "Should be false when no dirty data exists in any window.");
         }
 
-        [Test]
-        public void HasNext_DirtyBitJustBeyondOffset_ReturnsTrue()
+        [TestCase(5)]
+        [TestCase(6)]
+        [TestCase(7)]
+        [TestCase(8)]
+        [TestCase(9)]
+        public void HasNext_DirtyBitWithinOffsetRange_ReturnsTrue(int dirtyBitIndex)
         {
-            // Setup: Offset 5, Dirty bit at index 6 (relative index 1).
+            // Setup: Offset 5, size 5 -> valid range is [5, 10).
+            // Every index in {5,6,7,8,9} lies within this range and must be detected.
             int[] source = new int[10];
             BitArray bits = new BitArray(10);
-            bits[6] = true;
+            bits[dirtyBitIndex] = true;
 
             var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 5, 5, 1, 5);
 
-            Assert.IsTrue(state.HasNext(ref state), "Should be true as data exists after the offset.");
+            Assert.IsTrue(state.HasNext(ref state),
+                $"Should be true as dirty bit at index {dirtyBitIndex} lies within the offset range [5,10).");
         }
 
         [Test]
@@ -277,11 +317,176 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             Assert.IsTrue(state.HasNext(ref state), "Should be true as data exists at the very end of capacity.");
         }
 
+        [Test]
+        public void HasNext_DirtyBitJustBeforeOffset_IsIgnored()
+        {
+            // Setup: Offset 5, size 5 -> valid range is [5, 10).
+            // Dirty bit at index 4 lies just before the offset and must not be detected.
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            bits[4] = true;
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 5, 5, 1, 5);
+
+            Assert.IsFalse(state.HasNext(ref state),
+                "Dirty bit just before the offset must be ignored, not treated as within range.");
+        }
+
         #endregion
 
         #region TryPeekNext Tests
 
+        [Test]
+        public void TryPeekNext_DirtyBitInFirstWindow_ReturnsTrue()
+        {
+            // Setup: Dirty bit at index 0 (in first window of size 5)
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            bits[0] = true;
 
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 0, 10, 1, 5);
+
+            Assert.IsTrue(state.TryPeekNext(ref state, out _), "Should be true as data exists in the first window.");
+        }
+
+        [Test]
+        public void TryPeekNext_DirtyBitInLaterWindow_ReturnsTrue()
+        {
+            // Setup: Dirty bit at index 7 (in second window of size 5)
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            bits[7] = true;
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 0, 10, 1, 5);
+
+            // Even if the first window is empty, TryPeekNext must be true because
+            // the scanner will find the data in the second window.
+            Assert.IsTrue(state.TryPeekNext(ref state, out _), "Should be true as data exists in a later window.");
+        }
+
+        [Test]
+        public void TryPeekNext_NoDirtyBits_ReturnsFalse()
+        {
+            // Setup: No dirty bits set.
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 0, 10, 1, 5);
+
+            Assert.IsFalse(state.TryPeekNext(ref state, out _), "Should be false when no dirty data exists in any window.");
+        }
+
+        [TestCase(5)]
+        [TestCase(6)]
+        [TestCase(7)]
+        [TestCase(8)]
+        [TestCase(9)]
+        public void TryPeekNext_DirtyBitWithinOffsetRange_ReturnsTrue(int dirtyBitIndex)
+        {
+            // Setup: Offset 5, size 5 -> valid range is [5, 10).
+            // Every index in {5,6,7,8,9} lies within this range and must be detected.
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            bits[dirtyBitIndex] = true;
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 5, 5, 1, 5);
+
+            Assert.IsTrue(state.TryPeekNext(ref state, out _),
+                $"Should be true as dirty bit at index {dirtyBitIndex} lies within the offset range [5,10).");
+        }
+
+        [Test]
+        public void TryPeekNext_DirtyBitJustBeforeOffset_IsIgnored()
+        {
+            // Setup: Offset 5, size 5 -> valid range is [5, 10).
+            // Dirty bit at index 4 lies just before the offset and must not be peekable.
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            bits[4] = true;
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 5, 5, 1, 5);
+
+            Assert.IsFalse(state.TryPeekNext(ref state, out _),
+                "Dirty bit just before the offset must be ignored, not treated as within range.");
+        }
+
+        #endregion
+
+        #region MoveNext Tests
+
+        [Test]
+        public void MoveNext_DirtyBitInFirstWindow_ReturnsTrue()
+        {
+            // Setup: Dirty bit at index 0 (in first window of size 5)
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            bits[0] = true;
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 0, 10, 1, 5);
+
+            Assert.IsTrue(state.MoveNext(ref state, out _), "Should be true as data exists in the first window.");
+        }
+
+        [Test]
+        public void MoveNext_DirtyBitInLaterWindow_ReturnsTrue()
+        {
+            // Setup: Dirty bit at index 7 (in second window of size 5)
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            bits[7] = true;
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 0, 10, 1, 5);
+
+            // Even if the first window is empty, MoveNext must be true because
+            // the scanner will find the data in the second window.
+            Assert.IsTrue(state.MoveNext(ref state, out _), "Should be true as data exists in a later window.");
+        }
+
+        [Test]
+        public void MoveNext_NoDirtyBits_ReturnsFalse()
+        {
+            // Setup: No dirty bits set.
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 0, 10, 1, 5);
+
+            Assert.IsFalse(state.MoveNext(ref state, out _), "Should be false when no dirty data exists in any window.");
+        }
+
+        [TestCase(5)]
+        [TestCase(6)]
+        [TestCase(7)]
+        [TestCase(8)]
+        [TestCase(9)]
+        public void MoveNext_DirtyBitWithinOffsetRange_ReturnsTrue(int dirtyBitIndex)
+        {
+            // Setup: Offset 5, size 5 -> valid range is [5, 10).
+            // Every index in {5,6,7,8,9} lies within this range and must be detected.
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            bits[dirtyBitIndex] = true;
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 5, 5, 1, 5);
+
+            Assert.IsTrue(state.MoveNext(ref state, out _),
+                $"Should be true as dirty bit at index {dirtyBitIndex} lies within the offset range [5,10).");
+        }
+
+        [Test]
+        public void MoveNext_DirtyBitJustBeforeOffset_IsIgnored()
+        {
+            // Setup: Offset 5, size 5 -> valid range is [5, 10).
+            // Dirty bit at index 4 lies just before the offset and must not be consumable.
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            bits[4] = true;
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 5, 5, 1, 5);
+
+            Assert.IsFalse(state.MoveNext(ref state, out _),
+                "Dirty bit just before the offset must be ignored, not treated as within range.");
+        }
 
         #endregion
     }

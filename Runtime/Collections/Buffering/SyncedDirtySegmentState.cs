@@ -32,28 +32,13 @@ namespace Rayforge.Core.Collections.Buffering
 
         #region Constructor
 
-        /// <summary>
-        /// Initializes a new instance with validation checks to ensure consistency across streams.
-        /// </summary>
-        /// <param name="sourceA">Raw data array for stream A.</param>
-        /// <param name="sourceB">Raw data array for stream B.</param>
-        /// <param name="bitsA">Dirty-bit mask for stream A.</param>
-        /// <param name="bitsB">Dirty-bit mask for stream B.</param>
-        /// <param name="offset">Shared starting index.</param>
-        /// <param name="size">Shared total size.</param>
-        /// <param name="batchSize">Shared batch size (elements per bit).</param>
-        /// <param name="batchesPerWindow">Target number of batches per synchronization window.</param>
-        /// <param name="merge">Merge adjacent segments.</param>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown if batchesPerWindow is less than 1.</exception>
         public SyncedDirtySegmentState(
             TValueA[] sourceA, TValueB[] sourceB, BitArray bitsA, BitArray bitsB,
-            int offset, int size, int batchSize = 1, int batchesPerWindow = 1, bool merge = false)
+            int offset, int size, int batchSize = 1, int batchesPerWindow = 1)
         {
-            // 1. Null-Checks
             if (sourceA == null || sourceB == null) throw new ArgumentNullException("Source arrays cannot be null.");
             if (bitsA == null || bitsB == null) throw new ArgumentNullException("BitArrays cannot be null.");
 
-            // 2. Range-Checks
             if (offset != 0 && (offset < 0 || offset >= sourceA.Length || offset >= sourceB.Length))
                 throw new ArgumentOutOfRangeException(nameof(offset), "Offset is out of bounds.");
 
@@ -63,20 +48,24 @@ namespace Rayforge.Core.Collections.Buffering
             if (batchSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(batchSize), "Batch size must be positive.");
 
+            if (offset % batchSize != 0)
+                throw new ArgumentException($"Offset ({offset}) must be a multiple of batchSize ({batchSize}).", nameof(offset));
+
+            if (size % batchSize != 0)
+                throw new ArgumentException($"Size ({size}) must be a multiple of batchSize ({batchSize}).", nameof(size));
+
             if (batchesPerWindow < 1)
                 throw new ArgumentOutOfRangeException(nameof(batchesPerWindow), "Window must contain at least 1 batch.");
 
-            // 3. Logic initialization
-            _scannerA = new DirtySegmentState<TValueA>(sourceA, bitsA, offset, size, batchSize, merge);
-            _scannerB = new DirtySegmentState<TValueB>(sourceB, bitsB, offset, size, batchSize, merge);
+            _scannerA = new DirtySegmentState<TValueA>(sourceA, bitsA, offset, size, batchSize, false);
+            _scannerB = new DirtySegmentState<TValueB>(sourceB, bitsB, offset, size, batchSize, false);
 
-            _totalCapacity = size;
-
+            _totalCapacity = offset + size;
             _syncWindow = batchesPerWindow * batchSize;
 
             _resumeA = 0;
             _resumeB = 0;
-            _currentWindowStart = 0;
+            _currentWindowStart = offset;
             _peekCache = default;
             _hasPeeked = false;
         }
@@ -85,30 +74,24 @@ namespace Rayforge.Core.Collections.Buffering
 
         #region IIterationLogic Implementation
 
-        /// <summary>
-        /// Checks if there are more dirty segments to process or if a peeked result is pending.
-        /// </summary>
-        /// <param name="self">Reference to the current iterator state.</param>
-        /// <returns>True if more data is available; otherwise, false.</returns>
         public bool HasNext(ref SyncedDirtySegmentState<TValueA, TValueB> self)
         {
-            return self._hasPeeked || self._currentWindowStart < self._totalCapacity;
+            return self._hasPeeked || MoveBeforeNextWindow(ref self);
         }
 
-        /// <summary>
-        /// Returns the next synchronized window without advancing the iterator's main state.
-        /// Populates the lookahead cache if empty.
-        /// </summary>
-        /// <param name="self">Reference to the current iterator state.</param>
-        /// <param name="result">The peeked synchronization metadata.</param>
-        /// <returns>True if data was available to peek; otherwise, false.</returns>
         public bool TryPeekNext(ref SyncedDirtySegmentState<TValueA, TValueB> self, out SyncedSegmentMeta<TValueA, TValueB> result)
         {
             if (!self._hasPeeked)
             {
+                if (!MoveBeforeNextWindow(ref self))
+                {
+                    result = default;
+                    return false;
+                }
+
                 if (!ComputeNextWindow(ref self, out self._peekCache))
                 {
-                    result = self._peekCache;
+                    result = default;
                     return false;
                 }
                 self._hasPeeked = true;
@@ -117,18 +100,12 @@ namespace Rayforge.Core.Collections.Buffering
             return true;
         }
 
-        /// <summary>
-        /// Advances the iterator to the next synchronized window containing dirty data.
-        /// Consumes the peek cache if available, otherwise computes the next window.
-        /// </summary>
-        /// <param name="self">Reference to the current iterator state.</param>
-        /// <param name="result">The synchronized metadata for the window being entered.</param>
-        /// <returns>True if a window with dirty data was found; otherwise, false.</returns>
         public bool MoveNext(ref SyncedDirtySegmentState<TValueA, TValueB> self, out SyncedSegmentMeta<TValueA, TValueB> result)
         {
             if (TryPeekNext(ref self, out result))
             {
                 self._hasPeeked = false;
+                self._currentWindowStart += self._syncWindow;
                 return true;
             }
             return false;
@@ -138,48 +115,41 @@ namespace Rayforge.Core.Collections.Buffering
 
         #region Private Static Helpers
 
-        /// <summary>
-        /// Internal logic to slide the fixed window grid until dirty data is found or capacity is reached.
-        /// </summary>
-        /// <param name="self">Reference to the iterator state to advance.</param>
-        /// <param name="result">The metadata container to fill.</param>
-        /// <returns>True if data was found within a window; false if the end was reached.</returns>
-        private static bool ComputeNextWindow(ref SyncedDirtySegmentState<TValueA, TValueB> self, out SyncedSegmentMeta<TValueA, TValueB> result)
+        private static bool MoveBeforeNextWindow(ref SyncedDirtySegmentState<TValueA, TValueB> self)
         {
-            result = default;
-
             while (self._currentWindowStart < self._totalCapacity)
             {
                 int windowEnd = self._currentWindowStart + self._syncWindow;
 
-                SpanWindowForScanner(ref self._scannerA, ref self._resumeA, windowEnd, ref result.SegmentA);
-                SpanWindowForScanner(ref self._scannerB, ref self._resumeB, windowEnd, ref result.SegmentB);
-
-                self._currentWindowStart = windowEnd;
-
-                if (result.SegmentA.Count > 0 || result.SegmentB.Count > 0)
+                if (HasDirtyDataInRange(ref self._scannerA, self._resumeA, windowEnd) ||
+                    HasDirtyDataInRange(ref self._scannerB, self._resumeB, windowEnd))
                 {
                     return true;
                 }
 
-                if (!self._scannerA.HasNext(ref self._scannerA) && self._resumeA <= 0 &&
-                    !self._scannerB.HasNext(ref self._scannerB) && self._resumeB <= 0)
-                {
-                    break;
-                }
+                self._currentWindowStart = windowEnd;
             }
-
             return false;
         }
 
-        /// <summary>
-        /// Aggregates all dirty segments of a single scanner that fall within the specified window boundary.
-        /// Handles partial segments (resumption) and advances the underlying scanner.
-        /// </summary>
-        /// <param name="scanner">The scanner state to advance.</param>
-        /// <param name="resumeIndex">The index to resume from if a segment was previously clipped.</param>
-        /// <param name="windowEnd">The exclusive upper boundary of the current grid window.</param>
-        /// <param name="result">The segment metadata to populate.</param>
+        private static bool HasDirtyDataInRange<TValue>(ref DirtySegmentState<TValue> scanner, int resumeIndex, int windowEnd)
+        {
+            if (resumeIndex > 0) return true;
+            // Changed from < to <= to include segments starting exactly at the boundary
+            return scanner.TryPeekNext(ref scanner, out var segment) && segment.Start < windowEnd;
+        }
+
+        private static bool ComputeNextWindow(ref SyncedDirtySegmentState<TValueA, TValueB> self, out SyncedSegmentMeta<TValueA, TValueB> result)
+        {
+            result = default;
+            int windowEnd = self._currentWindowStart + self._syncWindow;
+
+            SpanWindowForScanner(ref self._scannerA, ref self._resumeA, windowEnd, ref result.SegmentA);
+            SpanWindowForScanner(ref self._scannerB, ref self._resumeB, windowEnd, ref result.SegmentB);
+
+            return result.SegmentA.Count > 0 || result.SegmentB.Count > 0;
+        }
+
         private static void SpanWindowForScanner<TValue>(
             ref DirtySegmentState<TValue> scanner,
             ref int resumeIndex,
@@ -207,6 +177,7 @@ namespace Rayforge.Core.Collections.Buffering
 
             TValue[] buffer = null;
             int effectiveEnd = effectiveStart;
+
             while (scanner.TryPeekNext(ref scanner, out var segment))
             {
                 buffer = segment.Source;
