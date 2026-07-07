@@ -109,6 +109,77 @@ namespace Rayforge.Core.Collections.Buffering.Tests
                 new DirtySegmentState<int>(new int[10], new BitArray(4), 0, 10, 2));
         }
 
+        [Test]
+        public void Constructor_OffsetNotMultipleOfBatchSize_ThrowsArgumentException()
+        {
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+
+            // offset=3 is not a multiple of batchSize=2
+            var ex = Assert.Throws<ArgumentException>(() =>
+                new DirtySegmentState<int>(source, bits, offset: 3, size: 4, batchSize: 2));
+
+            Assert.That(ex.ParamName, Is.EqualTo("offset"));
+        }
+
+        [Test]
+        public void Constructor_SizeNotMultipleOfBatchSize_ThrowsArgumentException()
+        {
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+
+            // size=5 is not a multiple of batchSize=2
+            var ex = Assert.Throws<ArgumentException>(() =>
+                new DirtySegmentState<int>(source, bits, offset: 2, size: 5, batchSize: 2));
+
+            Assert.That(ex.ParamName, Is.EqualTo("size"));
+        }
+
+        [Test]
+        public void Constructor_BitArrayTooSmallForOffsetSlice_ThrowsArgumentOutOfRangeException()
+        {
+            // offset=6, batchSize=2 -> startBatch=3
+            // size=6, batchSize=2 -> totalBatches=3
+            // Scanner needs bits [3,4,5], i.e. BitArray.Length must be >= 6.
+            int[] source = new int[12];
+            BitArray bits = new BitArray(5); // one bit short of what's needed
+
+            var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new DirtySegmentState<int>(source, bits, offset: 6, size: 6, batchSize: 2));
+
+            Assert.That(ex.ParamName, Is.EqualTo("dirtyBits"));
+        }
+
+        [Test]
+        public void Constructor_BitArrayExactlyLargeEnoughForOffsetSlice_DoesNotThrow()
+        {
+            // Same as above but BitArray.Length == 6 -> exactly enough, must NOT throw.
+            int[] source = new int[12];
+            BitArray bits = new BitArray(6);
+
+            Assert.DoesNotThrow(() =>
+                new DirtySegmentState<int>(source, bits, offset: 6, size: 6, batchSize: 2));
+        }
+
+        [TestCase(0, 4, 2)]  // offset=0 -> startBatch=0
+        [TestCase(2, 4, 2)]  // offset=2, batchSize=2 -> startBatch=1
+        [TestCase(6, 6, 2)]  // offset=6, batchSize=2 -> startBatch=3
+        [TestCase(4, 4, 4)]  // offset=4, batchSize=4 -> startBatch=1
+        [TestCase(8, 8, 4)]  // offset=8, batchSize=4 -> startBatch=2
+        public void Constructor_ValidOffsetAndSizeCombinations_DoesNotThrow(int offset, int size, int batchSize)
+        {
+            int arrayLength = offset + size + batchSize; // generous buffer beyond the slice
+            int[] source = new int[arrayLength];
+
+            int startBatch = offset / batchSize;
+            int totalBatches = size / batchSize;
+            BitArray bits = new BitArray(startBatch + totalBatches); // exactly enough
+
+            Assert.DoesNotThrow(() =>
+                new DirtySegmentState<int>(source, bits, offset, size, batchSize),
+                $"offset={offset}, size={size}, batchSize={batchSize} should be a valid combination.");
+        }
+
         #endregion
 
         #region MoveNext Dirty Tests
@@ -227,13 +298,11 @@ namespace Rayforge.Core.Collections.Buffering.Tests
         [Test]
         public void MoveNext_BatchSize4_CalculatesCorrectOffsets()
         {
-            // Arrange: 10 elements, batch size 4 = 3 batches (0: 0-3, 1: 4-7, 2: 8-9).
-            // Set bit 1 as dirty -> Batch 1 (indices 4-7).
-            var items = TestUtility.CreateSampleItems<T>(10);
-            var bits = new BitArray(3);
+            var items = TestUtility.CreateSampleItems<T>(16);
+            var bits = new BitArray(16);
             bits.Set(1, true);
 
-            var state = new DirtySegmentState<T>(items, bits, 0, 10, batchSize: 4);
+            var state = new DirtySegmentState<T>(items, bits, 0, 16, batchSize: 4);
 
             // Act & Assert: Verify batch spanning 4 elements.
             Assert.IsTrue(state.MoveNext(ref state, out var seg));
@@ -255,24 +324,6 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             Assert.IsTrue(state.MoveNext(ref state, out var seg));
             Assert.AreEqual(0, seg.Start);
             Assert.AreEqual(10, seg.Count);
-        }
-
-        [Test]
-        public void MoveNext_BatchSizeLargerThanRemaining_ClampsCorrectly()
-        {
-            // Arrange: 10 elements, batch size 6.
-            // 10 / 6 = 2 batches (Batch 0: 0-5, Batch 1: 6-9).
-            // Set bit 1 (Batch 1) as dirty.
-            var items = TestUtility.CreateSampleItems<T>(10);
-            var bits = new BitArray(2);
-            bits.Set(1, true);
-
-            var state = new DirtySegmentState<T>(items, bits, 0, 10, batchSize: 6);
-
-            // Act & Assert: Count should be clamped from 6 to 4 (remaining elements).
-            Assert.IsTrue(state.MoveNext(ref state, out var seg));
-            Assert.AreEqual(6, seg.Start);
-            Assert.AreEqual(4, seg.Count);
         }
 
         [Test]
@@ -356,6 +407,50 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             Assert.AreEqual(4, seg2.Count);
 
             Assert.IsFalse(state.MoveNext(ref state, out _));
+        }
+
+        [Test]
+        public void MoveNext_MergeContiguousBitsWithOffset_ReturnsCombinedSegmentWithAbsoluteStart()
+        {
+            // Slice: offset=6, size=8, batchSize=2 -> startBatch=3, totalBatches=4.
+            // Valid slice range in elements: [6, 14).
+            // Dirty batches 4 and 5 (absolute) are contiguous -> should merge into one segment.
+            // Batch 4 -> elements [8,9], batch 5 -> elements [10,11].
+            const int offset = 6;
+            const int size = 8;
+            const int batchSize = 2;
+
+            var items = TestUtility.CreateSampleItems<T>(20);
+            var bits = new BitArray(20);
+            bits.Set(4, true);
+            bits.Set(5, true);
+
+            var state = new DirtySegmentState<T>(items, bits, offset, size, batchSize, merge: true);
+
+            Assert.IsTrue(state.MoveNext(ref state, out var seg),
+                "Should find the merged dirty segment.");
+            Assert.AreEqual(8, seg.Start, "Result must report the absolute start, not relative to offset.");
+            Assert.AreEqual(4, seg.Count, "Two contiguous batches of size 2 should merge into a count of 4.");
+            Assert.IsFalse(state.MoveNext(ref state, out _), "Should be exhausted after the merged segment.");
+        }
+
+        [Test]
+        public void MoveNext_DirtyBitBeforeOffsetSlice_IsIgnored()
+        {
+            // Slice: offset=6, size=6, batchSize=2 -> startBatch=3.
+            // Dirty bit at batch 2 corresponds to elements [4,5], which lies before the slice start (element 6).
+            const int offset = 6;
+            const int size = 6;
+            const int batchSize = 2;
+
+            var items = TestUtility.CreateSampleItems<T>(12);
+            var bits = new BitArray(6);
+            bits.Set(2, true);
+
+            var state = new DirtySegmentState<T>(items, bits, offset, size, batchSize);
+
+            Assert.IsFalse(state.MoveNext(ref state, out _),
+                "Dirty bit before the offset-relative slice must be ignored, not just clamped.");
         }
 
         #endregion
@@ -481,13 +576,12 @@ namespace Rayforge.Core.Collections.Buffering.Tests
         [Test]
         public void TryPeekNext_BatchSize4_CalculatesCorrectOffsets()
         {
-            // Arrange: 10 elements, batch size 4 = 3 batches.
-            // Set bit 1 as dirty -> Batch 1 (indices 4-7).
-            var items = TestUtility.CreateSampleItems<T>(10);
-            var bits = new BitArray(3);
+            // Arrange
+            var items = TestUtility.CreateSampleItems<T>(16);
+            var bits = new BitArray(16);
             bits.Set(1, true);
 
-            var state = new DirtySegmentState<T>(items, bits, 0, 10, batchSize: 4);
+            var state = new DirtySegmentState<T>(items, bits, 0, 16, batchSize: 4);
 
             // Act & Assert: Verify batch spanning 4 elements without consuming.
             Assert.IsTrue(state.TryPeekNext(ref state, out var seg));
@@ -509,24 +603,6 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             Assert.IsTrue(state.TryPeekNext(ref state, out var seg));
             Assert.AreEqual(0, seg.Start);
             Assert.AreEqual(10, seg.Count);
-        }
-
-        [Test]
-        public void TryPeekNext_BatchSizeLargerThanRemaining_ClampsCorrectly()
-        {
-            // Arrange: 10 elements, batch size 6.
-            // 10 / 6 = 2 batches (Batch 0: 0-5, Batch 1: 6-9).
-            // Set bit 1 (Batch 1) as dirty.
-            var items = TestUtility.CreateSampleItems<T>(10);
-            var bits = new BitArray(2);
-            bits.Set(1, true);
-
-            var state = new DirtySegmentState<T>(items, bits, 0, 10, batchSize: 6);
-
-            // Act & Assert: Count should be clamped from 6 to 4 (remaining elements) without consuming.
-            Assert.IsTrue(state.TryPeekNext(ref state, out var seg));
-            Assert.AreEqual(6, seg.Start);
-            Assert.AreEqual(4, seg.Count);
         }
 
         [Test]
@@ -611,6 +687,44 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             Assert.IsTrue(state.TryPeekNext(ref state, out var seg2));
             Assert.AreEqual(6, seg2.Start);
             Assert.AreEqual(4, seg2.Count);
+        }
+
+        [Test]
+        public void TryPeekNext_DirtyBitWithinOffsetSlice_IsDetectedWithCorrectAbsoluteStart()
+        {
+            const int offset = 6;
+            const int size = 6;
+            const int batchSize = 2;
+
+            var items = TestUtility.CreateSampleItems<T>(12);
+            var bits = new BitArray(6);
+
+            int startBatch = offset / batchSize;
+            bits.Set(startBatch + 1, true); // dirty batch within the slice -> absolute element start 8
+
+            var state = new DirtySegmentState<T>(items, bits, offset, size, batchSize);
+
+            Assert.IsTrue(state.TryPeekNext(ref state, out var seg),
+                "Dirty bit within the offset-relative slice should be peekable.");
+            Assert.AreEqual(8, seg.Start);
+            Assert.AreEqual(batchSize, seg.Count);
+        }
+
+        [Test]
+        public void TryPeekNext_DirtyBitBeforeOffsetSlice_IsIgnored()
+        {
+            const int offset = 6;
+            const int size = 6;
+            const int batchSize = 2;
+
+            var items = TestUtility.CreateSampleItems<T>(12);
+            var bits = new BitArray(6);
+            bits.Set(2, true);
+
+            var state = new DirtySegmentState<T>(items, bits, offset, size, batchSize);
+
+            Assert.IsFalse(state.TryPeekNext(ref state, out _),
+                "Dirty bit before the offset-relative slice must be ignored, not just clamped.");
         }
 
         #endregion
@@ -698,6 +812,46 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             var state = new DirtySegmentState<T>(items, bits, 0, 4, batchSize: 2);
 
             Assert.IsFalse(state.HasNext(ref state), "Should ignore dirty bits that fall outside the defined size.");
+        }
+
+        [Test]
+        public void HasNext_DirtyBitWithinOffsetSlice_ReturnsTrue()
+        {
+            // Slice: offset=6, size=6, batchSize=2 -> startBatch=3, totalBatches=3.
+            // Valid slice range in elements: [6, 12).
+            const int offset = 6;
+            const int size = 6;
+            const int batchSize = 2;
+
+            var items = TestUtility.CreateSampleItems<T>(12);
+            var bits = new BitArray(6);
+
+            int startBatch = offset / batchSize;
+            bits.Set(startBatch + 1, true); // dirty batch within the slice -> absolute element start 8
+
+            var state = new DirtySegmentState<T>(items, bits, offset, size, batchSize);
+
+            Assert.IsTrue(state.HasNext(ref state),
+                "Dirty bit within the offset-relative slice should be detected.");
+        }
+
+        [Test]
+        public void HasNext_DirtyBitBeforeOffsetSlice_ReturnsFalse()
+        {
+            // Slice: offset=6, size=6, batchSize=2 -> startBatch=3.
+            // Dirty bit at batch 2 corresponds to elements [4,5], which lies before the slice start (element 6).
+            const int offset = 6;
+            const int size = 6;
+            const int batchSize = 2;
+
+            var items = TestUtility.CreateSampleItems<T>(12);
+            var bits = new BitArray(6);
+            bits.Set(2, true);
+
+            var state = new DirtySegmentState<T>(items, bits, offset, size, batchSize);
+
+            Assert.IsFalse(state.HasNext(ref state),
+                "Dirty bit before the offset-relative slice must be ignored, not just clamped.");
         }
 
         #endregion

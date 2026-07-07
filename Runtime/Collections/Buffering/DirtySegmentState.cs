@@ -95,17 +95,23 @@ namespace Rayforge.Core.Collections.Buffering
             if (batchSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(batchSize), "Batch size must be greater than zero.");
 
+            if (offset % batchSize != 0)
+                throw new ArgumentException($"Offset ({offset}) must be a multiple of batchSize ({batchSize}).", nameof(offset));
+
+            if (size % batchSize != 0)
+                throw new ArgumentException($"Size ({size}) must be a multiple of batchSize ({batchSize}).", nameof(size));
+
             // Calculate relevant batches for this slice
+            int startBatch = offset / batchSize;
             int totalBatches = BufferMath.GetTotalBatches(size, batchSize);
 
-            // Ensure the bitmask covers the range
-            if (dirtyBits.Length < totalBatches)
+            if (dirtyBits.Length - startBatch < totalBatches)
             {
                 throw new ArgumentOutOfRangeException(nameof(dirtyBits),
                     $"BitArray length ({dirtyBits.Length}) is too small for the specified slice size and batch size.");
             }
 
-            _bitScanner = new BitIteratorState(dirtyBits, 0, totalBatches, targetState: true);
+            _bitScanner = new BitIteratorState(dirtyBits, startBatch, totalBatches, targetState: true);
 
             _batchSize = batchSize;
             _offset = offset;
@@ -177,37 +183,33 @@ namespace Rayforge.Core.Collections.Buffering
         /// <param name="self">The current iterator state reference.</param>
         private static void MoveBeforeNext(ref DirtySegmentState<T> self)
         {
-            // If we already have a segment cached, do nothing.
             if (self._hasCachedSegment) return;
 
-            // Attempt to find the next batch index marked as dirty.
-            if (!self._bitScanner.MoveNext(ref self._bitScanner, out int relativeStartBatch))
+            if (!self._bitScanner.MoveNext(ref self._bitScanner, out int startBatchIndex))
             {
                 return;
             }
 
-            int endBatch = relativeStartBatch;
+            int endBatchIndex = startBatchIndex;
 
-            // If merging is enabled, look ahead in the bit scanner for contiguous dirty bits.
             if (self._mergeContiguous)
             {
-                while (self._bitScanner.TryPeekNext(ref self._bitScanner, out int nextBatch) && nextBatch == endBatch + 1)
+                while (self._bitScanner.TryPeekNext(ref self._bitScanner, out int nextBatch) && nextBatch == endBatchIndex + 1)
                 {
-                    self._bitScanner.MoveNext(ref self._bitScanner, out endBatch);
+                    self._bitScanner.MoveNext(ref self._bitScanner, out endBatchIndex);
                 }
             }
 
-            // Calculate the positions relative to the slice's offset.
-            int relativeStart = relativeStartBatch * self._batchSize;
-            int relativeEnd = (endBatch + 1) * self._batchSize;
+            int start = startBatchIndex * self._batchSize;
+            int end = (endBatchIndex + 1) * self._batchSize;
 
-            // Clamp to the defined size and calculate absolute start/count.
-            int count = Math.Min(relativeEnd, self._size) - relativeStart;
+            int sliceEnd = self._offset + self._size;
+            int count = Math.Min(end, sliceEnd) - start;
 
             self._cachedSegment = new BufferSegmentMeta<T>
             {
                 Source = self._sourceArray,
-                Start = self._offset + relativeStart,
+                Start = start,
                 Count = count
             };
             self._hasCachedSegment = true;
