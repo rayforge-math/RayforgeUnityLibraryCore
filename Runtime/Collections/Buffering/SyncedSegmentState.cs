@@ -5,21 +5,19 @@ namespace Rayforge.Core.Collections.Buffering
 {
     /// <summary>
     /// A synchronized iterator state that merges two independent linear buffer scanners into aligned windows.
-    /// Enables full-buffer processing by enforcing grid-based slicing without dirty-state tracking.
+    /// Provides absolute indexing for all generated segments.
     /// </summary>
     /// <typeparam name="TValueA">The unmanaged type of the first buffer.</typeparam>
     /// <typeparam name="TValueB">The unmanaged type of the second buffer.</typeparam>
     public struct SyncedSegmentState<TValueA, TValueB>
         : IIterationLogic<SyncedSegmentMeta<TValueA, TValueB>, SyncedSegmentState<TValueA, TValueB>>
-        where TValueA : unmanaged
-        where TValueB : unmanaged
     {
         private BufferSegmentState<TValueA> _scannerA;
         private BufferSegmentState<TValueB> _scannerB;
 
         private int _currentWindowStart;
         private readonly int _syncWindow;
-        private readonly int _totalCapacity;
+        private readonly int _absoluteEnd;
 
         /// <summary>
         /// Initializes a new synchronization state by creating internal linear scanners with strict validation.
@@ -34,32 +32,26 @@ namespace Rayforge.Core.Collections.Buffering
         /// <exception cref="ArgumentOutOfRangeException">Thrown when offset, size, or batch settings are invalid.</exception>
         public SyncedSegmentState(
             TValueA[] sourceA, TValueB[] sourceB,
-            int offset, int size, int batchSize, int windowSize)
+            int offset, int size, int batchSize = 1, int windowSize = 1)
         {
-            // 1. Validation Checks
             if (sourceA == null || sourceB == null)
                 throw new ArgumentNullException("Source arrays cannot be null.");
 
-            if (offset < 0 || offset >= sourceA.Length || offset >= sourceB.Length)
-                throw new ArgumentOutOfRangeException(nameof(offset), "Offset must be within array bounds.");
+            if (offset < 0 || (offset + size) > sourceA.Length || (offset + size) > sourceB.Length)
+                throw new ArgumentOutOfRangeException(nameof(offset), "Offset or size exceeds buffer boundaries.");
 
-            if (size < 0 || (offset + size) > sourceA.Length || (offset + size) > sourceB.Length)
-                throw new ArgumentOutOfRangeException(nameof(size), "Size exceeds buffer boundaries.");
-
-            if (batchSize < 0)
-                throw new ArgumentOutOfRangeException(nameof(batchSize), "Batch size cannot be negative.");
+            if (batchSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(batchSize), "Batch size cannot be negative or zero.");
 
             if (windowSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(windowSize), "Window size must be greater than zero.");
 
-            // 2. Internal Scanner Creation
-            // This ensures both scanners share identical configuration, preventing divergence.
             _scannerA = new BufferSegmentState<TValueA>(sourceA, offset, size, batchSize);
             _scannerB = new BufferSegmentState<TValueB>(sourceB, offset, size, batchSize);
 
             _syncWindow = windowSize;
-            _totalCapacity = size;
-            _currentWindowStart = 0;
+            _absoluteEnd = offset + size; // The absolute end point in the source arrays
+            _currentWindowStart = offset; // Start point is always the absolute offset
         }
 
         /// <summary>
@@ -68,7 +60,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// <param name="self">Reference to the current iterator state.</param>
         /// <returns>True if the window start is within capacity; otherwise, false.</returns>
         public bool HasNext(ref SyncedSegmentState<TValueA, TValueB> self)
-            => self._currentWindowStart < self._totalCapacity;
+            => self._currentWindowStart < self._absoluteEnd;
 
         /// <summary>
         /// Advances the iterator to the next synchronized segment window.
@@ -78,30 +70,11 @@ namespace Rayforge.Core.Collections.Buffering
         /// <returns>True if a window was successfully created; false if end of capacity is reached.</returns>
         public bool MoveNext(ref SyncedSegmentState<TValueA, TValueB> self, out SyncedSegmentMeta<TValueA, TValueB> result)
         {
-            if (self._currentWindowStart >= self._totalCapacity)
-            {
-                result = default;
+            if (!TryPeekNext(ref self, out result))
                 return false;
-            }
 
-            int windowEnd = Math.Min(self._currentWindowStart + self._syncWindow, self._totalCapacity);
-
-            result = new SyncedSegmentMeta<TValueA, TValueB> {
-                SegmentA = new BufferSegmentMeta<TValueA>
-                {
-                    Source = self._scannerA.SourceArray,
-                    Start = self._currentWindowStart,
-                    Count = windowEnd - self._currentWindowStart
-                },
-                SegmentB = new BufferSegmentMeta<TValueB>
-                {
-                    Source = self._scannerB.SourceArray,
-                    Start = self._currentWindowStart,
-                    Count = windowEnd - self._currentWindowStart
-                }            
-            };
-
-            self._currentWindowStart = windowEnd;
+            // Advance to the next absolute start point based on the processed count
+            self._currentWindowStart += result.SegmentA.Count;
             return true;
         }
 
@@ -113,27 +86,29 @@ namespace Rayforge.Core.Collections.Buffering
         /// <returns>True if a window is available; otherwise, false.</returns>
         public bool TryPeekNext(ref SyncedSegmentState<TValueA, TValueB> self, out SyncedSegmentMeta<TValueA, TValueB> result)
         {
-            if (self._currentWindowStart >= self._totalCapacity)
+            if (self._currentWindowStart >= self._absoluteEnd)
             {
                 result = default;
                 return false;
             }
 
-            int windowEnd = Math.Min(self._currentWindowStart + self._syncWindow, self._totalCapacity);
+            int windowEnd = Math.Min(self._currentWindowStart + self._syncWindow, self._absoluteEnd);
 
-            result = new SyncedSegmentMeta<TValueA, TValueB> {
+            // Metadata contains the absolute start point and calculated count for the current window
+            result = new SyncedSegmentMeta<TValueA, TValueB>
+            {
                 SegmentA = new BufferSegmentMeta<TValueA>
                 {
                     Source = self._scannerA.SourceArray,
-                    Start = self._currentWindowStart,
+                    Start = self._currentWindowStart, // Absolute start of the window
                     Count = windowEnd - self._currentWindowStart
                 },
                 SegmentB = new BufferSegmentMeta<TValueB>
                 {
                     Source = self._scannerB.SourceArray,
-                    Start = self._currentWindowStart,
+                    Start = self._currentWindowStart, // Absolute start of the window
                     Count = windowEnd - self._currentWindowStart
-                }            
+                }
             };
             return true;
         }
