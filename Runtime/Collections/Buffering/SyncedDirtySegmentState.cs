@@ -9,10 +9,8 @@ namespace Rayforge.Core.Collections.Buffering
     /// A synchronized iterator state that merges two independent dirty-segment scanners into fixed-size windows.
     /// Aligns buffer segments. Enforces compatibility checks and grid-based slicing.
     /// </summary>
-    public struct SyncedDirtySegmentState<TValueA, TValueB> 
+    public struct SyncedDirtySegmentState<TValueA, TValueB>
         : IIterationLogic<SyncedSegmentMeta<TValueA, TValueB>, SyncedDirtySegmentState<TValueA, TValueB>>
-        where TValueA : unmanaged
-        where TValueB : unmanaged
     {
         #region Properties
 
@@ -49,14 +47,14 @@ namespace Rayforge.Core.Collections.Buffering
         /// <exception cref="ArgumentOutOfRangeException">Thrown if batchesPerWindow is less than 1.</exception>
         public SyncedDirtySegmentState(
             TValueA[] sourceA, TValueB[] sourceB, BitArray bitsA, BitArray bitsB,
-            int offset, int size, int batchSize, int batchesPerWindow, bool merge = false)
+            int offset, int size, int batchSize = 1, int batchesPerWindow = 1, bool merge = false)
         {
             // 1. Null-Checks
             if (sourceA == null || sourceB == null) throw new ArgumentNullException("Source arrays cannot be null.");
             if (bitsA == null || bitsB == null) throw new ArgumentNullException("BitArrays cannot be null.");
 
             // 2. Range-Checks
-            if (offset < 0 || offset >= sourceA.Length || offset >= sourceB.Length)
+            if (offset != 0 && (offset < 0 || offset >= sourceA.Length || offset >= sourceB.Length))
                 throw new ArgumentOutOfRangeException(nameof(offset), "Offset is out of bounds.");
 
             if (size < 0 || (offset + size) > sourceA.Length || (offset + size) > sourceB.Length)
@@ -74,7 +72,6 @@ namespace Rayforge.Core.Collections.Buffering
 
             _totalCapacity = size;
 
-            // Hier erfolgt die Umrechnung: Grid-Größe = Batches * Element-pro-Batch
             _syncWindow = batchesPerWindow * batchSize;
 
             _resumeA = 0;
@@ -188,7 +185,6 @@ namespace Rayforge.Core.Collections.Buffering
             ref int resumeIndex,
             int windowEnd,
             ref BufferSegmentMeta<TValue> result)
-            where TValue : unmanaged
         {
             result.Source = null;
             result.Start = 0;

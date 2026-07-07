@@ -14,7 +14,6 @@ namespace Rayforge.Core.Collections.Buffering
     /// </summary>
     /// <typeparam name="T">The unmanaged type of the elements in the buffer.</typeparam>
     public struct DirtySegmentState<T> : IIterationLogic<BufferSegmentMeta<T>, DirtySegmentState<T>>
-        where T : unmanaged
     {
         #region Properties
 

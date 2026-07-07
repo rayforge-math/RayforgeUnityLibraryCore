@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Rayforge.Core.Collections.Buffering
+namespace Rayforge.Core.Collections.Buffering.Tests
 {
     [TestFixture]
     public class RequestQueueTests
