@@ -1,3 +1,6 @@
+using System.Threading;
+using UnityEngine;
+
 namespace Rayforge.Core.Common.Cache
 {
     /// <summary>
@@ -8,12 +11,17 @@ namespace Rayforge.Core.Common.Cache
     /// <typeparam name="T">The type of the array elements.</typeparam>
     public static class StaticArrayPool<T>
     {
-        private const int MaxPoolSize = 32;
+        private const int k_MaxPoolSize = 1024;
+
+        /// <summary>
+        /// The maximum size of cached arrays, everything exceeding this value will return a temporary, uncached array.
+        /// </summary>
+        public static int MaxPoolSize => k_MaxPoolSize;
 
         /// <summary>
         /// Internal storage for the pooled arrays. Each index represents an array of that specific length.
         /// </summary>
-        private static readonly T[][] s_Pool = new T[MaxPoolSize][];
+        private static readonly T[][] s_Pool = new T[k_MaxPoolSize][];
 
         /// <summary>
         /// Retrieves a shared array instance of the exact requested length.
@@ -29,11 +37,21 @@ namespace Rayforge.Core.Common.Cache
         /// </returns>
         public static T[] Get(int count)
         {
-            if (count <= 0) return s_Pool[0] ??= new T[0];
-
-            if (count < MaxPoolSize)
+            if (!ThreadingMeta.IsMainThread)
             {
-                return s_Pool[count] ??= new T[count];
+                throw new System.InvalidOperationException(
+                    "StaticArrayPool must only be accessed from the Unity Main Thread.");
+            }
+
+            if (count < 1)
+            {
+                throw new System.ArgumentOutOfRangeException(nameof(count),
+                    "Requested array size must be at least 1.");
+            }
+
+            if (count <= k_MaxPoolSize)
+            {
+                return s_Pool[count - 1] ??= new T[count];
             }
 
             // Fallback: Allocate a new array for sizes exceeding the pool limit.
