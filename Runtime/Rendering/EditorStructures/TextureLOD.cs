@@ -78,7 +78,7 @@ namespace Rayforge.Core.Rendering.EditorStructures
                 return false;
             }
 
-            return mapResolution.IsLowerThan(predecessor.mapResolution);
+            return mapResolution.IsLower(predecessor.mapResolution);
         }
 
         /// <summary>
@@ -97,7 +97,7 @@ namespace Rayforge.Core.Rendering.EditorStructures
             }
             else
             {
-                if (!mapResolution.IsLowerThan(predecessor.mapResolution) || mapResolution == PowerOfTwoResolution.None)
+                if (!mapResolution.IsLower(predecessor.mapResolution) || mapResolution == PowerOfTwoResolution.None)
                 {
                     mapResolution = predecessor.mapResolution.Downscale();
                 }
