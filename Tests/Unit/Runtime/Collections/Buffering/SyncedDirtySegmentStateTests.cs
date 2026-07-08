@@ -4,7 +4,6 @@ using Rayforge.Core.Collections.Abstractions.Tests;
 using Rayforge.Core.TestEnv;
 using System;
 using System.Collections;
-using UnityEngine;
 
 namespace Rayforge.Core.Collections.Buffering.Tests
 {
@@ -410,6 +409,29 @@ namespace Rayforge.Core.Collections.Buffering.Tests
                 "Dirty bit just before the offset must be ignored, not treated as within range.");
         }
 
+        [TestCase(0, 1, 0, 5)] // Bit 0 in Window 0 (0-4) -> Start 0, Count 1
+        [TestCase(3, 1, 3, 5)] // Bit 3 in Window 0 (0-4) -> Start 3, Count 1
+        [TestCase(5, 1, 5, 5)] // Bit 5 in Window 1 (5-9) -> Start 5, Count 1
+        [TestCase(9, 1, 9, 5)] // Bit 9 in Window 1 (5-9) -> Start 9, Count 1
+        public void TryPeekNext_SpecificBit_ReturnsCorrectSegmentWithoutConsuming(int dirtyBit, int expectedCount, int expectedStart, int windowSize)
+        {
+            // Setup
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            bits[dirtyBit] = true;
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 0, 10, 1, windowSize);
+
+            // Act 1: Peek
+            Assert.IsTrue(state.TryPeekNext(ref state, out var segment), "Peek sollte das Segment finden.");
+            Assert.AreEqual(expectedStart, segment.SegmentA.Start);
+            Assert.AreEqual(expectedCount, segment.SegmentA.Count);
+
+            // Act 2 : Again
+            Assert.IsTrue(state.TryPeekNext(ref state, out var segmentAgain), "Zweiter Peek sollte wieder dasselbe Segment finden.");
+            Assert.AreEqual(segment.SegmentA.Start, segmentAgain.SegmentA.Start, "Der Peek-Zustand darf sich nicht ändern.");
+        }
+
         #endregion
 
         #region MoveNext Tests
@@ -486,6 +508,26 @@ namespace Rayforge.Core.Collections.Buffering.Tests
 
             Assert.IsFalse(state.MoveNext(ref state, out _),
                 "Dirty bit just before the offset must be ignored, not treated as within range.");
+        }
+
+        [Test]
+        public void MoveNext_DirtyBitInMiddleOfWindow_ReturnsOnlyThatSegment()
+        {
+            // Arrange
+            int[] source = new int[10];
+            BitArray bits = new BitArray(10);
+            bits[7] = true;
+
+            var state = new SyncedDirtySegmentState<int, int>(source, source, bits, bits, 0, 10, 1, 5);
+
+            // Act
+            Assert.IsTrue(state.MoveNext(ref state, out var segment), "Sollte das dirty Segment finden.");
+
+            // Assert
+            Assert.AreEqual(7, segment.SegmentA.Start, "Der Start-Index sollte exakt auf dem dirty Bit liegen.");
+            Assert.AreEqual(1, segment.SegmentA.Count, "Der Count sollte nur das einzelne dirty Bit abdecken, nicht das ganze Window.");
+
+            Assert.IsFalse(state.MoveNext(ref state, out _), "Es sollten keine weiteren Segmente existieren.");
         }
 
         #endregion

@@ -17,6 +17,7 @@ namespace Rayforge.Core.Collections.Buffering
 
         private int _currentWindowStart;
         private readonly int _syncWindow;
+        private readonly int _batchSize;
         private readonly int _absoluteEnd;
 
         /// <summary>
@@ -50,6 +51,7 @@ namespace Rayforge.Core.Collections.Buffering
             _scannerB = new BufferSegmentState<TValueB>(sourceB, offset, size, batchSize);
 
             _syncWindow = windowSize;
+            _batchSize = batchSize;
             _absoluteEnd = offset + size; // The absolute end point in the source arrays
             _currentWindowStart = offset; // Start point is always the absolute offset
         }
@@ -92,21 +94,21 @@ namespace Rayforge.Core.Collections.Buffering
                 return false;
             }
 
-            int windowEnd = Math.Min(self._currentWindowStart + self._syncWindow, self._absoluteEnd);
+            int elementsPerWindow = self._syncWindow * self._batchSize;
+            int windowEnd = Math.Min(self._currentWindowStart + elementsPerWindow, self._absoluteEnd);
 
-            // Metadata contains the absolute start point and calculated count for the current window
             result = new SyncedSegmentMeta<TValueA, TValueB>
             {
                 SegmentA = new BufferSegmentMeta<TValueA>
                 {
                     Source = self._scannerA.SourceArray,
-                    Start = self._currentWindowStart, // Absolute start of the window
+                    Start = self._currentWindowStart,
                     Count = windowEnd - self._currentWindowStart
                 },
                 SegmentB = new BufferSegmentMeta<TValueB>
                 {
                     Source = self._scannerB.SourceArray,
-                    Start = self._currentWindowStart, // Absolute start of the window
+                    Start = self._currentWindowStart,
                     Count = windowEnd - self._currentWindowStart
                 }
             };

@@ -251,7 +251,7 @@ namespace Rayforge.Core.Collections.Buffering
         /// onto the heap. For performance-critical synchronization loops, use <see cref="ForEachDirtySegment{T, TAction}"/> 
         /// to maintain stack-only execution.
         /// </remarks>
-        public IIterator<SyncedSegmentMeta<TStoreA, TStoreB>> GetSyncedDirtySegmentIterator()
+        public IIterator<SyncedSegmentMeta<TStoreA, TStoreB>> GetSyncedDirtySegments()
         {
             if (!(StoreA.AnyDirty || StoreB.AnyDirty)) return IIterator<SyncedSegmentMeta<TStoreA, TStoreB>>.Empty();
 
@@ -293,20 +293,6 @@ namespace Rayforge.Core.Collections.Buffering
         #region IIterable<SyncedSegmentMeta<TStoreA, TStoreB>> Implementation
 
         /// <inheritdoc />
-        public IIterator<SyncedSegmentMeta<TStoreA, TStoreB>> GetIterator()
-        {
-            var state = new SyncedSegmentState<TStoreA, TStoreB>(
-                StoreA.TypedBuffer, 
-                StoreB.TypedBuffer, 
-                0,
-                Capacity,
-                BatchSize,
-                1);
-
-            return new Iterator<SyncedSegmentMeta<TStoreA, TStoreB>, SyncedSegmentState<TStoreA, TStoreB>>(state);
-        }
-
-        /// <inheritdoc />
         public void ForEach<TAction>(ref TAction action)
             where TAction : struct, IExecutionHandler<SyncedSegmentMeta<TStoreA, TStoreB>>
         {
@@ -319,11 +305,25 @@ namespace Rayforge.Core.Collections.Buffering
                 1);
 
             var iter = new Iterator<SyncedSegmentMeta<TStoreA, TStoreB>, SyncedSegmentState<TStoreA, TStoreB>>(state);
-            
+
             while (iter.MoveNext())
             {
                 action.Execute(iter.Current);
             }
+        }
+
+        /// <inheritdoc />
+        public IIterator<SyncedSegmentMeta<TStoreA, TStoreB>> GetIterator()
+        {
+            var state = new SyncedSegmentState<TStoreA, TStoreB>(
+                StoreA.TypedBuffer, 
+                StoreB.TypedBuffer, 
+                0,
+                Capacity,
+                BatchSize,
+                1);
+
+            return new Iterator<SyncedSegmentMeta<TStoreA, TStoreB>, SyncedSegmentState<TStoreA, TStoreB>>(state);
         }
 
         #endregion

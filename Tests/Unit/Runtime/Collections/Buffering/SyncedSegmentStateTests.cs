@@ -339,6 +339,102 @@ namespace Rayforge.Core.Collections.Buffering.Tests
             Assert.IsFalse(state.MoveNext(ref state, out _));
         }
 
+        [Test]
+        public void MoveNext_WithBatchSize_AlignsToBatchBoundary()
+        {
+            // Arrange: 12 elements, BatchSize 3, WindowSize 1 (1 batch per step)
+            // We expect 4 segments (12 / 3 = 4), each 3 elements long.
+            int[] sourceA = new int[12];
+            int[] sourceB = new int[12];
+
+            var state = new SyncedSegmentState<int, int>(sourceA, sourceB, 0, 12, 3, 1);
+
+            // Act & Assert
+            Assert.IsTrue(state.MoveNext(ref state, out var seg1));
+            Assert.AreEqual(3, seg1.SegmentA.Count, "Segment 1 must be exactly one batch of 3 elements.");
+
+            Assert.IsTrue(state.MoveNext(ref state, out var seg2));
+            Assert.AreEqual(3, seg2.SegmentA.Start, "Segment 2 must start after the first batch.");
+            Assert.AreEqual(3, seg2.SegmentA.Count);
+        }
+
+        [Test]
+        public void MoveNext_WithWindowSize_AggregatesMultipleBatches()
+        {
+            // Arrange: 12 elements, BatchSize 2, WindowSize 3
+            // Each window = 3 batches * 2 elements = 6 elements total.
+            // Total segments = 12 / 6 = 2 windows.
+            int[] sourceA = new int[12];
+            int[] sourceB = new int[12];
+
+            var state = new SyncedSegmentState<int, int>(sourceA, sourceB, 0, 12, 2, 3);
+
+            // Act & Assert
+            Assert.IsTrue(state.MoveNext(ref state, out var seg1));
+            Assert.AreEqual(6, seg1.SegmentA.Count, "Window of 3 batches (2 each) must be 6 elements.");
+
+            Assert.IsTrue(state.MoveNext(ref state, out var seg2));
+            Assert.AreEqual(6, seg2.SegmentA.Start);
+            Assert.AreEqual(6, seg2.SegmentA.Count, "Second window must correctly aggregate the remaining 3 batches.");
+
+            Assert.IsFalse(state.MoveNext(ref state, out _));
+        }
+
+        #endregion
+
+        #region TryPeekNext Tests
+
+        [Test]
+        public void TryPeekNext_DoesNotAdvanceState_ReturnsSameMetadataOnRepeatedCalls()
+        {
+            // Arrange: 12 elements, BatchSize 2, WindowSize 3 (Window = 6 elements)
+            int[] sourceA = new int[12];
+            int[] sourceB = new int[12];
+            var state = new SyncedSegmentState<int, int>(sourceA, sourceB, 0, 12, 2, 3);
+
+            // Act
+            bool success1 = state.TryPeekNext(ref state, out var seg1);
+            bool success2 = state.TryPeekNext(ref state, out var seg2);
+
+            // Assert
+            Assert.IsTrue(success1, "First peek should succeed.");
+            Assert.IsTrue(success2, "Second peek should succeed.");
+            Assert.AreEqual(seg1.SegmentA.Start, seg2.SegmentA.Start, "Peek should not advance the start position.");
+            Assert.AreEqual(seg1.SegmentA.Count, seg2.SegmentA.Count, "Peek should return consistent metadata.");
+        }
+
+        [Test]
+        public void TryPeekNext_WithBatchAndWindow_ReturnsCorrectAlignment()
+        {
+            // Arrange: 12 elements, BatchSize 2, WindowSize 2 (Window = 4 elements)
+            int[] sourceA = new int[12];
+            int[] sourceB = new int[12];
+            var state = new SyncedSegmentState<int, int>(sourceA, sourceB, 0, 12, 2, 2);
+
+            // Act
+            state.TryPeekNext(ref state, out var seg);
+
+            // Assert
+            Assert.AreEqual(0, seg.SegmentA.Start, "Peek should report correct start.");
+            Assert.AreEqual(4, seg.SegmentA.Count, "Peek should calculate window based on (BatchSize * WindowSize).");
+        }
+
+        [Test]
+        public void TryPeekNext_WhenExhausted_ReturnsFalse()
+        {
+            // Arrange: 4 elements, WindowSize 4
+            int[] sourceA = new int[4];
+            int[] sourceB = new int[4];
+            var state = new SyncedSegmentState<int, int>(sourceA, sourceB, 0, 4, 1, 4);
+
+            // Act: Consume the state
+            state.MoveNext(ref state, out _);
+
+            // Assert
+            bool success = state.TryPeekNext(ref state, out _);
+            Assert.IsFalse(success, "TryPeekNext should return false when no segments are left.");
+        }
+
         #endregion
     }
 }
