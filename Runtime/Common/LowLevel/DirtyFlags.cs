@@ -19,6 +19,11 @@ namespace Rayforge.Core.Common.LowLevel
         private BitField m_Bits;
 
         /// <summary>
+        /// Access to internal bit storage.
+        /// </summary>
+        public uint Value => m_Bits.Value;
+
+        /// <summary>
         /// Gets whether any dirty flag is currently set.
         /// </summary>
         public bool Any => m_Bits.Any;
