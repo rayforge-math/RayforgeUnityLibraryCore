@@ -31,7 +31,6 @@ namespace Rayforge.Core.Collections.Iterator
         /// <param name="count">The number of elements to process.</param>
         public SyncedArrayIteratorState(TValueA[] arrayA, TValueB[] arrayB, int start, int count)
         {
-            // Die ArrayIteratorState-Konstruktoren führen nun die Validierung durch
             _stateA = new ArrayIteratorState<TValueA>(arrayA, start, count);
             _stateB = new ArrayIteratorState<TValueB>(arrayB, start, count);
 
