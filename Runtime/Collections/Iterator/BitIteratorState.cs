@@ -24,22 +24,26 @@ namespace Rayforge.Core.Collections.Iterator
         /// <param name="targetState">The bit value to search for (true = set, false = unset).</param>
         public BitIteratorState(BitArray bits, int startIndex, int count, bool targetState = true)
         {
-            _bits = bits;
-            _targetState = targetState;
-
-            if (bits == null || bits.Length == 0 || count <= 0)
+            if (bits == null || count == 0)
             {
+                _bits = null!;
+                _targetState = targetState;
                 _currentIndex = -1;
                 _endIndex = 0;
                 return;
             }
 
-            int actualStart = Math.Max(0, Math.Min(startIndex, bits.Length));
-            int remaining = bits.Length - actualStart;
-            int actualCount = Math.Max(0, Math.Min(count, remaining));
+            if (bits.Length != 0 && (startIndex < 0 || startIndex >= bits.Length))
+                throw new ArgumentOutOfRangeException(nameof(startIndex));
+            if (count < 0)
+                throw new ArgumentOutOfRangeException(nameof(count));
+            if (startIndex + count > bits.Length)
+                throw new ArgumentOutOfRangeException(nameof(count), "Range exceeds bit array length.");
 
-            _currentIndex = actualStart - 1;
-            _endIndex = actualStart + actualCount;
+            _bits = bits;
+            _targetState = targetState;
+            _currentIndex = startIndex - 1;
+            _endIndex = startIndex + count;
         }
 
         /// <summary>

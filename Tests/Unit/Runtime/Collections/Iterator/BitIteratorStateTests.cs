@@ -51,129 +51,59 @@ namespace Rayforge.Core.Collections.Iterator.Tests
         #region Constructor Tests
 
         [Test]
-        public void Constructor_HandlesNullAndEmptyBitArrays_Gracefully()
-        {
-            // Scenario 1: Null BitArray should be treated as empty
-            var nullState = new BitIteratorState(null, 0, 10);
-            bool nullMoveNext = nullState.MoveNext(ref nullState, out _);
-            Assert.IsFalse(nullMoveNext, "Iterator with null BitArray should not yield any elements.");
-
-            // Scenario 2: Empty BitArray should be treated as empty
-            var emptyBits = new BitArray(0);
-            var emptyState = new BitIteratorState(emptyBits, 0, 10);
-            bool emptyMoveNext = emptyState.MoveNext(ref emptyState, out _);
-            Assert.IsFalse(emptyMoveNext, "Iterator with empty BitArray should not yield any elements.");
+        public void Constructor_NullBits_IsExhaustedImmediately()
+        { 
+            var state = new BitIteratorState(null!, 0, 10);
+            Assert.IsFalse(state.HasNext(ref state), "Iterator must be exhausted when bits is null.");
         }
 
         [Test]
-        [TestCase(-10, 5, 5, Description = "Start < 0 -> clamped to 0")]
-        [TestCase(100, 5, 0, Description = "Start > Length -> clamped to Length")]
-        [TestCase(10, 0, 0, Description = "Start exactly at Length -> empty iteration")]
-        [TestCase(0, 5, 5, Description = "Start at 0 -> full range (5 elements)")]
-        [TestCase(5, 5, 5, Description = "Start at middle -> remainder range (5 elements)")]
-        [TestCase(8, 5, 2, Description = "Start near end -> partial range (2 elements)")]
-        [TestCase(int.MinValue, 5, 5, Description = "Extreme negative start -> clamped to 0")]
-        [TestCase(int.MaxValue, 5, 0, Description = "Extreme positive start -> clamped to length")]
-        public void Constructor_ClampsStartBoundary(int start, int count, int expectedCount)
+        public void Constructor_NegativeStartIndex_ThrowsArgumentOutOfRangeException()
         {
-            // Arrange: BitArray length is 10
             var bits = new BitArray(10);
-            // Set all to true to ensure we are only testing the boundary/clamping logic
-            bits.SetAll(true);
-
-            var state = new BitIteratorState(bits, start, count, targetState: true);
-
-            // Act: Consume the iterator to verify the actual accessible range
-            int consumed = 0;
-            while (state.MoveNext(ref state, out _))
-            {
-                consumed++;
-            }
-
-            // Assert: Verify the count matches the expected clamped range size
-            Assert.AreEqual(expectedCount, consumed,
-                $"Boundary test failed for start {start} and count {count}. Expected {expectedCount} elements but got {consumed}.");
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new BitIteratorState(bits, -1, 5));
         }
 
         [Test]
-        [TestCase(0, -5, 0, Description = "Count < 0 -> clamped to 0")]
-        [TestCase(0, 0, 0, Description = "Count 0 -> empty iteration")]
-        [TestCase(0, 100, 10, Description = "Count > Length -> clamped to full length")]
-        [TestCase(5, 10, 5, Description = "Count > remaining space -> clamped to remaining")]
-        [TestCase(10, 5, 0, Description = "Start at boundary -> empty iteration")]
-        [TestCase(11, 5, 0, Description = "Start beyond length -> empty iteration")]
-        [TestCase(-5, 5, 5, Description = "Negative start -> clamped to 0")]
-        public void Constructor_ClampsCountBoundary(int start, int count, int expectedCount)
+        public void Constructor_StartIndexExceedsLength_ThrowsArgumentOutOfRangeException()
         {
-            // Arrange: BitArray length is 10
             var bits = new BitArray(10);
-            // Set all bits to true so we can count them easily
-            bits.SetAll(true);
-
-            var state = new BitIteratorState(bits, start, count, targetState: true);
-
-            // Act: Count how many elements the iterator traverses
-            int consumed = 0;
-            while (state.MoveNext(ref state, out _))
-            {
-                consumed++;
-            }
-
-            // Assert
-            Assert.AreEqual(expectedCount, consumed,
-                $"Failed for range [{start}, count: {count}]. Expected {expectedCount} items, but got {consumed}.");
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new BitIteratorState(bits, 10, 1));
         }
 
         [Test]
-        [TestCase(int.MinValue, 10, 10, Description = "Extreme negative start -> clamped to 0")]
-        [TestCase(0, int.MaxValue, 10, Description = "Extreme count -> clamped to length")]
-        [TestCase(int.MaxValue, int.MaxValue, 0, Description = "Extreme values -> empty range")]
-        public void Constructor_HandlesExtremeBoundaries(int start, int count, int expectedCount)
+        public void Constructor_CountZero_IsExhaustedImmediately()
         {
-            // Arrange: BitArray length is 10
             var bits = new BitArray(10);
-            bits.SetAll(true);
+            var state = new BitIteratorState(bits, 0, 0);
 
-            var state = new BitIteratorState(bits, start, count, targetState: true);
-
-            // Act
-            int consumed = 0;
-            while (state.MoveNext(ref state, out _))
-            {
-                consumed++;
-            }
-
-            // Assert: Ensure no overflows or crashes occur with extreme inputs
-            Assert.AreEqual(expectedCount, consumed,
-                $"Extreme input failed for [{start}, count: {count}].");
+            Assert.IsFalse(state.HasNext(ref state), "Iterator with count 0 must be exhausted immediately.");
         }
 
         [Test]
-        [TestCase(-50, -50, 0, Description = "Negative offset and count -> clamped to empty")]
-        [TestCase(0, -50, 0, Description = "Zero offset, negative count -> clamped to empty")]
-        [TestCase(100, 100, 0, Description = "Offset/count way beyond length -> clamped to empty")]
-        [TestCase(int.MinValue, int.MaxValue, 10, Description = "Overflow scenario: MinValue start + MaxValue count -> clamped to full range")]
-        [TestCase(int.MinValue, 5, 5, Description = "Negative start, small count -> clamped to [0, 5)")]
-        [TestCase(5, int.MaxValue, 5, Description = "Valid start, huge count -> clamped to remaining")]
-        public void Constructor_HandlesNonsensicalCombinations(int start, int count, int expectedCount)
+        public void Constructor_NegativeCount_ThrowsArgumentOutOfRangeException()
         {
-            // Arrange: BitArray length is 10
             var bits = new BitArray(10);
-            // Set all to true to count the iterations easily
-            bits.SetAll(true);
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new BitIteratorState(bits, 0, -1));
+        }
 
-            var state = new BitIteratorState(bits, start, count, targetState: true);
+        [Test]
+        public void Constructor_RangeExceedsLength_ThrowsArgumentOutOfRangeException()
+        {
+            var bits = new BitArray(10);
+            // 5 + 6 = 11 > 10
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new BitIteratorState(bits, 5, 6));
+        }
 
-            // Act: Count how many elements the iterator traverses
-            int consumed = 0;
-            while (state.MoveNext(ref state, out _))
-            {
-                consumed++;
-            }
-
-            // Assert: Verify that the state remains stable and bounded
-            Assert.AreEqual(expectedCount, consumed,
-                $"Extreme input [{start}, {count}] failed. Expected {expectedCount} elements but got {consumed}.");
+        [Test]
+        public void Constructor_ValidInputs_InitializesCorrectly()
+        {
+            var bits = new BitArray(10);
+            Assert.DoesNotThrow(() => new BitIteratorState(bits, 0, 5));
         }
 
         #endregion
