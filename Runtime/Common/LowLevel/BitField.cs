@@ -18,6 +18,11 @@ namespace Rayforge.Core.Common.LowLevel
         private uint m_Value;
 
         /// <summary>
+        /// Access to internal bit storage.
+        /// </summary>
+        public uint Value => m_Value;
+
+        /// <summary>
         /// Gets whether at least one bit is set in the field.
         /// </summary>
         public bool Any => m_Value != 0;
@@ -25,8 +30,15 @@ namespace Rayforge.Core.Common.LowLevel
         /// <summary>
         /// Sets all bits specified by the given mask.
         /// </summary>
-        /// <param name="mask">Bit mask indicating which bits to set.</param>
-        public void Set(uint mask) => m_Value |= mask;
+        /// <param name="mask">The bit mask to apply.</param>
+        /// <param name="overwrite">If true, replaces existing value. If false, combines via OR.</param>
+        public void Set(uint mask, bool overwrite = false)
+        {
+            if (overwrite)
+                m_Value = mask;
+            else
+                m_Value |= mask;
+        }
 
         /// <summary>
         /// Clears all bits specified by the given mask.
