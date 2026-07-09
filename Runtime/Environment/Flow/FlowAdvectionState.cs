@@ -18,20 +18,18 @@ namespace Rayforge.Core.Environment.Flow
         /// <summary>
         /// Advances the flow offset.
         /// </summary>
-        /// <param name="directionXY">Direction of horizontal flow.</param>
+        /// <param name="velocity">Velocity vector of horizontal flow.</param>
         /// <param name="flowZ">Absolute vertical/depth-wise flow rate.</param>
-        /// <param name="speed">Multiplier for horizontal speed.</param>
         /// <param name="deltaTime">Time step.</param>
         /// <param name="wrapValue">The coordinate wrap value to prevent precision loss (default 1024).</param>
         public void Update(
-            Vector2 directionXY,
+            Vector2 velocity,
             float flowZ,
-            float speed,
             float deltaTime,
             float wrapValue = 1024.0f)
         {
-            m_Offset.x += directionXY.x * speed * deltaTime;
-            m_Offset.y += directionXY.y * speed * deltaTime;
+            m_Offset.x += velocity.x * deltaTime;
+            m_Offset.y += velocity.y * deltaTime;
             m_Offset.z += flowZ * deltaTime;
 
             Wrap(ref m_Offset, wrapValue);
