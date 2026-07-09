@@ -25,9 +25,9 @@ namespace Rayforge.Core.Common.Rendering.Tests
         [Test]
         public void Constructor_ShouldStartAt_NegativeOne()
         {
-            var guard = new FrameOnce();
+            var guard = new FrameOnce(null);
 
-            Assert.Equals(-1, guard.LastFrame);
+            Assert.AreEqual(-1, guard.LastFrame, "Last frame should initially be -1.");
         }
 
         [Test]

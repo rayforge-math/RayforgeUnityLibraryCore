@@ -11,41 +11,16 @@ namespace Rayforge.Core.Diagnostics
     public static class Assertions
     {
         /// <summary>
-        /// Lightweight assertion utility intended for validating internal invariants
-        /// and unexpected states that should never occur during correct program execution.
-        ///
-        /// Assertions are meant for:
-        /// - Detecting logic errors during development
-        /// - Catching invalid internal states caused by programmer mistakes
-        /// - Flagging conditions that "should not happen", but do not fundamentally break
-        ///   program correctness or leave the system in an unrecoverable state
-        ///
-        /// Assertions are NOT a replacement for exceptions.
-        /// Use exceptions for:
-        /// - Invalid input or violated API contracts
-        /// - Failed allocations or resource creation
-        /// - Any error that must be handled or propagated to calling code
-        ///
-        /// Behavior:
-        /// - In the Unity Editor: logs an error with source location information
-        /// - In Development Builds: throws an exception to fail fast
-        /// - In Release Builds: stripped entirely
-        ///
-        /// Examples of appropriate use:
-        /// - A pooled buffer being returned twice
-        /// - A descriptor mismatch that should be impossible by construction
-        /// - A state machine entering an invalid transition
-        ///
-        /// Examples of inappropriate use (use exceptions instead):
-        /// - Failure to allocate GPU or system memory
-        /// - Invalid user input or public API misuse
-        /// - Any error that leaves the system in an undefined or broken state
+        /// Provides development-only assertions to validate internal logic invariants.
+        /// Stripped in Release builds; throws in Development builds; logs in Editor.
         /// </summary>
-        /// <param name="condition">The boolean condition to validate. Must be true to pass.</param>
-        /// <param name="error">Error message to display if the assertion fails.</param>
-        /// <param name="file">Compiler-supplied source file path. Supplied automatically.</param>
-        /// <param name="line">Compiler-supplied line number. Supplied automatically.</param>
-        /// <param name="member">Compiler-supplied calling member name. Supplied automatically.</param>
+        /// <remarks>
+        /// Use for: Internal logic errors or "impossible" state transitions.
+        /// DO NOT use for: Public API validation, user input, or errors requiring runtime handling.
+        /// Use <see cref="System.Exception"/>-based validation for public interfaces.
+        /// </remarks>
+        /// <param name="condition">Condition that must be true.</param>
+        /// <param name="error">Message describing the logic violation.</param>
         [Conditional("UNITY_EDITOR")]
         [Conditional("DEVELOPMENT_BUILD")]
         public static void Assert(
