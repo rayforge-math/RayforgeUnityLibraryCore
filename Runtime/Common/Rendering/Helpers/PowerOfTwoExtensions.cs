@@ -7,6 +7,8 @@ namespace Rayforge.Core.Common.Rendering.Helpers
     /// </summary>
     public static class PowerOfTwoExtensions
     {
+        #region Comparison
+
         /// <summary>
         /// Checks if the current resolution is equal to the specified resolution.
         /// </summary>
@@ -62,6 +64,10 @@ namespace Rayforge.Core.Common.Rendering.Helpers
             return (int)current <= (int)other;
         }
 
+        #endregion
+
+        #region Scaling
+
         /// <summary>
         /// Returns the next smaller power of two resolution. 
         /// Clamps to <see cref="PowerOfTwoResolution.Resolution32"/> if already at the minimum.
@@ -89,6 +95,10 @@ namespace Rayforge.Core.Common.Rendering.Helpers
 
             return (PowerOfTwoResolution)((int)current << 1);
         }
+
+        #endregion
+
+        #region Maths
 
         /// <summary>
         /// Calculates the Log2 of the resolution value. 
@@ -135,5 +145,7 @@ namespace Rayforge.Core.Common.Rendering.Helpers
             int countPerDim = tile.ToSlotCountPerDim(baseRes);
             return countPerDim * countPerDim;
         }
+
+        #endregion
     }
 }
