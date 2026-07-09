@@ -2,7 +2,7 @@ using Rayforge.Core.Common.Math;
 using Rayforge.Core.Maths.Helpers;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Flow
+namespace Rayforge.Core.Environment.Tracking
 {
     /// <summary>
     /// Represents a 2D flow direction with synchronized vector and degree representations.

@@ -1,7 +1,7 @@
 using NUnit.Framework;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Flow.Tests
+namespace Rayforge.Core.Environment.Tracking.Tests
 {
     [TestFixture]
     public class FlowAdvectionStateTests

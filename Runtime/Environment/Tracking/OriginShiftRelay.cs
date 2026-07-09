@@ -11,24 +11,39 @@ namespace Rayforge.Core.Environment.Tracking
     public class OriginShiftRelay : MonoBehaviour
     {
         #region Settings
+
         [Header("Detection")]
         [Tooltip("The accumulated distance required to trigger a shift event.")]
-        public float shiftThreshold = 100f;
+        [SerializeField]
+        private float shiftThreshold = 100f;
+
         #endregion
 
         #region Events
+
         /// <summary>
         /// Fired when the total movement since the last reset exceeds the threshold.
         /// Vector3: The total delta since the last event.
         /// </summary>
         public event Action<Vector3> OnWorldShiftDetected;
+
         #endregion
 
-        #region Private State
+        #region Properties
+
         // We track the position where the last shift was triggered (or Awake).
         private Vector3 _lastStablePosition;
         private float _sqrThreshold;
+
+        public Vector3 LastStablePosition => _lastStablePosition;
+
+        public float SqrThreshold => _sqrThreshold;
+
+        public float ShiftThreshold => shiftThreshold;
+
         #endregion
+
+        #region Monobehavior
 
         private void Awake()
         {
@@ -51,12 +66,12 @@ namespace Rayforge.Core.Environment.Tracking
             {
                 OnWorldShiftDetected?.Invoke(totalDeltaSinceLastShift);
                 _lastStablePosition = currentPosition;
-
-#if UNITY_EDITOR
-                Debug.Log($"[OriginShiftRelay] Shift triggered! Accumulated Delta: {totalDeltaSinceLastShift.magnitude:F2}");
-#endif
             }
         }
+
+        #endregion
+
+        #region Control
 
         /// <summary>
         /// Manually resets the tracking origin. 
@@ -66,5 +81,7 @@ namespace Rayforge.Core.Environment.Tracking
         {
             _lastStablePosition = transform.position;
         }
+
+        #endregion
     }
 }

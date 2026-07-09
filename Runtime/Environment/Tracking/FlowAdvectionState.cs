@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Flow
+namespace Rayforge.Core.Environment.Tracking
 {
     /// <summary>
     /// Represents a time-integrated state for procedural flow advection.
