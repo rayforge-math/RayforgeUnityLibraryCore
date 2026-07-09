@@ -23,7 +23,7 @@ namespace Rayforge.Core.Environment.Tracking
 
         /// <summary>
         /// Fired when the total movement since the last reset exceeds the threshold.
-        /// Vector3: The total delta since the last event.
+        /// <para>Parameter: The total delta vector (current position - last stable position).</para>
         /// </summary>
         public event Action<Vector3> OnWorldShiftDetected;
 
@@ -31,14 +31,22 @@ namespace Rayforge.Core.Environment.Tracking
 
         #region Properties
 
-        // We track the position where the last shift was triggered (or Awake).
-        private Vector3 _lastStablePosition;
-        private float _sqrThreshold;
+        private Vector3 m_LastStablePosition;
+        private float m_SqrThreshold;
 
-        public Vector3 LastStablePosition => _lastStablePosition;
+        /// <summary>
+        /// Gets the world position where the last shift was triggered.
+        /// </summary>
+        public Vector3 LastStablePosition => m_LastStablePosition;
 
-        public float SqrThreshold => _sqrThreshold;
+        /// <summary>
+        /// Gets the squared distance threshold currently in use.
+        /// </summary>
+        public float SqrThreshold => m_SqrThreshold;
 
+        /// <summary>
+        /// Gets or sets the linear distance threshold for triggering a shift event.
+        /// </summary>
         public float ShiftThreshold => shiftThreshold;
 
         #endregion
@@ -47,25 +55,30 @@ namespace Rayforge.Core.Environment.Tracking
 
         private void Awake()
         {
-            _lastStablePosition = transform.position;
-            UpdateThreshold();
+            m_LastStablePosition = transform.position;
+            UpdateThreshold(shiftThreshold);
         }
 
-        private void OnValidate() => UpdateThreshold();
-        private void UpdateThreshold() => _sqrThreshold = shiftThreshold * shiftThreshold;
+        private void OnValidate()
+        {
+            // Ensure threshold is valid during Inspector editing
+            if (shiftThreshold > 0f)
+            {
+                UpdateThreshold(shiftThreshold);
+            }
+        }
 
         private void LateUpdate()
         {
             Vector3 currentPosition = transform.position;
-
-            Vector3 totalDeltaSinceLastShift = currentPosition - _lastStablePosition;
+            Vector3 totalDeltaSinceLastShift = currentPosition - m_LastStablePosition;
             float sqrDistance = totalDeltaSinceLastShift.sqrMagnitude;
 
-            // Only trigger if the total distance traveled (accumulated or jump) is enough.
-            if (sqrDistance >= _sqrThreshold)
+            // Only trigger if the total distance traveled exceeds the squared threshold.
+            if (sqrDistance >= m_SqrThreshold)
             {
                 OnWorldShiftDetected?.Invoke(totalDeltaSinceLastShift);
-                _lastStablePosition = currentPosition;
+                m_LastStablePosition = currentPosition;
             }
         }
 
@@ -74,12 +87,28 @@ namespace Rayforge.Core.Environment.Tracking
         #region Control
 
         /// <summary>
-        /// Manually resets the tracking origin. 
-        /// Useful if you want to force the system to consider the current position as 'Zero'.
+        /// Updates the movement threshold and recalculates the internal squared threshold.
+        /// </summary>
+        /// <param name="threshold">The new distance threshold. Must be greater than zero.</param>
+        /// <exception cref="ArgumentException">Thrown when threshold is less than or equal to zero.</exception>
+        public void UpdateThreshold(float threshold)
+        {
+            if (threshold <= 0f)
+            {
+                throw new ArgumentException("Threshold must be greater than zero.", nameof(threshold));
+            }
+
+            shiftThreshold = threshold;
+            m_SqrThreshold = shiftThreshold * shiftThreshold;
+        }
+
+        /// <summary>
+        /// Manually resets the tracking origin to the current transform position.
+        /// Useful if you want to force the system to consider the current location as the new 'Zero'.
         /// </summary>
         public void ResetOrigin()
         {
-            _lastStablePosition = transform.position;
+            m_LastStablePosition = transform.position;
         }
 
         #endregion
