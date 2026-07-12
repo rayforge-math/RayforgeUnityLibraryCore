@@ -175,7 +175,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         #region Lifecycle
 
         /// <summary>
-        /// Default constructor. English: Initialize() must be called to setup the grid parameters.
+        /// Default constructor. Initialize() must be called to setup the grid parameters.
         /// </summary>
         public ChunkRegistry() : base() { }
 

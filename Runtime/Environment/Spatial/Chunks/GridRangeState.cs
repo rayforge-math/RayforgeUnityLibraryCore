@@ -19,26 +19,17 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// Initializes the traversal state with a defined min and max boundary.
         /// Automatically ensures that min is less than or equal to max for all axes.
         /// </summary>
-        /// <param name="v1">First boundary corner.</param>
-        /// <param name="v2">Second boundary corner (can be smaller than v1).</param>
-        public GridRangeState(Vector3Int v1, Vector3Int v2)
+        /// <param name="min">First boundary corner.</param>
+        /// <param name="max">Second boundary corner (can be smaller than v1).</param>
+        public GridRangeState(Vector3Int min, Vector3Int max)
         {
-            _min = new Vector3Int(
-                Mathf.Min(v1.x, v2.x),
-                Mathf.Min(v1.y, v2.y),
-                Mathf.Min(v1.z, v2.z)
-            );
-
-            _max = new Vector3Int(
-                Mathf.Max(v1.x, v2.x),
-                Mathf.Max(v1.y, v2.y),
-                Mathf.Max(v1.z, v2.z)
-            );
+            _min = min;
+            _max = max;
 
             _current = _min;
             _hasStarted = false;
 
-            _isExhausted = false;
+            _isExhausted = (_min.x > _max.x || _min.y > _max.y || _min.z > _max.z);
         }
 
         /// <summary>
@@ -70,8 +61,16 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 return true;
             }
 
-            result = CalculateNext(self._current, self._min, self._max, out bool exhausted);
-            return !exhausted;
+            Vector3Int next = CalculateNext(self._current, self._min, self._max, out bool exhausted);
+
+            if (exhausted)
+            {
+                result = default;
+                return false;
+            }
+
+            result = next;
+            return true;
         }
 
         /// <summary>
@@ -112,21 +111,48 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             exhausted = false;
             Vector3Int next = current;
 
-            next.x++;
-            if (next.x > max.x)
+            // X-Dimension
+            if (min.x <= max.x)
             {
-                next.x = min.x;
-                next.y++;
-                if (next.y > max.y)
+                next.x++;
+                if (next.x > max.x)
                 {
-                    next.y = min.y;
-                    next.z++;
-                    if (next.z > max.z)
+                    next.x = min.x;
+
+                    // Y-Dimension
+                    if (min.y <= max.y)
+                    {
+                        next.y++;
+                        if (next.y > max.y)
+                        {
+                            next.y = min.y;
+
+                            // Z-Dimension
+                            if (min.z <= max.z)
+                            {
+                                next.z++;
+                                if (next.z > max.z)
+                                {
+                                    exhausted = true;
+                                }
+                            }
+                            else
+                            {
+                                exhausted = true;
+                            }
+                        }
+                    }
+                    else
                     {
                         exhausted = true;
                     }
                 }
             }
+            else
+            {
+                exhausted = true;
+            }
+
             return next;
         }
     }
