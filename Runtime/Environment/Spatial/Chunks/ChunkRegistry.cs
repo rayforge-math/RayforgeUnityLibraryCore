@@ -319,7 +319,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                     T newChunk = data.gameObject.AddComponent<T>();
                     float half = (int)coord.GridSize * 0.5f;
 
-                    newChunk.Initialize(
+                    ((IChunkControl)newChunk).Initialize(
                         data.key,
                         new Vector3(
                         coord.IsXActive ? half : 0,
