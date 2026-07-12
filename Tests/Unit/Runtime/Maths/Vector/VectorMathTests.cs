@@ -1,7 +1,7 @@
 using NUnit.Framework;
 using UnityEngine;
 
-namespace Rayforge.Core.Common.Math.Tests
+namespace Rayforge.Core.Maths.Vector.Tests
 {
     [TestFixture]
     public class VectorMathTests

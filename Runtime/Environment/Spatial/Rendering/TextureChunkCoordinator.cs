@@ -404,7 +404,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             if (chunk != null && chunk.CurrentLOD >= 0)
             {
-                _mapper.RequestTile(chunk.GridKey, chunk.CurrentLOD, chunk.WorldPosition, chunk.localExtent.x);
+                _mapper.RequestTile(chunk.GridKey, chunk.CurrentLOD, chunk.WorldPosition, chunk.LocalExtent.x);
             }
         }
 

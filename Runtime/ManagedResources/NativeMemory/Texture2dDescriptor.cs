@@ -1,4 +1,4 @@
-using Rayforge.Core.Common.Rendering.Helpers;
+using Rayforge.Core.Rendering.Helpers;
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.ManagedResources.Abstractions;
 using System;

@@ -1,5 +1,4 @@
-using Rayforge.Core.Common.Math;
-using Rayforge.Core.Maths.Helpers;
+using Rayforge.Core.Maths.Vector;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Tracking

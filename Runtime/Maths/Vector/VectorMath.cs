@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace Rayforge.Core.Common.Math
+namespace Rayforge.Core.Maths.Vector
 {
     public static class VectorMath
     {

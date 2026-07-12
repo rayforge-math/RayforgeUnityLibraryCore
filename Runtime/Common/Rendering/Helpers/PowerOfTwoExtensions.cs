@@ -112,40 +112,6 @@ namespace Rayforge.Core.Common.Rendering.Helpers
             return Mathf.RoundToInt(Mathf.Log((int)current, 2));
         }
 
-        /// <summary>
-        /// Calculates how many times the current resolution fits into the specified base resolution per axis.
-        /// This defines the grid density of the atlas slice.
-        /// </summary>
-        /// <exception cref="System.ArgumentException">Thrown when the tile resolution is larger than the base resolution.</exception>
-        /// <example>Resolution512.ToSlotCount(Resolution2048) returns 4 (meaning a 4x4 grid).</example>
-        /// <param name="tile">The resolution of a single tile.</param>
-        /// <param name="baseRes">The total resolution of the atlas slice/container.</param>
-        /// <returns>The number of possible slots per axis.</returns>
-        public static int ToSlotCountPerDim(this PowerOfTwoResolution tile, PowerOfTwoResolution baseRes)
-        {
-            if (tile.IsHigher(baseRes))
-            {
-                throw new System.ArgumentException(
-                    $"Tile resolution ({tile}) cannot be larger than the base container resolution ({baseRes}).",
-                    nameof(tile));
-            }
-
-            return (int)baseRes / (int)tile;
-        }
-
-        /// <summary>
-        /// Calculates the total capacity (total number of tiles) the base resolution can hold for the current tile size.
-        /// </summary>
-        /// <example>Resolution512.ToTotalSlots(Resolution2048) returns 16.</example>
-        /// <param name="tile">The resolution of a single tile.</param>
-        /// <param name="baseRes">The total resolution of the atlas slice/container.</param>
-        /// <returns>The total capacity (area) of the slice in tiles.</returns>
-        public static int ToSlotCount(this PowerOfTwoResolution tile, PowerOfTwoResolution baseRes)
-        {
-            int countPerDim = tile.ToSlotCountPerDim(baseRes);
-            return countPerDim * countPerDim;
-        }
-
         #endregion
     }
 }

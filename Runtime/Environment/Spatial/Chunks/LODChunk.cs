@@ -8,8 +8,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     public abstract class LODChunk<T> : Chunk<T>, ILODState, ILODReceiver
         where T : LODChunk<T>
     {
-        private const string Tag = "[LODReceiver]";
-
         /// <summary>
         /// The current Level of Detail index. Initialized to -1 to ensure the first update triggers.
         /// Used by the Registry to determine if an update is necessary.
@@ -35,12 +33,17 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <param name="newLod">The new LOD level calculated by the registry.</param>
         bool ILODReceiver.UpdateLOD(int newLod, bool useHardDeactivation)
         {
-            int sanitizedLod = Mathf.Clamp(newLod, -1, MaxLOD);
+            if (newLod < -1 || newLod > MaxLOD)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(newLod),
+                    $"LOD level {newLod} is out of valid range [-1, {MaxLOD}].");
+            }
 
-            if (CurrentLOD == sanitizedLod) return false;
+            if (CurrentLOD == newLod) return false;
 
             int oldLod = CurrentLOD;
-            CurrentLOD = sanitizedLod;
+            CurrentLOD = newLod;
 
             ((ILODReceiver)this).SetVisibility(CurrentLOD >= 0, useHardDeactivation);
 
@@ -80,7 +83,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         void ILODReceiver.ConfigureLODRange(int maxLod)
         {
             if (maxLod < 0)
-                throw new ArgumentException($"{Tag} MaxLOD cannot be negative. Value: {maxLod}");
+                throw new ArgumentException($"MaxLOD cannot be negative. Value: {maxLod}");
 
             MaxLOD = maxLod;
         }
@@ -121,7 +124,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         protected override void OnDrawGizmosSelected()
         {
-            if (localExtent.sqrMagnitude < 0.0001f) return;
+            if (LocalExtent.sqrMagnitude < 0.0001f) return;
 
             Vector3 pos = transform.position;
             Vector3 displaySize = GetLogicalSize();

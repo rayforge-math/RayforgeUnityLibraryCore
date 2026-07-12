@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace Rayforge.Core.Common.Rendering
+namespace Rayforge.Core.Rendering.Sync
 {
     /// <summary>
     /// Lightweight per-frame execution guard.

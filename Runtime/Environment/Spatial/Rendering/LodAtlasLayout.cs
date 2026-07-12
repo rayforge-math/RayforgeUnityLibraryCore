@@ -1,5 +1,5 @@
 using Rayforge.Core.Common.Rendering;
-using Rayforge.Core.Common.Rendering.Helpers;
+using Rayforge.Core.Rendering.Helpers;
 using Rayforge.Core.Rendering.Abstractions;
 using System;
 using UnityEngine;
@@ -101,7 +101,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             for (int i = 0; i < lodCount; i++)
             {
                 int tilesInLevel = maxCapacities[i];
-                int slotsPerDim = lodResolutions[i].ToSlotCountPerDim(BaseResolution);
+                int slotsPerDim = ((int)lodResolutions[i]).ToSlotCountPerDim((int)BaseResolution);
 
                 if (slotsPerDim <= 0)
                     throw new InvalidOperationException($"[LodAtlasLayout] Resolution for LOD {i} is invalid relative to BaseResolution.");

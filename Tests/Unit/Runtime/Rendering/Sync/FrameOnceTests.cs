@@ -1,7 +1,7 @@
 using NUnit.Framework;
 using UnityEngine;
 
-namespace Rayforge.Core.Common.Rendering.Tests
+namespace Rayforge.Core.Rendering.Sync.Tests
 {
     [TestFixture]
     public class FrameOnceTests

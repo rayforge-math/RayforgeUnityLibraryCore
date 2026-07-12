@@ -317,14 +317,15 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 static (data, coord) =>
                 {
                     T newChunk = data.gameObject.AddComponent<T>();
-                    newChunk.GridKey = data.key;
-
                     float half = (int)coord.GridSize * 0.5f;
-                    newChunk.localExtent = new Vector3(
+
+                    newChunk.Initialize(
+                        data.key,
+                        new Vector3(
                         coord.IsXActive ? half : 0,
                         coord.IsYActive ? half : 0,
-                        coord.IsZActive ? half : 0
-                    );
+                        coord.IsZActive ? half : 0)
+                        );
 
                     newChunk.SuppressTransformDirtyOnce();
                     return newChunk;

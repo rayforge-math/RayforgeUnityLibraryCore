@@ -6,7 +6,7 @@ namespace Rayforge.Core.Environment.Abstractions
     /// Interface for chunks that support Level of Detail (LOD) transitions.
     /// Extends the base chunk with logic for detail management and notification.
     /// </summary>
-    public interface ILODState : IChunk
+    public interface ILODState
     {
         /// <summary> 
         /// The current detail level (0 = High detail, increasing values = lower detail, -1 = Culled). 

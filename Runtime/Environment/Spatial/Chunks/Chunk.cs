@@ -11,37 +11,48 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     /// </summary>
     /// <typeparam name="T">The derived type for type-safe processing and registry management.</typeparam>
     [ChunkConfig(SpatialAxes.Voxel)]
-    public abstract class Chunk<T> : MonoBehaviour, ISpatialEntry, IChunk, IDisposable
+    public abstract class Chunk<T> : MonoBehaviour, ISpatialEntry, IChunkMeta, IChunkControl
         where T : Chunk<T>
     {
         #region Spatial Settings
+
         [Header("Spatial Settings")]
-        /// <summary> The half-size of the chunk in local space. Defines the AABB bounds. </summary>
-        [field: SerializeField]
-        public Vector3 localExtent { get; internal set; } = new Vector3(50, 50, 50);
+        [SerializeField] private Vector3 _localExtent = new Vector3(50, 50, 50);
 
-        public Vector3 GetWorldSize() => localExtent * 2f;
+        public Vector3 LocalExtent => _localExtent;
+        public Vector3 Size => _localExtent * 2f;
+        public bool UpdateOnTransformChange { get; set; } = false;
 
-        /// <summary> If true, the chunk flags itself as dirty when the transform moves. </summary>
-        public bool updateOnTransformChange = false;
+        /// <summary> Safely updates extent and marks dirty. </summary>
+        public void UpdateLocalExtent(Vector3 newExtent)
+        {
+            if (_localExtent == newExtent) return;
+            _localExtent = newExtent;
+            MarkDirty();
+        }
+
         #endregion
 
         #region Identity & State
+
         [Header("Identity")]
-        /// <summary> Managed by the Registry. Identifies the chunk's grid slot. </summary>
-        [field: SerializeField, HideInInspector]
-        public Vector3Int GridKey { get; internal set; }
+        [SerializeField, HideInInspector] private Vector3Int _gridKey;
+        public bool IsInitialized { get; private set; } = false; 
 
-        public Vector2Int GridKeyXY => new Vector2Int(GridKey.x, GridKey.y);
-        public Vector2Int GridKeyXZ => new Vector2Int(GridKey.x, GridKey.z);
-
+        public Vector3Int GridKey => _gridKey;
         public Vector3 WorldPosition => transform.position;
 
-        /// <summary>
-        /// Static cache for the axes configuration. 
-        /// Initialized once per unique type T.
-        /// </summary>
+        // Grid Key Helpers
+        public Vector2Int GridKeyXY => new Vector2Int(_gridKey.x, _gridKey.y);
+        public Vector2Int GridKeyXZ => new Vector2Int(_gridKey.x, _gridKey.z);
+        public Vector2Int GridKeyYZ => new Vector2Int(_gridKey.y, _gridKey.z);
+
+        // Axis Configuration
         public static SpatialAxes ActiveAxes { get; private set; }
+        public bool IsXActive => (ActiveAxes & SpatialAxes.X) != 0;
+        public bool IsYActive => (ActiveAxes & SpatialAxes.Y) != 0;
+        public bool IsZActive => (ActiveAxes & SpatialAxes.Z) != 0;
+        public bool IsWActive => (ActiveAxes & SpatialAxes.W) != 0;
 
         static Chunk()
         {
@@ -49,16 +60,53 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             ActiveAxes = config?.Axes ?? SpatialAxes.Voxel;
         }
 
-        public bool IsXActive => (ActiveAxes & SpatialAxes.X) != 0;
-        public bool IsYActive => (ActiveAxes & SpatialAxes.Y) != 0;
-        public bool IsZActive => (ActiveAxes & SpatialAxes.Z) != 0;
+        #endregion
 
-        /// <summary> Internal dirty flag for state tracking. </summary>
-        protected bool _isDirty = true;
+        #region Lifecycle & Initialization
+
+        [Header("Lifecycle")]
+        public bool _isDirty = true;
+
+        void IChunkControl.Initialize(Vector3Int gridKey, Vector3 extent)
+        {
+            if (extent.x < 0 || extent.y < 0 || extent.z < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(extent), "Extent values must be >= 0.");
+            }
+
+            _gridKey = gridKey;
+            _localExtent = extent;
+
+            IsInitialized = true;
+            _isDirty = true;
+        }
 
         #endregion
 
-        #region Lifecycle Management & Events
+        #region State Management
+
+        /// <summary> Flags the chunk as dirty. </summary>
+        public void MarkDirty() => _isDirty = true;
+
+        /// <summary> Checks if the chunk needs a refresh. </summary>
+        public virtual bool IsDirty => _isDirty || (UpdateOnTransformChange && transform.hasChanged);
+
+        /// <summary> Resets the dirty state and the transform flag. </summary>
+        public virtual void ClearDirty()
+        {
+            _isDirty = false;
+            if (transform != null) transform.hasChanged = false;
+        }
+
+        /// <summary> Resets the transform flag to ignore World Shifts in the dirty state. </summary>
+        public void SuppressTransformDirtyOnce()
+        {
+            if (transform != null) transform.hasChanged = false;
+        }
+
+        #endregion
+
+        #region Cleanup
 
         /// <summary> 
         /// Callback for cleanup when chunk is disposed.
@@ -78,7 +126,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// Public entry point to safely remove a chunk from the world.
         /// Triggers resource cleanup and destroys the GameObject.
         /// </summary>
-        public void Dispose()
+        void IDisposable.Dispose()
         {
             if (_isDisposed) return;
             _isDisposed = true;
@@ -99,12 +147,15 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             GC.SuppressFinalize(this);
         }
 
+        void IChunkControl.Dispose()
+            => ((IDisposable)this).Dispose();
+
         /// <summary>
         /// Safety fallback for manual deletion via the Unity Editor or Scripts.
         /// </summary>
         private void OnDestroy()
         {
-            if (!_isDisposed) Dispose();
+            if (!_isDisposed) ((IChunkControl)this).Dispose();
         }
 
         #endregion
@@ -122,19 +173,19 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             // Check X-Axis overlap if active
             if (IsXActive)
             {
-                if (Mathf.Abs(center.x - worldPos.x) > localExtent.x) return false;
+                if (Mathf.Abs(center.x - worldPos.x) > LocalExtent.x) return false;
             }
 
             // Check Y-Axis overlap if active
             if (IsYActive)
             {
-                if (Mathf.Abs(center.y - worldPos.y) > localExtent.y) return false;
+                if (Mathf.Abs(center.y - worldPos.y) > LocalExtent.y) return false;
             }
 
             // Check Z-Axis overlap if active
             if (IsZActive)
             {
-                if (Mathf.Abs(center.z - worldPos.z) > localExtent.z) return false;
+                if (Mathf.Abs(center.z - worldPos.z) > LocalExtent.z) return false;
             }
 
             return true;
@@ -143,7 +194,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <summary>
         /// Calculates the squared distance to a world position, respecting ActiveAxes.
         /// </summary>
-        public virtual float GetSqrDistanceTo(Vector3 worldPos)
+        public virtual float GetSqrDistanceToCentre(Vector3 worldPos)
         {
             Vector3 center = transform.position;
 
@@ -165,19 +216,19 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
             if (IsXActive)
             {
-                float deltaX = Mathf.Abs(center.x - worldPos.x) - localExtent.x;
+                float deltaX = Mathf.Abs(center.x - worldPos.x) - LocalExtent.x;
                 dx = Mathf.Max(0, deltaX);
             }
 
             if (IsYActive)
             {
-                float deltaY = Mathf.Abs(center.y - worldPos.y) - localExtent.y;
+                float deltaY = Mathf.Abs(center.y - worldPos.y) - LocalExtent.y;
                 dy = Mathf.Max(0, deltaY);
             }
 
             if (IsZActive)
             {
-                float deltaZ = Mathf.Abs(center.z - worldPos.z) - localExtent.z;
+                float deltaZ = Mathf.Abs(center.z - worldPos.z) - LocalExtent.z;
                 dz = Mathf.Max(0, deltaZ);
             }
 
@@ -191,25 +242,25 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <summary> Calculates the full volumetric size (W x H x D). </summary>
         public float GetVolume()
         {
-            Vector3 size = localExtent * 2f;
+            Vector3 size = LocalExtent * 2f;
             return size.x * size.y * size.z;
         }
 
         /// <summary> Calculates the total surface area of the 3D bounds. </summary>
         public float GetTotalSurfaceArea()
         {
-            Vector3 s = localExtent * 2f;
+            Vector3 s = LocalExtent * 2f;
             return 2f * (s.x * s.y + s.x * s.z + s.y * s.z);
         }
 
         /// <summary> Gets the area of the XZ plane (Top-Down). Ideal for Heightmaps. </summary>
-        public float GetAreaXZ() => (localExtent.x * 2f) * (localExtent.z * 2f);
+        public float GetAreaXZ() => (LocalExtent.x * 2f) * (LocalExtent.z * 2f);
 
         /// <summary> Gets the area of the XY plane (Front-View). Ideal for Side-Scrollers. </summary>
-        public float GetAreaXY() => (localExtent.x * 2f) * (localExtent.y * 2f);
+        public float GetAreaXY() => (LocalExtent.x * 2f) * (LocalExtent.y * 2f);
 
         /// <summary> Gets the area of the YZ plane (Side-View). </summary>
-        public float GetAreaYZ() => (localExtent.y * 2f) * (localExtent.z * 2f);
+        public float GetAreaYZ() => (LocalExtent.y * 2f) * (LocalExtent.z * 2f);
 
         /// <summary> 
         /// Returns the area of the currently active plane. 
@@ -224,13 +275,13 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         }
 
         /// <summary> Returns the total length along the X-Axis. </summary>
-        public float LengthX => localExtent.x * 2f;
+        public float LengthX => LocalExtent.x * 2f;
 
         /// <summary> Returns the total length along the Y-Axis. </summary>
-        public float LengthY => localExtent.y * 2f;
+        public float LengthY => LocalExtent.y * 2f;
 
         /// <summary> Returns the total length along the Z-Axis. </summary>
-        public float LengthZ => localExtent.z * 2f;
+        public float LengthZ => LocalExtent.z * 2f;
 
         /// <summary> Returns the dimensions of the XZ plane (e.g. for Terrain resolution). </summary>
         public Vector2 SizeXZ => new Vector2(LengthX, LengthZ);
@@ -259,33 +310,10 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public Vector3 GetLogicalSize()
         {
             return new Vector3(
-                IsXActive ? localExtent.x * 2f : 0.1f,
-                IsYActive ? localExtent.y * 2f : 0.1f,
-                IsZActive ? localExtent.z * 2f : 0.1f
+                IsXActive ? LocalExtent.x * 2f : 0.1f,
+                IsYActive ? LocalExtent.y * 2f : 0.1f,
+                IsZActive ? LocalExtent.z * 2f : 0.1f
             );
-        }
-
-        #endregion
-
-        #region State Management
-
-        /// <summary> Flags the chunk as dirty. </summary>
-        public void MarkDirty() => _isDirty = true;
-
-        /// <summary> Checks if the chunk needs a refresh. </summary>
-        public virtual bool IsDirty => _isDirty || (updateOnTransformChange && transform.hasChanged);
-
-        /// <summary> Resets the dirty state and the transform flag. </summary>
-        public virtual void ClearDirty()
-        {
-            _isDirty = false;
-            if (transform != null) transform.hasChanged = false;
-        }
-
-        /// <summary> Resets the transform flag to ignore World Shifts in the dirty state. </summary>
-        public void SuppressTransformDirtyOnce()
-        {
-            if (transform != null) transform.hasChanged = false;
         }
 
         #endregion
@@ -294,7 +322,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         protected virtual void OnDrawGizmosSelected()
         {
-            if (localExtent.sqrMagnitude < 0.0001f) return;
+            if (LocalExtent.sqrMagnitude < 0.0001f) return;
 
             Vector3 pos = transform.position;
 

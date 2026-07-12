@@ -2,7 +2,7 @@ using System;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
-namespace Rayforge.Core.Common.Rendering.Helpers
+namespace Rayforge.Core.Rendering.Helpers
 {
     /// <summary>
     /// Central utility for bidirectional conversion and metadata lookup 

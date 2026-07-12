@@ -3,7 +3,7 @@ using System;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
-namespace Rayforge.Core.Common.Rendering.Helpers.Tests
+namespace Rayforge.Core.Rendering.Helpers.Tests
 {
     public class TextureFormatResolverExtensionTests
     {
