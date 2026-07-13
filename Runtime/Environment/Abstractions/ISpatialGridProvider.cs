@@ -1,4 +1,5 @@
 using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Environment.Spatial;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Execution.Abstractions;
 using System;
@@ -21,6 +22,9 @@ namespace Rayforge.Core.Environment.Abstractions
 
         /// <summary> Gets the world-space origin (0,0,0) of the grid system. </summary>
         Vector3 Anchor { get; }
+
+        /// <summary> Gets the active World Space axes. </summary>
+        SpatialAxes ActiveAxes { get; }
 
         /// <summary> Checks whether the underlying spatial system is ready for queries. </summary>
         bool IsInitialized { get; }

@@ -51,23 +51,23 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #region Configuration Fields
 
-        private GridSize _gridSize;
-        private string _baseName;
-        private Vector3 _anchor;
-        private SpatialAxes _axes;
+        private GridSize m_GridSize;
+        private string m_BaseName;
+        private Vector3 m_Anchor;
+        private SpatialAxes m_ActiveAxes;
 
         /// <summary> The physical size of one side of a grid cell. </summary>
         public GridSize GridSize
         {
-            get => _gridSize;
+            get => m_GridSize;
             private set
             {
-                if (_gridSize == value) return;
+                if (m_GridSize == value) return;
                 if ((int)value <= 0) throw new ArgumentException($"{Tag} GridSize must be positive.");
 
-                _gridSize = value;
+                m_GridSize = value;
                 Clear();
-                RegistryName = _baseName;
+                RegistryName = m_BaseName;
                 OnGridStructureChanged?.Invoke(this);
             }
         }
@@ -75,30 +75,32 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <summary> The world-space origin offset for the grid calculation. </summary>
         public Vector3 Anchor
         {
-            get => _anchor;
+            get => m_Anchor;
             protected set
             {
-                if (_anchor == value) return;
+                if (m_Anchor == value) return;
                 if (float.IsNaN(value.x) || float.IsNaN(value.y) || float.IsNaN(value.z))
                     throw new ArgumentException($"{Tag} Anchor cannot contain NaN values.");
 
-                Vector3 delta = value - _anchor;
-                _anchor = value;
+                Vector3 delta = value - m_Anchor;
+                m_Anchor = value;
 
                 if (!ContainerLinkedToAnchor && Container != null)
-                    Container.transform.position = _anchor;
+                    Container.transform.position = m_Anchor;
 
                 OnAnchorChanged?.Invoke(this, delta);
             }
         }
+
+        public SpatialAxes ActiveAxes => m_ActiveAxes;
 
         public override string RegistryName
         {
             get => base.RegistryName;
             protected set
             {
-                _baseName = value;
-                base.RegistryName = $"{_baseName}_{GridSize}";
+                m_BaseName = value;
+                base.RegistryName = $"{m_BaseName}_{GridSize}";
             }
         }
 
@@ -139,9 +141,9 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #region Axis Management
 
-        public bool IsXActive => (_axes & SpatialAxes.X) != 0;
-        public bool IsYActive => (_axes & SpatialAxes.Y) != 0;
-        public bool IsZActive => (_axes & SpatialAxes.Z) != 0;
+        public bool IsXActive => (m_ActiveAxes & SpatialAxes.X) != 0;
+        public bool IsYActive => (m_ActiveAxes & SpatialAxes.Y) != 0;
+        public bool IsZActive => (m_ActiveAxes & SpatialAxes.Z) != 0;
 
         /// <summary>
         /// Checks if an axis is active by its dimension index (0=X, 1=Y, 2=Z).
@@ -151,9 +153,9 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         {
             return axisIndex switch
             {
-                0 => (_axes & SpatialAxes.X) != 0,
-                1 => (_axes & SpatialAxes.Y) != 0,
-                2 => (_axes & SpatialAxes.Z) != 0,
+                0 => (m_ActiveAxes & SpatialAxes.X) != 0,
+                1 => (m_ActiveAxes & SpatialAxes.Y) != 0,
+                2 => (m_ActiveAxes & SpatialAxes.Z) != 0,
                 _ => false
             };
         }
@@ -192,22 +194,22 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             {
                 base.Initialize(parent, name);
 
-                _axes = Chunk<T>.ActiveAxes;
-                if (_axes == 0)
+                m_ActiveAxes = Chunk<T>.ActiveAxes;
+                if (m_ActiveAxes == 0)
                 {
                     throw new InvalidOperationException($"No active axes defined for chunk type {typeof(T).Name}. Check the static constructor of your chunk class.");
                 }
 
-                _baseName = name;
+                m_BaseName = name;
 
                 if ((int)settings.GridSize <= 0)
                     throw new ArgumentException($"Invalid GridSize: {settings.GridSize}. Size must be a positive power of two.");
 
-                _gridSize = settings.GridSize;
-                var delta = settings.Anchor - _anchor;
-                _anchor = settings.Anchor;
+                m_GridSize = settings.GridSize;
+                var delta = settings.Anchor - m_Anchor;
+                m_Anchor = settings.Anchor;
 
-                RegistryName = _baseName;
+                RegistryName = m_BaseName;
 
                 OnGridStructureChanged?.Invoke(this);
                 OnAnchorChanged?.Invoke(this, delta);
@@ -562,7 +564,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             Vector3Int minKey = WorldToGrid(searchBounds.min);
             Vector3Int maxKey = WorldToGrid(searchBounds.max);
             float gridSize = (float)GridSize;
-            var radiusState = new GridRadiusState(minKey, maxKey, Anchor, worldCenter, radius, useEdgeDistance, gridSize, IsXActive, IsYActive, IsZActive);
+            var radiusState = new GridRadiusState(minKey, maxKey, worldCenter - Anchor, radius, useEdgeDistance, gridSize, m_ActiveAxes);
             return new Iterator<Vector3Int, GridRadiusState>(radiusState);
         }
 
@@ -610,7 +612,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             Vector3Int minKey = WorldToGrid(searchBounds.min);
             Vector3Int maxKey = WorldToGrid(searchBounds.max);
             float gridSize = (float)GridSize;
-            var radiusState = new GridRadiusState(minKey, maxKey, Anchor, worldCenter, radius, useEdgeDistance, gridSize, IsXActive, IsYActive, IsZActive);
+            var radiusState = new GridRadiusState(minKey, maxKey, worldCenter - Anchor, radius, useEdgeDistance, gridSize, m_ActiveAxes);
             var iterator = new Iterator<Vector3Int, GridRadiusState>(radiusState);
 
             while (iterator.MoveNext())
@@ -636,7 +638,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         private Vector3Int MaskKey(Vector3Int key)
         {
-            if (_axes == 0) return key;
+            if (m_ActiveAxes == 0) return key;
 
             return new Vector3Int(
                 IsXActive ? key.x : 0,
