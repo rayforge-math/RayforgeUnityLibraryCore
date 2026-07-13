@@ -18,8 +18,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     {
         #region Fields & Config
 
-        private new const string Tag = "[LODRegistry]";
-
         private float[] _lodSqrDistances;
         private float[] _lodDistances;
         private bool _deactivateOnCulled;
@@ -235,8 +233,18 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             Vector3Int maxKey = WorldToGrid(searchBounds.max);
 
             var rangeState = new GridRangeState(minKey, maxKey);
-            var lodState = new GridLodLevelState(rangeState, lodIndex, center, outerRadius, this);
-            return new Iterator<Vector3Int, GridLodLevelState>(lodState);
+
+            var lodState = new GridLodState(
+                rangeState,
+                lodIndex,
+                center,
+                outerRadius,
+                _lodSqrDistances,
+                new Vector3((int)GridSize, (int)GridSize, (int)GridSize),
+                ActiveAxes
+            );
+
+            return new Iterator<Vector3Int, GridLodState>(lodState);
         }
 
         /// <inheritdoc />

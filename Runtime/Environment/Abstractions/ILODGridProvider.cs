@@ -1,6 +1,4 @@
 using Rayforge.Core.Collections.Abstractions;
-using System;
-using UnityEngine;
 
 namespace Rayforge.Core.Environment.Abstractions
 {
@@ -38,17 +36,6 @@ namespace Rayforge.Core.Environment.Abstractions
         /// Use this to trigger a re-evaluation of existing cell LODs without rebuilding the grid.
         /// </summary>
         event Action<ILODGridProvider<TKey>> OnLODSettingsChanged;
-
-        #endregion
-
-        #region Calculations
-
-        /// <summary> 
-        /// Maps a squared distance to the corresponding LOD index. 
-        /// </summary>
-        /// <param name="sqrDistance">The squared distance to evaluate.</param>
-        /// <returns>The LOD index (0 to LodCount-1), or -1 if the distance exceeds the maximum range.</returns>
-        int CalculateTargetLOD(float sqrDistance);
 
         #endregion
 

@@ -123,6 +123,32 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             Assert.IsTrue(expectedKeys.SetEquals(actualKeys), "The sets of found keys do not match.");
         }
 
+        [Test]
+        public void Iterator_HandlesLargeCenterOffsetCorrectly()
+        {
+            Vector3 center = new Vector3(1234.5f, -987.6f, 555.5f);
+            float radius = 25f;
+            float gridSize = 10f;
+            SpatialAxes axes = SpatialAxes.X | SpatialAxes.Y | SpatialAxes.Z;
+
+            Vector3Int min = new Vector3Int(120, -100, 50);
+            Vector3Int max = new Vector3Int(125, -95, 60);
+
+            var expectedKeys = CalculateExpectedKeys(min, max, center, radius, gridSize, axes);
+
+            var state = new GridRadiusEdgeState(min, max, center, radius, gridSize, axes);
+            var actualKeys = new HashSet<Vector3Int>();
+
+            while (state.MoveNext(ref state, out Vector3Int result))
+            {
+                actualKeys.Add(result);
+            }
+
+            Assert.Greater(expectedKeys.Count, 0, "Range should contain valid points.");
+            Assert.AreEqual(expectedKeys.Count, actualKeys.Count, "Key count mismatch for large offset.");
+            Assert.IsTrue(expectedKeys.SetEquals(actualKeys), "The found keys do not match the expected set for large offset.");
+        }
+
         #endregion
 
         #region Test Helpers
