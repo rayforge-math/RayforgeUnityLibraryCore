@@ -19,7 +19,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     public struct GridRadiusCentreState : IIterationLogic<Vector3Int, GridRadiusCentreState>
     {
         private GridRangeState _rangeState;
-        private readonly Vector3 _localCentre;
+        private readonly Vector3 _worldCentre;
         private readonly float _sqrRadius;
         private readonly Vector3 _gridSize;
         private readonly Vector3 _halfSizes;
@@ -33,18 +33,27 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         /// <param name="min">The minimum inclusive unit-vector key of the search volume.</param>
         /// <param name="max">The maximum inclusive unit-vector key of the search volume.</param>
-        /// <param name="localCentre">The radius centre in Local Space.</param>
+        /// <param name="worldCentre">The radius centre in World Space.</param>
         /// <param name="radius">The radius in World Space units.</param>
         /// <param name="gridSize">Scale factor for each axis, transforms keys into World Space.</param>
         /// <param name="activeAxes">Determines which axes are active.</param>
         public GridRadiusCentreState(
             Vector3Int min, Vector3Int max,
-            Vector3 localCentre, float radius,
+            Vector3 worldCentre, float radius,
             Vector3 gridSize,
             SpatialAxes activeAxes)
         {
+            if (gridSize.x <= 0 || gridSize.y <= 0 || gridSize.z <= 0)
+                throw new System.ArgumentOutOfRangeException(nameof(gridSize), "Grid size must be greater than zero on all active axes.");
+
+            if (radius < 0)
+                throw new System.ArgumentOutOfRangeException(nameof(radius), "Radius cannot be negative.");
+
+            if (activeAxes == SpatialAxes.None)
+                throw new System.ArgumentException("At least one axis must be active.", nameof(activeAxes));
+
             _rangeState = new GridRangeState(min, max);
-            _localCentre = localCentre;
+            _worldCentre = worldCentre;
             _sqrRadius = radius * radius;
             _gridSize = gridSize;
             _halfSizes = gridSize * 0.5f;
@@ -59,16 +68,16 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         /// <param name="min">The minimum inclusive unit-vector key of the search volume.</param>
         /// <param name="max">The maximum inclusive unit-vector key of the search volume.</param>
-        /// <param name="localCentre">The radius centre in Local Space.</param>
+        /// <param name="worldCentre">The radius centre in World Space.</param>
         /// <param name="radius">The radius in World Space units.</param>
         /// <param name="gridSize">The bridge/scale factor for each axis, transforms keys into World Space</param>
         /// <param name="activeAxes">Determines which axes are active.</param>
         public GridRadiusCentreState(
             Vector3Int min, Vector3Int max,
-            Vector3 localCentre, float radius,
+            Vector3 worldCentre, float radius,
             float gridSize,
             SpatialAxes activeAxes)
-            : this(min, max, localCentre, radius, new Vector3(gridSize, gridSize, gridSize), activeAxes)
+            : this(min, max, worldCentre, radius, new Vector3(gridSize, gridSize, gridSize), activeAxes)
         { }
 
         /// <summary>
@@ -125,7 +134,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                     self._gridSize.z * candidate.z + self._halfSizes.z
                 );
 
-                if (SpatialUtils.GetSqrDistanceCentre(self._localCentre, cellPos, self._activeAxes) <= self._sqrRadius)
+                if (SpatialUtils.GetSqrDistanceCentre(self._worldCentre, cellPos, self._activeAxes) <= self._sqrRadius)
                 {
                     self._cachedValue = candidate;
                     self._hasCachedValue = true;
