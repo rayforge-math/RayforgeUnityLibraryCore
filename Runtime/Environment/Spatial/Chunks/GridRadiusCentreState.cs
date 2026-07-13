@@ -132,6 +132,8 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                     return;
                 }
             }
+
+            self._cachedValue = default;
             self._hasCachedValue = false;
         }
     }
