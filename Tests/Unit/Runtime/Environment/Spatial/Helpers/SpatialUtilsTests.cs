@@ -239,5 +239,48 @@ namespace Rayforge.Core.Environment.Spatial.Helpers.Tests
         }
 
         #endregion
+
+        #region GetCellLocalAlpha Tests
+
+        [Test]
+        public void GetCellLocalAlpha_ReturnsCorrectInterpolation()
+        {
+            // Test inside cell 0,0,0 (Size 10)
+            // 2.5 is 25% of 10 -> 0.25
+            Vector3 pos = new Vector3(2.5f, 2.5f, 2.5f);
+            Vector3 alpha = SpatialUtils.GetCellLocalAlpha(pos, 10f, Vector3.zero);
+
+            Assert.AreEqual(0.25f, alpha.x, Epsilon);
+            Assert.AreEqual(0.25f, alpha.y, Epsilon);
+            Assert.AreEqual(0.25f, alpha.z, Epsilon);
+        }
+
+        [Test]
+        public void GetCellLocalAlpha_HandlesCellBoundaries()
+        {
+            // Test exact boundary (10.0 should wrap back to 0.0)
+            Vector3 pos = new Vector3(10.0f, 10.0f, 10.0f);
+            Vector3 alpha = SpatialUtils.GetCellLocalAlpha(pos, 10f, Vector3.zero);
+
+            Assert.AreEqual(0.0f, alpha.x, Epsilon);
+            Assert.AreEqual(0.0f, alpha.y, Epsilon);
+            Assert.AreEqual(0.0f, alpha.z, Epsilon);
+        }
+
+        [Test]
+        public void GetCellLocalAlpha_HandlesNegativeCoordinates()
+        {
+            // Test in cell -1 (e.g., -2.5)
+            // -2.5 / 10 = -0.25. Floor(-0.25) = -1.0. 
+            // -0.25 - (-1.0) = 0.75
+            Vector3 pos = new Vector3(-2.5f, -2.5f, -2.5f);
+            Vector3 alpha = SpatialUtils.GetCellLocalAlpha(pos, 10f, Vector3.zero);
+
+            Assert.AreEqual(0.75f, alpha.x, Epsilon);
+            Assert.AreEqual(0.75f, alpha.y, Epsilon);
+            Assert.AreEqual(0.75f, alpha.z, Epsilon);
+        }
+
+        #endregion
     }
 }
