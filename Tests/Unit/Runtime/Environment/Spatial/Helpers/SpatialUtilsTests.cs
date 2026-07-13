@@ -238,6 +238,46 @@ namespace Rayforge.Core.Environment.Spatial.Helpers.Tests
             Assert.AreEqual(5f, result, Epsilon);
         }
 
+        [Test]
+        public void GetSqrDistanceCentre_FiltersByAxes()
+        {
+            Vector3 a = Vector3.zero;
+            Vector3 b = new Vector3(3f, 4f, 5f);
+
+            // Only X: (3-0)^2 = 9
+            Assert.AreEqual(9f, SpatialUtils.GetSqrDistanceCentre(a, b, SpatialAxes.X), Epsilon);
+
+            // X and Y: 3^2 + 4^2 = 25
+            Assert.AreEqual(25f, SpatialUtils.GetSqrDistanceCentre(a, b, SpatialAxes.X | SpatialAxes.Y), Epsilon);
+
+            // All: 3^2 + 4^2 + 5^2 = 50
+            Assert.AreEqual(50f, SpatialUtils.GetSqrDistanceCentre(a, b, SpatialAxes.X | SpatialAxes.Y | SpatialAxes.Z), Epsilon);
+        }
+
+        [Test]
+        public void GetSqrDistanceEdge_FiltersByAxes()
+        {
+            Vector3 center = Vector3.zero;
+            Vector3 halfExtents = new Vector3(2f, 2f, 2f);
+            // Point at (3, 4, 0). 
+            // X-dist to edge (3-2)=1 -> sqr 1
+            // Y-dist to edge (4-2)=2 -> sqr 4
+            // Z-dist (0) is inside -> sqr 0
+            Vector3 pos = new Vector3(3f, 4f, 0f);
+
+            // Only X: 1
+            Assert.AreEqual(1f, SpatialUtils.GetSqrDistanceEdge(pos, center, halfExtents, SpatialAxes.X), Epsilon);
+
+            // Only Y: 4
+            Assert.AreEqual(4f, SpatialUtils.GetSqrDistanceEdge(pos, center, halfExtents, SpatialAxes.Y), Epsilon);
+
+            // X and Y: 1 + 4 = 5
+            Assert.AreEqual(5f, SpatialUtils.GetSqrDistanceEdge(pos, center, halfExtents, SpatialAxes.X | SpatialAxes.Y), Epsilon);
+
+            // All: 1 + 4 + 0 = 5
+            Assert.AreEqual(5f, SpatialUtils.GetSqrDistanceEdge(pos, center, halfExtents, SpatialAxes.X | SpatialAxes.Y | SpatialAxes.Z), Epsilon);
+        }
+
         #endregion
 
         #region GetCellLocalAlpha Tests

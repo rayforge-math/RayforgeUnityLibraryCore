@@ -207,6 +207,32 @@ namespace Rayforge.Core.Environment.Spatial.Helpers
                    GetSqrDistanceToClosestEdge1D(pos.z, center.z, halfExtents.z);
         }
 
+        /// <summary>
+        /// Calculates squared distance to center using only active axes.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float GetSqrDistanceCentre(Vector3 a, Vector3 b, SpatialAxes axes)
+        {
+            float dist = 0;
+            if ((axes & SpatialAxes.X) != 0) dist += GetSqrDistance1D(a.x, b.x);
+            if ((axes & SpatialAxes.Y) != 0) dist += GetSqrDistance1D(a.y, b.y);
+            if ((axes & SpatialAxes.Z) != 0) dist += GetSqrDistance1D(a.z, b.z);
+            return dist;
+        }
+
+        /// <summary>
+        /// Calculates squared distance to edge using only active axes.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float GetSqrDistanceEdge(Vector3 pos, Vector3 center, Vector3 halfExtents, SpatialAxes axes)
+        {
+            float dist = 0;
+            if ((axes & SpatialAxes.X) != 0) dist += GetSqrDistanceToClosestEdge1D(pos.x, center.x, halfExtents.x);
+            if ((axes & SpatialAxes.Y) != 0) dist += GetSqrDistanceToClosestEdge1D(pos.y, center.y, halfExtents.y);
+            if ((axes & SpatialAxes.Z) != 0) dist += GetSqrDistanceToClosestEdge1D(pos.z, center.z, halfExtents.z);
+            return dist;
+        }
+
         #endregion
 
         #region ADDITIONAL HELPERS

@@ -564,8 +564,18 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             Vector3Int minKey = WorldToGrid(searchBounds.min);
             Vector3Int maxKey = WorldToGrid(searchBounds.max);
             float gridSize = (float)GridSize;
-            var radiusState = new GridRadiusState(minKey, maxKey, worldCenter - Anchor, radius, useEdgeDistance, gridSize, m_ActiveAxes);
-            return new Iterator<Vector3Int, GridRadiusState>(radiusState);
+            Vector3 localCenter = worldCenter - Anchor;
+
+            if (useEdgeDistance)
+            {
+                var edgeState = new GridRadiusEdgeState(minKey, maxKey, localCenter, radius, gridSize, m_ActiveAxes);
+                return new Iterator<Vector3Int, GridRadiusEdgeState>(edgeState);
+            }
+            else
+            {
+                var centreState = new GridRadiusCentreState(minKey, maxKey, localCenter, radius, gridSize, m_ActiveAxes);
+                return new Iterator<Vector3Int, GridRadiusCentreState>(centreState);
+            }
         }
 
         /// <inheritdoc />
@@ -612,12 +622,19 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             Vector3Int minKey = WorldToGrid(searchBounds.min);
             Vector3Int maxKey = WorldToGrid(searchBounds.max);
             float gridSize = (float)GridSize;
-            var radiusState = new GridRadiusState(minKey, maxKey, worldCenter - Anchor, radius, useEdgeDistance, gridSize, m_ActiveAxes);
-            var iterator = new Iterator<Vector3Int, GridRadiusState>(radiusState);
+            Vector3 localCenter = worldCenter - Anchor;
 
-            while (iterator.MoveNext())
+            if (useEdgeDistance)
             {
-                action.Execute(iterator.Current);
+                var state = new GridRadiusEdgeState(minKey, maxKey, localCenter, radius, gridSize, m_ActiveAxes);
+                var iterator = new Iterator<Vector3Int, GridRadiusEdgeState>(state);
+                while (iterator.MoveNext()) action.Execute(iterator.Current);
+            }
+            else
+            {
+                var state = new GridRadiusCentreState(minKey, maxKey, localCenter, radius, gridSize, m_ActiveAxes);
+                var iterator = new Iterator<Vector3Int, GridRadiusCentreState>(state);
+                while (iterator.MoveNext()) action.Execute(iterator.Current);
             }
         }
 
