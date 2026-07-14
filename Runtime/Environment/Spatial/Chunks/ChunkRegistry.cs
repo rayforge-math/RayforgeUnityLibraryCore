@@ -63,7 +63,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             private set
             {
                 if (m_GridSize == value) return;
-                if ((int)value <= 0) throw new ArgumentException($"{Tag} GridSize must be positive.");
+                if ((int)value <= 0) throw new ArgumentException($"GridSize must be positive.");
 
                 m_GridSize = value;
                 Clear();
@@ -80,7 +80,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             {
                 if (m_Anchor == value) return;
                 if (float.IsNaN(value.x) || float.IsNaN(value.y) || float.IsNaN(value.z))
-                    throw new ArgumentException($"{Tag} Anchor cannot contain NaN values.");
+                    throw new ArgumentException($"Anchor cannot contain NaN values.");
 
                 Vector3 delta = value - m_Anchor;
                 m_Anchor = value;
@@ -97,7 +97,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public override string RegistryName
         {
             get => base.RegistryName;
-            protected set
+            set
             {
                 m_BaseName = value;
                 base.RegistryName = $"{m_BaseName}_{GridSize}";
@@ -216,7 +216,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             }
             catch (Exception e)
             {
-                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
+                throw new Exception($"Initialization failed: {e.Message}", e);
             }
         }
 

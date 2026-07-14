@@ -28,7 +28,7 @@ namespace Rayforge.Core.Collections.Iterator
     {
         private TState _state;
         private TType _current;
-        private readonly bool _isInitialized;
+        private readonly bool m_IsInitialized;
 
         /// <summary>
         /// Initializes a new instance of the Iterator struct.
@@ -38,7 +38,7 @@ namespace Rayforge.Core.Collections.Iterator
         {
             _state = initialState;
             _current = default;
-            _isInitialized = true;
+            m_IsInitialized = true;
         }
 
         /// <summary>
@@ -52,7 +52,7 @@ namespace Rayforge.Core.Collections.Iterator
         /// Indicates if there are more elements to process.
         /// Use this to check the iterator state without advancing the iterator via MoveNext().
         /// </summary>
-        public bool HasNext => _isInitialized && _state.HasNext(ref _state);
+        public bool HasNext => m_IsInitialized && _state.HasNext(ref _state);
 
         /// <summary>
         /// Implements the Peek functionality from the interface.
@@ -60,7 +60,7 @@ namespace Rayforge.Core.Collections.Iterator
         /// </summary>
         public bool TryPeekNext(out TType result)
         {
-            if (!_isInitialized)
+            if (!m_IsInitialized)
             {
                 result = default;
                 return false;
@@ -74,7 +74,7 @@ namespace Rayforge.Core.Collections.Iterator
         /// <returns>True if the next element was successfully found; false otherwise.</returns>
         public bool MoveNext()
         {
-            if (!_isInitialized) return false;
+            if (!m_IsInitialized) return false;
             return _state.MoveNext(ref _state, out _current);
         }
 
@@ -119,7 +119,7 @@ namespace Rayforge.Core.Collections.Iterator
 
         /// <summary>
         /// Returns an empty iterator instance. 
-        /// The _isInitialized flag ensures MoveNext immediately returns false without allocation.
+        /// The m_IsInitialized flag ensures MoveNext immediately returns false without allocation.
         /// </summary>
         /// <returns>A default, uninitialized iterator.</returns>
         public static Iterator<TType, TState> Empty() => default;

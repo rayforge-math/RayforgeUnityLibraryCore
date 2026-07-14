@@ -17,8 +17,6 @@ namespace Rayforge.Core.Environment.Spatial
     public abstract class SpatialRegistry<TKey, TValue> : IDisposable
         where TValue : ISpatialEntry, IDisposable
     {
-        protected virtual string Tag => $"[{GetType().Name}]";
-
         #region Chunk Create Struct
 
         public struct ChunkCreateData
@@ -29,35 +27,40 @@ namespace Rayforge.Core.Environment.Spatial
 
         #endregion
 
-        #region Data Structures
+        #region Private Members
 
         /// <summary> Internal storage for spatial objects. Encapsulated to ensure dirty-flag integrity. </summary>
-        private readonly Dictionary<TKey, TValue> _storage = new Dictionary<TKey, TValue>();
+        private readonly Dictionary<TKey, TValue> m_Storage = new Dictionary<TKey, TValue>();
+
+        private Transform m_Container;
+        private bool m_ContainerLinkedToAnchor = false;
+        protected bool m_GlobalDirty = false;
+        private bool m_IsInitialized = false;
+        private string m_RegistryName;
+        private bool m_Disposed = false;
+
+        #endregion
+
+        #region Public Properties
 
         /// <summary> Parent transform for instantiated GameObjects. </summary>
-        private Transform _container;
-        protected Transform Container => _container;
+        public Transform Container => m_Container;
 
         /// <summary> Tracks if the container was created by this registry to allow auto-cleanup. </summary>
-        private bool _containerLinkedToAnchor = false;
-        public bool ContainerLinkedToAnchor => _containerLinkedToAnchor;
+        public bool ContainerLinkedToAnchor => m_ContainerLinkedToAnchor;
 
         /// <summary> Flag indicating if the collection composition (addition/removal) has changed. </summary>
-        protected bool _globalDirty = false;
-
-        /// <summary> Provides read-only access to all currently registered entries. </summary>
-        public IIterator<TValue> AllEntries => _storage.Values.GetEnumerator().ToIterator();
-
-        /// <summary> 
-        /// The number of entries currently held in the registry.
-        /// </summary>
-        public int Count => _storage.Count;
+        public bool GlobalDirty => m_GlobalDirty;
 
         /// <summary>
         /// Returns true if Initialize has been called and the container exists.
         /// </summary>
-        public bool IsInitialized => _isInitialized && _container != null && _container.gameObject != null;
-        private bool _isInitialized = false;
+        public bool IsInitialized => m_IsInitialized && m_Container != null && m_Container.gameObject != null;
+
+        /// <summary> 
+        /// The number of entries currently held in the registry.
+        /// </summary>
+        public int Count => m_Storage.Count;
 
         /// <summary> 
         /// The unique identification string of this registry instance.
@@ -65,26 +68,29 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public virtual string RegistryName
         {
-            get => _registryName;
-            protected set
+            get => m_RegistryName;
+            set
             {
-                try
+                if (string.IsNullOrWhiteSpace(value))
                 {
-                    int id = (_container != null) ? _container.gameObject.GetInstanceID() : 0;
-                    _registryName = $"{value}_{id}";
+                    throw new ArgumentException("RegistryName cannot be null or whitespace.", nameof(value));
+                }
 
-                    if (_container != null)
-                    {
-                        _container.name = _registryName;
-                    }
-                }
-                catch (Exception e)
+                if (m_Container != null && m_Container.Equals(null))
                 {
-                    throw new Exception($"{Tag} Failed to set RegistryName: {e.Message}", e);
+                    throw new ObjectDisposedException(nameof(m_Container), "The container is already destroyed.");
                 }
+
+                if (m_Container == null)
+                {
+                    throw new InvalidOperationException("Cannot set RegistryName: m_Container is not assigned.");
+                }
+
+                int id = m_Container.gameObject.GetInstanceID();
+                m_RegistryName = $"{value}_{id}";
+                m_Container.name = m_RegistryName;
             }
         }
-        private string _registryName;
 
         #endregion
 
@@ -103,38 +109,79 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="defaultName">The name for the auto-generated container.</param>
         public virtual void Initialize(Transform parent = null, string defaultName = "SpatialRegistry_Container")
         {
-            try
+            if (string.IsNullOrWhiteSpace(defaultName))
+                throw new ArgumentException("Registry name cannot be null or empty.", nameof(defaultName));
+
+            if (IsInitialized) Clear();
+
+            GameObject go = new GameObject(defaultName);
+            m_Container = go.transform;
+
+            if (parent != null)
             {
-                if (IsInitialized) Clear();
-
-                GameObject go = new GameObject(defaultName);
-                _container = go.transform;
-
-                RegistryName = defaultName;
-
-                if (parent != null)
-                {
-                    _container.SetParent(parent, false);
-                    _container.localPosition = Vector3.zero;
-                    _container.localRotation = Quaternion.identity;
-                    _containerLinkedToAnchor = true;
-                }
-                else
-                {
-                    _containerLinkedToAnchor = false;
-                }
-
-                _isInitialized = true;
+                m_Container.SetParent(parent, false);
+                m_Container.localPosition = Vector3.zero;
+                m_Container.localRotation = Quaternion.identity;
+                m_ContainerLinkedToAnchor = true;
             }
-            catch (Exception e)
+            else
             {
-                throw new Exception($"{Tag} Failed to create registry hierarchy: {e.Message}", e);
+                m_ContainerLinkedToAnchor = false;
             }
+
+            RegistryName = defaultName;
+
+            m_IsInitialized = true;
         }
 
         #endregion
 
-        #region Lifecycle Management
+        #region Public Access
+
+        /// <summary>
+        /// Attempts to retrieve an entry by its spatial key.
+        /// Returns true if the entry exists, otherwise false.
+        /// </summary>
+        public bool TryGetEntry(TKey key, out TValue value)
+        {
+            return m_Storage.TryGetValue(key, out value);
+        }
+
+        /// <summary>
+        /// Safely destroys the GameObject associated with the key and removes it from storage.
+        /// Also triggers auto-cleanup of the container if applicable.
+        /// </summary>
+        public virtual void RemoveAndDestroy(TKey key)
+        {
+            if (m_Storage.Remove(key, out TValue value))
+            {
+                if (value != null && value.gameObject != null)
+                {
+                    DestroyGameObject(value.gameObject);
+                }
+                m_GlobalDirty = true;
+            }
+        }
+
+        /// <summary>
+        /// Clears all entries, destroys their associated GameObjects.
+        /// </summary>
+        public void Clear()
+        {
+            foreach (var value in m_Storage.Values)
+            {
+                if (value != null && value.gameObject != null)
+                {
+                    DestroyGameObject(value.gameObject);
+                }
+            }
+
+            m_Storage.Clear();
+        }
+
+        #endregion
+
+        #region Entry Creation
 
         /// <summary>
         /// The master factory method. Retrieves an existing entry or creates, parents, and registers a new one.
@@ -153,99 +200,51 @@ namespace Rayforge.Core.Environment.Spatial
             where THandler : struct, IFunctionHandler<ChunkCreateData, TValue>
         {
             if (!IsInitialized)
+                throw new InvalidOperationException("Registry is not initialized. Call Initialize() first.");
+
+            if (m_Storage.TryGetValue(key, out result) && result != null && result.gameObject != null)
             {
-                throw new InvalidOperationException($"{Tag} Registry is not initialized. Call Initialize() first.");
+                return false;
             }
 
-            if (_storage.TryGetValue(key, out result))
-            {
-                if (result != null && result.gameObject != null)
-                {
-                    return false;
-                }
-
-                _storage.Remove(key);
-            }
+            m_Storage.Remove(key);
 
             GameObject go = new GameObject(name);
-            try
+
+            if (m_Container != null) go.transform.SetParent(m_Container);
+            go.transform.position = position;
+
+            var createData = new ChunkCreateData { key = key, gameObject = go };
+
+            result = onCreate.Execute(createData);
+
+            if (result == null)
             {
-                if (_container != null) go.transform.SetParent(_container);
-                go.transform.position = position;
-
-                var createData = new ChunkCreateData
-                {
-                    key = key,
-                    gameObject = go
-                };
-                result = onCreate.Execute(createData);
-
-                if (result == null)
-                    throw new NullReferenceException($"{Tag} AddComponent failed for {name}.");
-
-                _storage[key] = result;
-                _globalDirty = true;
-
-                return true;
-            }
-            catch (Exception e)
-            {
-                if (go != null)
-                {
-                    if (Application.isPlaying) UnityEngine.Object.Destroy(go);
-                    else UnityEngine.Object.DestroyImmediate(go);
-                }
-
-                throw new Exception($"{Tag} GetOrCreate failed for key {key}: {e.Message}", e);
-            }
-        }
-
-        /// <summary>
-        /// Attempts to retrieve an entry by its spatial key.
-        /// Returns true if the entry exists, otherwise false.
-        /// </summary>
-        public bool TryGetEntry(TKey key, out TValue value)
-        {
-            return _storage.TryGetValue(key, out value);
-        }
-
-        /// <summary>
-        /// Safely destroys the GameObject associated with the key and removes it from storage.
-        /// Also triggers auto-cleanup of the container if applicable.
-        /// </summary>
-        public virtual void RemoveAndDestroy(TKey key)
-        {
-            if (_storage.Remove(key, out TValue value))
-            {
-                if (value != null && value.gameObject != null)
-                {
-                    DestroyEntry(value);
-                }
-                _globalDirty = true;
-            }
-        }
-
-        /// <summary>
-        /// Clears all entries, destroys their associated GameObjects.
-        /// </summary>
-        public void Clear()
-        {
-            foreach (var value in _storage.Values)
-            {
-                if (value != null && value.gameObject != null)
-                {
-                    DestroyEntry(value);
-                }
+                DestroyGameObject(go);
+                throw new NullReferenceException($"Handler failed to create a valid instance for key {key}.");
             }
 
-            _storage.Clear();
+            m_Storage[key] = result;
+            m_GlobalDirty = true;
+
+            return true;
         }
+
+        #endregion
+
+        #region Cleanup
 
         /// <summary>
         /// English: Disposes the registry and all its managed chunks.
         /// Triggers the abstract OnDispose logic in each chunk implementation.
         /// </summary>
-        public virtual void Dispose() => Reset();
+        public virtual void Dispose()
+        {
+            if (m_Disposed) return;
+            Reset();
+            m_Disposed = true;
+            GC.SuppressFinalize(this);
+        }
 
         /// <summary>
         /// Clears all entries, destroys their associated GameObjects, and removes the auto-generated container.
@@ -254,44 +253,28 @@ namespace Rayforge.Core.Environment.Spatial
         {
             Clear();
 
-            if (_container != null)
+            if (m_Container != null)
             {
-                if (Application.isPlaying) UnityEngine.Object.Destroy(_container.gameObject);
-                else UnityEngine.Object.DestroyImmediate(_container.gameObject);
-                _container = null;
+                if (Application.isPlaying) UnityEngine.Object.Destroy(m_Container.gameObject);
+                else UnityEngine.Object.DestroyImmediate(m_Container.gameObject);
+                m_Container = null;
             }
 
-            _containerLinkedToAnchor = false;
-            _isInitialized = false;
-        }
-
-        /// <summary>
-        /// Triggers destruction of a spatial object.
-        /// </summary>
-        private void DestroyEntry(TValue entry)
-        {
-            if (entry == null) return;
-
-            try
-            {
-                entry.Dispose();
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"{Tag} Destruction of entry failed for {entry.GetType().Name}: {e.Message}");
-            }
+            m_ContainerLinkedToAnchor = false;
+            m_IsInitialized = false;
         }
 
         #endregion
 
         #region State Management
+
         /// <summary>
         /// Determines if any entry is dirty or if the collection itself has changed.
         /// </summary>
         public bool NeedsUpdate()
         {
-            if (_globalDirty) return true;
-            foreach (var entry in _storage.Values)
+            if (m_GlobalDirty) return true;
+            foreach (var entry in m_Storage.Values)
                 if (entry != null && entry.IsDirty) return true;
             return false;
         }
@@ -301,10 +284,58 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public void ResetDirtyFlags()
         {
-            _globalDirty = false;
-            foreach (var entry in _storage.Values)
+            m_GlobalDirty = false;
+            foreach (var entry in m_Storage.Values)
                 if (entry != null) entry.ClearDirty();
         }
+
+        #endregion
+
+        #region Iteration
+
+        /// <summary> Provides read-only access to all currently registered entries. </summary>
+        public void ForEachEntry<TAction>(TAction action)
+            where TAction : struct, IExecutionHandler<TValue>
+        {
+            var iter = m_Storage.Values.GetEnumerator().ToIterator();
+
+            while (iter.MoveNext())
+            {
+                action.Execute(iter.Current);
+            }
+        }
+
+        /// <summary> Provides read-only access to all currently registered entries. </summary>
+        public void ForEachKey<TAction>(TAction action)
+            where TAction : struct, IExecutionHandler<TKey>
+        {
+            var iter = m_Storage.Keys.GetEnumerator().ToIterator();
+
+            while (iter.MoveNext())
+            {
+                action.Execute(iter.Current);
+            }
+        }
+
+        /// <summary> Provides read-only access to all currently registered entries. </summary>
+        public IIterator<TValue> GetAllEntries()
+            => m_Storage.Values.GetEnumerator().ToIterator();
+
+        /// <summary> Provides read-only access to all currently registered entries. </summary>
+        public IIterator<TKey> GetAllKeys()
+            => m_Storage.Keys.GetEnumerator().ToIterator();
+
+        #endregion
+
+        #region Private Helpers
+
+        private void DestroyGameObject(GameObject go)
+        {
+            if (go == null) return;
+            if (Application.isPlaying) UnityEngine.Object.Destroy(go);
+            else UnityEngine.Object.DestroyImmediate(go);
+        }
+
         #endregion
     }
 }

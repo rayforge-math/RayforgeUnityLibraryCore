@@ -14,7 +14,7 @@ namespace Rayforge.Core.Collections.Iterator
     {
         private readonly IIterator<T>[] _sources;
         private int _index;
-        private readonly bool _isInitialized;
+        private readonly bool m_IsInitialized;
 
         /// <summary>
         /// Initializes the composite state with an array of source iterators.
@@ -27,13 +27,13 @@ namespace Rayforge.Core.Collections.Iterator
 
             _sources = sources;
             _index = 0;
-            _isInitialized = true;
+            m_IsInitialized = true;
         }
 
         /// <inheritdoc />
         public bool HasNext(ref MultiCompositeState<T> self)
         {
-            if (!self._isInitialized) return false;
+            if (!self.m_IsInitialized) return false;
             MoveBeforeNext(ref self);
             return self._index < self._sources.Length && self._sources[self._index].HasNext;
         }
@@ -41,7 +41,7 @@ namespace Rayforge.Core.Collections.Iterator
         /// <inheritdoc />
         public bool TryPeekNext(ref MultiCompositeState<T> self, out T result)
         {
-            if (!self._isInitialized)
+            if (!self.m_IsInitialized)
             {
                 result = default;
                 return false;
@@ -60,7 +60,7 @@ namespace Rayforge.Core.Collections.Iterator
         /// <inheritdoc />
         public bool MoveNext(ref MultiCompositeState<T> self, out T result)
         {
-            if (!self._isInitialized)
+            if (!self.m_IsInitialized)
             {
                 result = default;
                 return false;
@@ -89,7 +89,7 @@ namespace Rayforge.Core.Collections.Iterator
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void MoveBeforeNext(ref MultiCompositeState<T> self)
         {
-            if (!self._isInitialized) return;
+            if (!self.m_IsInitialized) return;
 
             var sources = self._sources;
             while (self._index < sources.Length)

@@ -14,7 +14,7 @@ namespace Rayforge.Core.Collections.Iterator
         private T _cachedItem;
         private bool _hasCachedItem;
         private bool _isExhausted;
-        private bool _isInitialized;
+        private bool m_IsInitialized;
 
         /// <summary>
         /// Initializes the state with a concrete struct enumerator.
@@ -26,13 +26,13 @@ namespace Rayforge.Core.Collections.Iterator
             _cachedItem = default;
             _hasCachedItem = false;
             _isExhausted = false;
-            _isInitialized = !EqualityComparer<TEnumerator>.Default.Equals(enumerator, default);
+            m_IsInitialized = !EqualityComparer<TEnumerator>.Default.Equals(enumerator, default);
         }
 
         /// <inheritdoc />
         public bool HasNext(ref EnumeratorState<T, TEnumerator> self)
         {
-            if (!self._isInitialized) return false;
+            if (!self.m_IsInitialized) return false;
             FetchNext(ref self);
             return self._hasCachedItem;
         }
@@ -40,7 +40,7 @@ namespace Rayforge.Core.Collections.Iterator
         /// <inheritdoc />
         public bool TryPeekNext(ref EnumeratorState<T, TEnumerator> self, out T result)
         {
-            if (!self._isInitialized)
+            if (!self.m_IsInitialized)
             {
                 result = default;
                 return false;
@@ -53,7 +53,7 @@ namespace Rayforge.Core.Collections.Iterator
         /// <inheritdoc />
         public bool MoveNext(ref EnumeratorState<T, TEnumerator> self, out T result)
         {
-            if (!self._isInitialized)
+            if (!self.m_IsInitialized)
             {
                 result = default;
                 return false;
@@ -80,7 +80,7 @@ namespace Rayforge.Core.Collections.Iterator
         /// </summary>
         private static void FetchNext(ref EnumeratorState<T, TEnumerator> self)
         {
-            if(!self._isInitialized || self._hasCachedItem || self._isExhausted) return;
+            if(!self.m_IsInitialized || self._hasCachedItem || self._isExhausted) return;
 
             try
             {

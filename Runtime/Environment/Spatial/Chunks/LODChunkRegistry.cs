@@ -86,7 +86,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             }
             catch (Exception e)
             {
-                throw new Exception($"{Tag} Initialization failed: {e.Message}", e);
+                throw new Exception($"Initialization failed: {e.Message}", e);
             }
         }
 
@@ -219,34 +219,16 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             }
             return -1;
         }
-
+        
         /// <inheritdoc />
         public IIterator<Vector3Int> GetKeysInLODLevel(int lodIndex, Vector3 center)
         {
             if (lodIndex < 0 || lodIndex >= LodCount)
                 return IIterator<Vector3Int>.Empty();
 
-            float outerRadius = LodDistances[lodIndex];
-
-            Bounds searchBounds = new Bounds(center, Vector3.one * outerRadius * 2f);
-            Vector3Int minKey = WorldToGrid(searchBounds.min);
-            Vector3Int maxKey = WorldToGrid(searchBounds.max);
-
-            var rangeState = new GridRangeState(minKey, maxKey);
-
-            var lodState = new GridLodState(
-                rangeState,
-                lodIndex,
-                center,
-                outerRadius,
-                _lodSqrDistances,
-                new Vector3((int)GridSize, (int)GridSize, (int)GridSize),
-                ActiveAxes
-            );
-
-            return new Iterator<Vector3Int, GridLodState>(lodState);
+            return IIterator<Vector3Int>.Empty();
         }
-
+        
         /// <inheritdoc />
         public int GetKeyCountInLODLevel(int lodIndex, Vector3 center)
         {
@@ -376,7 +358,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public int UpdateLODs(Vector3 focusPos)
         {
             int changeCount = 0;
-            foreach (T chunk in AllEntries)
+            foreach (T chunk in GetAllEntries())
             {
                 if (chunk != null && UpdateChunkLOD(chunk, focusPos))
                 {

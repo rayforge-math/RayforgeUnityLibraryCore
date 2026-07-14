@@ -27,7 +27,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// Reference to the storage dictionary for O(1) resolution.
         /// </summary>
-        private readonly Dictionary<TKey, SpatialState<TValue>> _storage;
+        private readonly Dictionary<TKey, SpatialState<TValue>> m_Storage;
 
         private TValue _cachedValue;
         private bool _hasCachedValue;
@@ -45,7 +45,7 @@ namespace Rayforge.Core.Environment.Spatial
         public SpatialIteratorState(TEnumerator bucketEnumerator, Dictionary<TKey, SpatialState<TValue>> storage)
         {
             _bucketEnumerator = bucketEnumerator;
-            _storage = storage;
+            m_Storage = storage;
             _cachedValue = default;
             _hasCachedValue = false;
             _isExhausted = false;
@@ -101,7 +101,7 @@ namespace Rayforge.Core.Environment.Spatial
             while (self._bucketEnumerator.MoveNext())
             {
                 TKey currentKey = self._bucketEnumerator.Current;
-                if (self._storage != null && self._storage.TryGetValue(currentKey, out var value))
+                if (self.m_Storage != null && self.m_Storage.TryGetValue(currentKey, out var value))
                 {
                     self._cachedValue = value.component;
                     self._hasCachedValue = true;

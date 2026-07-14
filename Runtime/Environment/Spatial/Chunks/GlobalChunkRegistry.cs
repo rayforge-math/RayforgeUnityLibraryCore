@@ -128,7 +128,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <summary> 
         /// Provides a read-only collection of all currently active chunks. 
         /// </summary>
-        public static IEnumerable<T> AllChunks => Instance.AllEntries;
+        public static IEnumerable<T> AllChunks => Instance.GetAllEntries();
 
         /// <summary> 
         /// Returns true if the registry structure has changed or any individual chunk is marked as dirty. 

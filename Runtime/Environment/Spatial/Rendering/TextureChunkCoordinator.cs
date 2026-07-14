@@ -258,7 +258,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
             _mapper.ClearBakeQueue();
 
-            foreach (var chunk in _chunkRegistry.AllEntries)
+            foreach (var chunk in _chunkRegistry.GetAllEntries())
             {
                 if (chunk.IsVisible)
                 {
