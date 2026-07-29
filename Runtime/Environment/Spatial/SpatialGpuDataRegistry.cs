@@ -266,20 +266,38 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Dirty State Management
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Marks all entries in the culling store as dirty.
+        /// </summary>
+        public void MarkCullingDirty() => CullingStore.MarkAllDirty();
+
+        /// <summary>
+        /// Marks all entries in the rendering store as dirty.
+        /// </summary>
+        public void MarkRenderDirty() => RenderStore.MarkAllDirty();
+
+        /// <summary>
+        /// Marks all entries in both the culling and rendering stores as dirty.
+        /// </summary>
         public void MarkAllDirty()
         {
             CullingStore.MarkAllDirty();
             RenderStore.MarkAllDirty();
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Clears the dirty state of the culling store.
+        /// </summary>
         public void ClearCullingDirty() => CullingStore.ClearDirty();
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Clears the dirty state of the rendering store.
+        /// </summary>
         public void ClearRenderDirty() => RenderStore.ClearDirty();
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Clears the dirty state of both the culling and rendering stores.
+        /// </summary>
         public void ClearAllDirty()
         {
             CullingStore.ClearDirty();
