@@ -67,7 +67,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void GetRawBuffer_ReturnsCorrectDataForAllRegisteredStores()
         {
             // Arrange
-            int length = 10;
+            int length = 16;
             int batchSize = 4;
             var testData = CreateTestData(length, batchSize);
             var provider = testData.provider;
@@ -101,7 +101,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void GetRawBuffer_UnregisteredType_ThrowsInvalidOperationException()
         {
             // Arrange
-            int length = 10;
+            int length = 16;
             int batchSize = 4;
             var testData = CreateTestData(length, batchSize);
             var provider = testData.provider;
@@ -121,7 +121,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Set_ShouldStoreValue_WhenStoreIsRegistered()
         {
             // Arrange
-            int length = 10;
+            int length = 16;
             int batchSize = 4;
             var testData = CreateTestData(length, batchSize, true);
             var provider = testData.provider;
@@ -142,7 +142,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Set_ShouldUpdateValue_WhenSettingSameKeyMultipleTimes()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(1, 1);
             float initialValue = 10.0f;
@@ -162,7 +162,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Set_ShouldStoreAllValues_WhenSettingMultipleDifferentKeys()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             var key1 = new Vector2Int(0, 0);
@@ -189,7 +189,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         {
             // Arrange
             // Angenommen, int und float sind registriert
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             var keyInt = new Vector2Int(0, 0);
@@ -211,7 +211,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Set_ShouldThrowInvalidOperationException_WhenStoreIsNotRegistered()
         {
             // Arrange
-            int length = 10;
+            int length = 16;
             int batchSize = 4;
             var testData = CreateTestData(length, batchSize);
             var provider = testData.provider;
@@ -235,7 +235,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Clear_ResetsAllStoresToDefaultValues()
         {
             // Arrange
-            int length = 10;
+            int length = 16;
             int batchSize = 4;
             var testData = CreateTestData(length, batchSize);
             var provider = testData.provider;
@@ -268,7 +268,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Clear_ResetsProviderStateProperties()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             provider.Set(new Vector2Int(0, 0), 10.0f);
@@ -289,7 +289,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Clear_AllowsReusageOfPreviouslyUsedKeys()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(5, 5);
 
@@ -313,7 +313,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Clear_DoesNotAffectCapacityOrBatchSize()
         {
             // Arrange
-            int length = 10;
+            int length = 16;
             int batchSize = 4;
             var testData = CreateTestData(length, batchSize, true);
             var provider = testData.provider;
@@ -330,7 +330,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Clear_ShouldResetDirtyStateForAllRegisteredStores()
         {
             // Arrange
-            int length = 10;
+            int length = 16;
             int batchSize = 4;
             var testData = CreateTestData(length, batchSize, true);
             var provider = testData.provider;
@@ -357,7 +357,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void ClearDirtyState_ShouldResetAllStoresToClean()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             provider.Set(new Vector2Int(0, 0), 1.0f);   // float store
@@ -382,7 +382,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void ClearDirtyState_ShouldNotThrow_WhenEverythingIsAlreadyClean()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             // Act & Assert
@@ -398,7 +398,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void ClearDirty_SpecificType_ShouldOnlyResetThatStore()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             provider.Set(new Vector2Int(0, 0), 1.0f); // Float dirty
@@ -419,7 +419,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void ClearDirty_ShouldThrow_WhenTypeIsNotRegistered()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             // Act & Assert
@@ -435,7 +435,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Release_ShouldRemoveKeyAndReturnCorrectIndex()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(1, 1);
 
@@ -457,7 +457,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Release_ShouldReturnFalse_WhenKeyDoesNotExist()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(9, 9);
 
@@ -473,7 +473,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Release_ShouldNotClearDataInStore()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(2, 2);
             float value = 123.45f;
@@ -493,7 +493,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Release_AllowsKeyReaddition()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(3, 3);
 
@@ -533,7 +533,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void ReleaseAndInvalidate_ShouldRemoveKeyAndInvalidateData()
         {
             // Arrange
-            var provider = CreateCustomProvider<TestData>(10, 4);
+            var provider = CreateCustomProvider<TestData>(16, 4);
             var key = new Vector2Int(1, 1);
 
             var data = new TestData { Value = 42.0f };
@@ -556,7 +556,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void ReleaseAndInvalidate_ShouldReturnFalse_WhenKeyDoesNotExist()
         {
             // Arrange
-            var provider = CreateCustomProvider<TestData>(10, 4);
+            var provider = CreateCustomProvider<TestData>(16, 4);
             var key = new Vector2Int(9, 9);
 
             // Act
@@ -571,7 +571,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void ReleaseAndInvalidate_ShouldThrowException_IfStoreNotRegistered()
         {
             // Arrange
-            var provider = CreateCustomProvider<TestData>(10, 4);
+            var provider = CreateCustomProvider<TestData>(16, 4);
             var key = new Vector2Int(1, 1);
 
             provider.Set(key, new TestData { Value = 10.0f });
@@ -586,7 +586,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void ReleaseAndInvalidate_AllowsKeyReadditionWithCleanState()
         {
             // Arrange
-            var provider = CreateCustomProvider<TestData>(10, 4);
+            var provider = CreateCustomProvider<TestData>(16, 4);
             var key = new Vector2Int(3, 3);
 
             // Act
@@ -609,7 +609,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void GetOrAllocateIndex_ShouldReturnExistingIndex_WhenKeyAlreadyExists()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(1, 1);
             int initialIndex = provider.Set(key, 10.0f);
@@ -625,7 +625,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void GetOrAllocateIndex_ShouldAllocateNewIndex_WhenKeyIsNew()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(5, 5);
 
@@ -642,7 +642,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void GetOrAllocateIndex_ShouldReturnSameIndex_OnSequentialCalls()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(2, 2);
 
@@ -682,9 +682,9 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Reconfigure_ShouldUpdateStateAndReturnTrue_WhenParamsChange()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
-            int newCapacity = 20;
+            int newCapacity = 32;
             int newBatchSize = 8;
 
             // Act
@@ -700,7 +700,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Reconfigure_ShouldClearAndReturnFalse_WhenParamsRemainSame()
         {
             // Arrange
-            int capacity = 10;
+            int capacity = 16;
             int batchSize = 4;
             var testData = CreateTestData(capacity, batchSize, true);
             var provider = testData.provider;
@@ -721,15 +721,14 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Reconfigure_ShouldResizeAllStores()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
-            int newCapacity = 50;
+            int newCapacity = 48;
 
             // Act
             provider.Reconfigure(newCapacity, 4);
 
             // Assert
-            // Assuming GetReadOnlyBuffer exists and exposes the underlying store capacity
             var buffer = provider.GetRawBuffer<float>();
             Assert.AreEqual(newCapacity, buffer.TypedBuffer.Length, "The underlying store buffer should be resized.");
         }
@@ -738,12 +737,12 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Reconfigure_ShouldResetInternalStructures()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             provider.Set(new Vector2Int(1, 1), 10.0f);
 
             // Act
-            provider.Reconfigure(20, 8);
+            provider.Reconfigure(32, 8);
 
             // Assert
             Assert.AreEqual(0, provider.Count, "Count should be reset to zero after reconfiguration.");
@@ -753,9 +752,9 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         [Test]
         public void Reconfigure_OnlyChangesCapacity_UpdatesCorrectly()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
-            int newCapacity = 20;
+            int newCapacity = 32;
 
             bool result = provider.Reconfigure(newCapacity, 4);
 
@@ -767,21 +766,22 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         [Test]
         public void Reconfigure_OnlyChangesBatchSize_UpdatesCorrectly()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             int newBatchSize = 8;
 
-            bool result = provider.Reconfigure(10, newBatchSize);
+            // Must be a multiple (16 is a multiple of 8)
+            bool result = provider.Reconfigure(16, newBatchSize);
 
             Assert.IsTrue(result);
-            Assert.AreEqual(10, provider.Capacity);
+            Assert.AreEqual(16, provider.Capacity);
             Assert.AreEqual(newBatchSize, provider.BatchSize);
         }
 
         [Test]
         public void Reconfigure_InvalidCapacity_ThrowsException()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             Assert.Throws<ArgumentOutOfRangeException>(() => provider.Reconfigure(0, 4));
@@ -791,11 +791,21 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         [Test]
         public void Reconfigure_InvalidBatchSize_ThrowsException()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
-            Assert.Throws<ArgumentOutOfRangeException>(() => provider.Reconfigure(10, 0));
-            Assert.Throws<ArgumentOutOfRangeException>(() => provider.Reconfigure(10, -2));
+            Assert.Throws<ArgumentOutOfRangeException>(() => provider.Reconfigure(16, 0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => provider.Reconfigure(16, -2));
+        }
+
+        [Test]
+        public void Reconfigure_CapacityNotMultipleOfBatchSize_ThrowsArgumentException()
+        {
+            var testData = CreateTestData(16, 4, true);
+            var provider = testData.provider;
+
+            // 10 is not a multiple of 4
+            Assert.Throws<ArgumentException>(() => provider.Reconfigure(10, 4));
         }
 
         #endregion
@@ -805,21 +815,21 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         [Test]
         public void Resize_SameCapacity_ReturnsFalse()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
-            bool result = provider.Resize(10);
+            bool result = provider.Resize(16);
 
             Assert.IsFalse(result);
-            Assert.AreEqual(10, provider.Capacity);
+            Assert.AreEqual(16, provider.Capacity);
         }
 
         [Test]
         public void Resize_NewCapacity_UpdatesStateAndReturnsTrue()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
-            int newCapacity = 25;
+            int newCapacity = 32;
 
             bool result = provider.Resize(newCapacity);
 
@@ -830,7 +840,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         [Test]
         public void Resize_InvalidCapacity_ThrowsException()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             Assert.Throws<ArgumentOutOfRangeException>(() => provider.Resize(0));
@@ -840,9 +850,9 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         [Test]
         public void Resize_ResizesMapperAndStores()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
-            int newCapacity = 50;
+            int newCapacity = 64;
 
             provider.Resize(newCapacity);
 
@@ -861,12 +871,22 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Resize_PreservesBatchSize()
         {
             int initialBatchSize = 4;
-            var testData = CreateTestData(10, initialBatchSize, true);
+            var testData = CreateTestData(16, initialBatchSize, true);
             var provider = testData.provider;
 
             provider.Resize(20);
 
             Assert.AreEqual(initialBatchSize, provider.BatchSize);
+        }
+
+        [Test]
+        public void Resize_CapacityNotMultipleOfBatchSize_ThrowsArgumentException()
+        {
+            var testData = CreateTestData(16, 4, true);
+            var provider = testData.provider;
+
+            // 10 is not a multiple of 4
+            Assert.Throws<ArgumentException>(() => provider.Resize(10));
         }
 
         #endregion
@@ -876,7 +896,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         [Test]
         public void UpdateBatchSize_SameBatchSize_ReturnsFalse()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             bool result = provider.UpdateBatchSize(4);
@@ -888,7 +908,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         [Test]
         public void UpdateBatchSize_NewBatchSize_UpdatesStateAndReturnsTrue()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             int newBatchSize = 8;
 
@@ -901,7 +921,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         [Test]
         public void UpdateBatchSize_InvalidBatchSize_ThrowsException()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             Assert.Throws<ArgumentOutOfRangeException>(() => provider.UpdateBatchSize(0));
@@ -911,7 +931,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         [Test]
         public void UpdateBatchSize_PreservesExistingData()
         {
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(1, 1);
             float value = 42.0f;
@@ -1019,7 +1039,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Count_ShouldIncrease_WhenNewKeysAreAdded()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             // Act & Assert
@@ -1039,7 +1059,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void HighestIndex_ShouldTrackMaximumAllocatedSlot()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             // Act & Assert
@@ -1060,12 +1080,12 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void CapacityAndBatchSize_ShouldBeReadOnly()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             // Da die Properties keine Setter haben sollten, können wir hier höchstens 
             // die Werte prüfen, die beim Setup übergeben wurden.
-            Assert.AreEqual(10, provider.Capacity);
+            Assert.AreEqual(16, provider.Capacity);
             Assert.AreEqual(4, provider.BatchSize);
         }
 
@@ -1077,7 +1097,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void GetReadOnlyBuffer_ReturnsCorrectDataForAllRegisteredStores()
         {
             // Arrange
-            int length = 10;
+            int length = 16;
             int batchSize = 4;
             var testData = CreateTestData(length, batchSize);
             var provider = testData.provider;
@@ -1111,7 +1131,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void GetReadOnlyBuffer_UnregisteredType_ReturnsNull()
         {
             // Arrange
-            int length = 10;
+            int length = 16;
             int batchSize = 4;
             var testData = CreateTestData(length, batchSize);
             var provider = testData.provider;
@@ -1128,7 +1148,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Get_ShouldThrowKeyNotFoundException_WhenKeyDoesNotExist()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(9, 9);
 
@@ -1141,7 +1161,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Get_ShouldThrowInvalidOperationException_WhenStoreTypeIsNotRegistered()
         {
             // Arrange
-            var testData = CreateTestData(10, 4);
+            var testData = CreateTestData(16, 4);
             var provider = testData.provider;
             var key = new Vector2Int(0, 0);
 
@@ -1156,7 +1176,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Get_ShouldReturnCorrectValue_AfterMultipleUpdates()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(2, 2);
 
@@ -1173,7 +1193,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void Get_ShouldReturnCorrectValue_ForSpecificKeyAmongOthers()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
 
             var keyA = new Vector2Int(1, 0);
@@ -1195,7 +1215,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void TryGet_ShouldReturnTrue_WhenKeyExists()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(1, 1);
             float expectedValue = 42.0f;
@@ -1213,7 +1233,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void TryGet_ShouldReturnFalse_WhenKeyDoesNotExist()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(9, 9);
 
@@ -1229,7 +1249,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void TryGet_ShouldThrowInvalidOperationException_WhenStoreTypeIsNotRegistered()
         {
             // Arrange
-            var testData = CreateTestData(10, 4);
+            var testData = CreateTestData(16, 4);
             var provider = testData.provider;
             var key = new Vector2Int(0, 0);
 
@@ -1248,7 +1268,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void TryGetIndex_ShouldReturnTrueAndCorrectIndex_WhenKeyExists()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(2, 2);
             int expectedIndex = provider.Set(key, 10.0f);
@@ -1265,7 +1285,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void TryGetIndex_ShouldReturnFalse_WhenKeyDoesNotExist()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(9, 9); // Key that has not been set
 
@@ -1281,7 +1301,7 @@ namespace Rayforge.Core.Collections.Abstractions.Tests
         public void TryGetIndex_ShouldReturnFalse_AfterKeyIsReleased()
         {
             // Arrange
-            var testData = CreateTestData(10, 4, true);
+            var testData = CreateTestData(16, 4, true);
             var provider = testData.provider;
             var key = new Vector2Int(1, 1);
             provider.Set(key, 5.0f);

@@ -10,7 +10,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// <summary>
     /// Manages the detection and synchronization of world surfaces.
     /// It maintains an internal serialized list and its own settings, 
-    /// syncing everything with an internally owned SpatialObjectRegistry.
+    /// syncing everything with an internally owned ComponentRegistry.
     /// </summary>
     [Serializable]
     public class SurfaceTracker

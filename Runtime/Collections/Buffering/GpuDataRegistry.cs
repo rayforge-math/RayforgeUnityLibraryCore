@@ -62,6 +62,9 @@ namespace Rayforge.Core.Collections.Buffering
             if (batchSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(batchSize), $"BatchSize must be at least 1.");
 
+            if (capacity % batchSize != 0)
+                throw new ArgumentException("Capacity must be a multiple of batch size.", nameof(capacity));
+
             if (m_Capacity == capacity && m_BatchSize == batchSize)
             {
                 Clear();
@@ -326,6 +329,9 @@ namespace Rayforge.Core.Collections.Buffering
         {
             if (newCapacity <= 0)
                 throw new ArgumentOutOfRangeException(nameof(newCapacity), $"Capacity must be greater than zero.");
+
+            if (newCapacity % m_BatchSize != 0)
+                throw new ArgumentException("New capacity must be a multiple of the current batch size.", nameof(newCapacity));
 
             if (m_Capacity == newCapacity)
             {

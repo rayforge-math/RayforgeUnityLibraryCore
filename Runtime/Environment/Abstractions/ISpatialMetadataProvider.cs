@@ -12,10 +12,10 @@ namespace Rayforge.Core.Environment.Abstractions
     /// <typeparam name="TCulling">The struct type used for GPU culling (e.g., SphereSpatialData).</typeparam>
     /// <typeparam name="TRender">The struct type used for GPU rendering (e.g., MatrixSpatialData).</typeparam>
     public interface ISpatialMetadataProvider<TKey, TCulling, TRender>
-        : IGpuDataProvider<TKey>, IReadOnlySpatialMetadataProvider<TKey, TCulling, TRender>
+        : IReadOnlySpatialMetadataProvider<TKey, TCulling, TRender>
         where TKey : struct, IEquatable<TKey>
-        where TCulling : unmanaged, ISpatialData
-        where TRender : unmanaged
+        where TCulling : unmanaged, IGpuData<TCulling>
+        where TRender : unmanaged, IGpuData<TRender>
     {
         #region Low-Level Access (Interop)
 
@@ -42,20 +42,6 @@ namespace Rayforge.Core.Environment.Abstractions
 
         /// <summary> Fully releases the key and ensures the GPU data is invalidated. </summary>
         int ReleaseAndKill(TKey key);
-
-        #endregion
-
-        #region Mass Operations & State Management
-
-        /// <summary> Marks all data in all registered stores as dirty, forcing a full GPU re-upload. </summary>
-        void MarkAllDirty();
-
-        /// <summary> Resets the dirty state for the culling store only. </summary>
-        void ClearCullingDirty();
-        /// <summary> Resets the dirty state for the render store only. </summary>
-        void ClearRenderDirty();
-        /// <summary> Resets the dirty state for all registered stores. </summary>
-        void ClearAllDirty();
 
         #endregion
     }

@@ -7,7 +7,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     /// <summary>
     /// Specialized mapper for spherical spatial objects.
     /// </summary>
-    public class SphereLodAtlasMapper<TKey> : LodAtlasMapper<TKey, SphereSpatialData, SpatialMetadataRegistry<TKey, SphereSpatialData, TextureMappingData>>
+    public class SphereLodAtlasMapper<TKey> : LodAtlasMapper<TKey, SphereSpatialData, SpatialGpuDataRegistry<TKey, SphereSpatialData, TextureMappingData>>
         where TKey : struct, IEquatable<TKey>
     {
         #region LodAtlasMapper Impl
@@ -15,9 +15,9 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <summary>
         /// Creates the registry specific to spherical spatial data.
         /// </summary>
-        protected override SpatialMetadataRegistry<TKey, SphereSpatialData, TextureMappingData> CreateRegistry(int totalCapacity, int batchSize)
+        protected override SpatialGpuDataRegistry<TKey, SphereSpatialData, TextureMappingData> CreateRegistry(int totalCapacity, int batchSize)
         {
-            return new SpatialMetadataRegistry<TKey, SphereSpatialData, TextureMappingData>(totalCapacity, batchSize);
+            return new SpatialGpuDataRegistry<TKey, SphereSpatialData, TextureMappingData>(totalCapacity, batchSize);
         }
 
         /// <summary>

@@ -19,10 +19,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         #region Fields
 
         /// <summary> Internal registry for MeshRenderer components. </summary>
-        private SpatialObjectRegistry<Vector3Int, MeshRenderer> _meshRegistry;
+        private ComponentRegistry<Vector3Int, MeshRenderer> _meshRegistry;
 
         /// <summary> Internal registry for Terrain components. </summary>
-        private SpatialObjectRegistry<Vector3Int, Terrain> _terrainRegistry;
+        private ComponentRegistry<Vector3Int, Terrain> _terrainRegistry;
 
         /// <summary> 
         /// Shared tracker that ensures cell changes in any sub-registry 
@@ -68,8 +68,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 _gridProvider = gridProvider ?? throw new ArgumentNullException(nameof(gridProvider));
                 _gridProvider.OnGridStructureChanged += HandleGridStructureChanged;
 
-                _meshRegistry = new SpatialObjectRegistry<Vector3Int, MeshRenderer>();
-                _terrainRegistry = new SpatialObjectRegistry<Vector3Int, Terrain>();
+                _meshRegistry = new ComponentRegistry<Vector3Int, MeshRenderer>();
+                _terrainRegistry = new ComponentRegistry<Vector3Int, Terrain>();
 
                 _meshRegistry.Initialize(gridProvider, _sharedDirtyBuckets);
                 _terrainRegistry.Initialize(gridProvider, _sharedDirtyBuckets);

@@ -16,8 +16,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     /// <typeparam name="TKey">The unique identifier type for tiles (must be equatable).</typeparam>
     public abstract class LodAtlasMapper<TKey, TSpatial, TRegistry>
         where TKey : struct, IEquatable<TKey>
-        where TSpatial : unmanaged, ISpatialData, IGpuData<TSpatial>
-        where TRegistry : SpatialMetadataRegistry<TKey, TSpatial, TextureMappingData>
+        where TSpatial : unmanaged, IGpuData<TSpatial>
+        where TRegistry : SpatialGpuDataRegistry<TKey, TSpatial, TextureMappingData>
     {
         #region Internal Types
 

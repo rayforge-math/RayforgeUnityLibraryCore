@@ -8,11 +8,29 @@ namespace Rayforge.Core.Environment.Abstractions
     /// Used by systems that need to consume data (e.g., Renderer, Culling-Systems).
     /// </summary>
     public interface IReadOnlySpatialMetadataProvider<TKey, TCulling, TRender>
-        : IReadOnlyGpuDataProvider<TKey>
         where TKey : struct, IEquatable<TKey>
-        where TCulling : unmanaged, ISpatialData
-        where TRender : unmanaged
+        where TCulling : unmanaged, IGpuData<TCulling>
+        where TRender : unmanaged, IGpuData<TRender>
     {
+        #region Configuration & Metrics
+
+        /// <summary> Gets the maximum capacity of the registry. </summary>
+        int Capacity { get; }
+
+        /// <summary> Gets the batch size used for dirty-tracking and synchronization. </summary>
+        int BatchSize { get; }
+
+        /// <summary> Gets the stride (size in bytes) of a single culling data element. </summary>
+        int CullingStride { get; }
+
+        /// <summary> Gets the stride (size in bytes) of a single render data element. </summary>
+        int RenderStride { get; }
+
+        /// <summary> Gets the highest active index currently allocated in the registry. </summary>
+        int HighestIndex { get; }
+
+        #endregion
+
         #region Low-Level Access (Interop)
 
         /// <summary> Gets the zero-allocation span for hot-path iteration (Culling). </summary>

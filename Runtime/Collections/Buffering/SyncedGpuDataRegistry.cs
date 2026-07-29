@@ -24,27 +24,27 @@ namespace Rayforge.Core.Collections.Buffering
         #region Properties
 
         /// <summary> The first metadata store instance. </summary>
-        protected readonly MetadataStore<TStoreA> StoreA;
+        protected readonly MetadataStore<TStoreA> m_StoreA;
         /// <summary> The second metadata store instance. </summary>
-        protected readonly MetadataStore<TStoreB> StoreB;
+        protected readonly MetadataStore<TStoreB> m_StoreB;
 
         /// <summary> Gets the metadata interface for the first metadata store. </summary>
-        public IBufferMetadata StoreAMetadata => StoreA;
+        public IBufferMetadata StoreAMetadata => m_StoreA;
 
         /// <summary> Gets the metadata interface for the second metadata store. </summary>
-        public IBufferMetadata StoreBMetadata => StoreB;
+        public IBufferMetadata StoreBMetadata => m_StoreB;
 
         /// <summary> Gets the raw buffer access for the first metadata store. </summary>
-        public IRawBuffer<TStoreA> StoreARawBuffer => StoreA;
+        public IRawBuffer<TStoreA> StoreARawBuffer => m_StoreA;
 
         /// <summary> Gets the raw buffer access for the second metadata store. </summary>
-        public IRawBuffer<TStoreB> StoreBRawBuffer => StoreB;
+        public IRawBuffer<TStoreB> StoreBRawBuffer => m_StoreB;
 
         /// <summary> Gets the iterable interface for the first metadata store. </summary>
-        public IIterable<TStoreA> StoreAIterable => StoreA;
+        public IIterable<TStoreA> StoreAIterable => m_StoreA;
 
         /// <summary> Gets the iterable interface for the second metadata store. </summary>
-        public IIterable<TStoreB> StoreBIterable => StoreB;
+        public IIterable<TStoreB> StoreBIterable => m_StoreB;
 
         #endregion
 
@@ -57,8 +57,8 @@ namespace Rayforge.Core.Collections.Buffering
         public SyncedGpuDataRegistry(int capacity, int batchSize)
             : base(capacity, batchSize)
         {
-            StoreA = AddStore<TStoreA>();
-            StoreB = AddStore<TStoreB>();
+            m_StoreA = AddStore<TStoreA>();
+            m_StoreB = AddStore<TStoreB>();
         }
 
         #endregion
@@ -76,8 +76,8 @@ namespace Rayforge.Core.Collections.Buffering
         {
             int index = m_Mapper.GetOrAllocate(key);
 
-            StoreA.Set(index, valA);
-            StoreB.Set(index, valB);
+            m_StoreA.Set(index, valA);
+            m_StoreB.Set(index, valB);
 
             return index;
         }
@@ -93,8 +93,8 @@ namespace Rayforge.Core.Collections.Buffering
         {
             if (m_Mapper.TryGetIndex(key, out int index))
             {
-                valA = StoreA.Get(index);
-                valB = StoreB.Get(index);
+                valA = m_StoreA.Get(index);
+                valB = m_StoreB.Get(index);
                 return true;
             }
 
@@ -121,7 +121,7 @@ namespace Rayforge.Core.Collections.Buffering
         {
             if (!m_Mapper.TryGetIndex(key, out int index))
                 throw new KeyNotFoundException($"Key {key} not found.");
-            return StoreA.Get(index);
+            return m_StoreA.Get(index);
         }
 
         /// <summary>
@@ -130,7 +130,7 @@ namespace Rayforge.Core.Collections.Buffering
         public void SetStoreA(TKey key, TStoreA value)
         {
             int index = m_Mapper.GetOrAllocate(key);
-            StoreA.Set(index, value);
+            m_StoreA.Set(index, value);
         }
 
         /// <summary>
@@ -140,7 +140,7 @@ namespace Rayforge.Core.Collections.Buffering
         {
             if (!m_Mapper.TryGetIndex(key, out int index))
                 throw new KeyNotFoundException($"Key {key} not found.");
-            return StoreB.Get(index);
+            return m_StoreB.Get(index);
         }
 
         /// <summary>
@@ -149,7 +149,7 @@ namespace Rayforge.Core.Collections.Buffering
         public void SetStoreB(TKey key, TStoreB value)
         {
             int index = m_Mapper.GetOrAllocate(key);
-            StoreB.Set(index, value);
+            m_StoreB.Set(index, value);
         }
 
         /// <summary>
@@ -160,7 +160,7 @@ namespace Rayforge.Core.Collections.Buffering
         {
             if (m_Mapper.TryGetIndex(key, out int index))
             {
-                value = StoreA.Get(index);
+                value = m_StoreA.Get(index);
                 return true;
             }
 
@@ -176,7 +176,7 @@ namespace Rayforge.Core.Collections.Buffering
         {
             if (m_Mapper.TryGetIndex(key, out int index))
             {
-                value = StoreB.Get(index);
+                value = m_StoreB.Get(index);
                 return true;
             }
 
@@ -200,13 +200,13 @@ namespace Rayforge.Core.Collections.Buffering
         public void ForEachSyncedDirtySegment<TAction>(ref TAction action)
             where TAction : struct, IExecutionHandler<SyncedSegmentMeta<TStoreA, TStoreB>>
         {
-            if (!(StoreA.AnyDirty || StoreB.AnyDirty)) return;
+            if (!(m_StoreA.AnyDirty || m_StoreB.AnyDirty)) return;
 
             var syncedState = new SyncedDirtySegmentState<TStoreA, TStoreB>(
-                StoreA.TypedBuffer, 
-                StoreB.TypedBuffer,
-                StoreA.DirtyBits,
-                StoreB.DirtyBits,
+                m_StoreA.TypedBuffer, 
+                m_StoreB.TypedBuffer,
+                m_StoreA.DirtyBits,
+                m_StoreB.DirtyBits,
                 0,
                 Capacity,
                 BatchSize,
@@ -231,9 +231,9 @@ namespace Rayforge.Core.Collections.Buffering
         public void ForEachSyncedDirtyIndex<TAction>(ref TAction action)
             where TAction : struct, IExecutionHandler<SyncedBitIteratorMeta>
         {
-            if (!(StoreA.AnyDirty || StoreB.AnyDirty)) return;
+            if (!(m_StoreA.AnyDirty || m_StoreB.AnyDirty)) return;
 
-            var syncedState = new SyncedBitIteratorState(StoreA.DirtyBits, StoreB.DirtyBits, 0, StoreA.TotalBatchCount);
+            var syncedState = new SyncedBitIteratorState(m_StoreA.DirtyBits, m_StoreB.DirtyBits, 0, m_StoreA.TotalBatchCount);
 
             var it = new Iterator<SyncedBitIteratorMeta, SyncedBitIteratorState>(syncedState);
 
@@ -253,13 +253,13 @@ namespace Rayforge.Core.Collections.Buffering
         /// </remarks>
         public IIterator<SyncedSegmentMeta<TStoreA, TStoreB>> GetSyncedDirtySegments()
         {
-            if (!(StoreA.AnyDirty || StoreB.AnyDirty)) return IIterator<SyncedSegmentMeta<TStoreA, TStoreB>>.Empty();
+            if (!(m_StoreA.AnyDirty || m_StoreB.AnyDirty)) return IIterator<SyncedSegmentMeta<TStoreA, TStoreB>>.Empty();
 
             var syncedState = new SyncedDirtySegmentState<TStoreA, TStoreB>(
-                StoreA.TypedBuffer,
-                StoreB.TypedBuffer,
-                StoreA.DirtyBits,
-                StoreB.DirtyBits,
+                m_StoreA.TypedBuffer,
+                m_StoreB.TypedBuffer,
+                m_StoreA.DirtyBits,
+                m_StoreB.DirtyBits,
                 0,
                 Capacity,
                 BatchSize,
@@ -280,9 +280,9 @@ namespace Rayforge.Core.Collections.Buffering
         public IIterator<SyncedBitIteratorMeta> GetSyncedDirtyIndices<T>()
             where T : unmanaged
         {
-            if (!(StoreA.AnyDirty || StoreB.AnyDirty)) return IIterator<SyncedBitIteratorMeta>.Empty();
+            if (!(m_StoreA.AnyDirty || m_StoreB.AnyDirty)) return IIterator<SyncedBitIteratorMeta>.Empty();
 
-            var syncedState = new SyncedBitIteratorState(StoreA.DirtyBits, StoreB.DirtyBits, 0, StoreA.TotalBatchCount);
+            var syncedState = new SyncedBitIteratorState(m_StoreA.DirtyBits, m_StoreB.DirtyBits, 0, m_StoreA.TotalBatchCount);
 
             var it = new Iterator<SyncedBitIteratorMeta, SyncedBitIteratorState>(syncedState);
             return it;
@@ -297,8 +297,8 @@ namespace Rayforge.Core.Collections.Buffering
             where TAction : struct, IExecutionHandler<SyncedSegmentMeta<TStoreA, TStoreB>>
         {
             var state = new SyncedSegmentState<TStoreA, TStoreB>(
-                StoreA.TypedBuffer,
-                StoreB.TypedBuffer,
+                m_StoreA.TypedBuffer,
+                m_StoreB.TypedBuffer,
                 0,
                 Capacity,
                 BatchSize,
@@ -316,8 +316,8 @@ namespace Rayforge.Core.Collections.Buffering
         public IIterator<SyncedSegmentMeta<TStoreA, TStoreB>> GetIterator()
         {
             var state = new SyncedSegmentState<TStoreA, TStoreB>(
-                StoreA.TypedBuffer, 
-                StoreB.TypedBuffer, 
+                m_StoreA.TypedBuffer, 
+                m_StoreB.TypedBuffer, 
                 0,
                 Capacity,
                 BatchSize,

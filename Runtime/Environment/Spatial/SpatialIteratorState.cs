@@ -1,5 +1,4 @@
 using Rayforge.Core.Collections.Abstractions;
-using UnityEngine;
 using System;
 using System.Collections.Generic;
 
@@ -45,7 +44,7 @@ namespace Rayforge.Core.Environment.Spatial
         public SpatialIteratorState(TEnumerator bucketEnumerator, Dictionary<TKey, SpatialState<TValue>> storage)
         {
             _bucketEnumerator = bucketEnumerator;
-            m_Storage = storage;
+            m_Storage = storage ?? throw new ArgumentNullException(nameof(storage));
             _cachedValue = default;
             _hasCachedValue = false;
             _isExhausted = false;

@@ -1,7 +1,7 @@
-using System;
-using System.Runtime.InteropServices;
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Environment.Abstractions;
+using System;
+using System.Runtime.InteropServices;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
@@ -12,7 +12,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// Use case: Terrain chunks, particles, simple LOD triggers.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public struct SphereSpatialData : ISpatialData, IGpuData<SphereSpatialData>
+    public struct SphereSpatialData : IGpuData<SphereSpatialData>
     {
         public Vector3 Position;    // 12 Bytes
         public float Radius;        // 4 Bytes
@@ -35,7 +35,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// Use case: Static world geometry, large terrain sectors.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public struct AabbSpatialData : ISpatialData, IGpuData<AabbSpatialData>
+    public struct AabbSpatialData : IGpuData<AabbSpatialData>
     {
         public Vector3 MinBounds;   // 12 Bytes
         public float LayerMask;     // 4 Bytes
@@ -62,7 +62,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// Use case: Anything that is rotated or scaled.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public struct MatrixSpatialData : ISpatialData, IGpuData<MatrixSpatialData>
+    public struct MatrixSpatialData : IGpuData<MatrixSpatialData>
     {
         public Matrix4x4 LocalToWorld;  // 64 Bytes
 

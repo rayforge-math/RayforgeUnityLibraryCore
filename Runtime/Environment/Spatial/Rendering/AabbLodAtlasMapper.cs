@@ -7,7 +7,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     /// <summary>
     /// Specialized mapper for AABB (Axis-Aligned Bounding Box) spatial objects.
     /// </summary>
-    public class AabbLodAtlasMapper<TKey> : LodAtlasMapper<TKey, AabbSpatialData, SpatialMetadataRegistry<TKey, AabbSpatialData, TextureMappingData>>
+    public class AabbLodAtlasMapper<TKey> : LodAtlasMapper<TKey, AabbSpatialData, SpatialGpuDataRegistry<TKey, AabbSpatialData, TextureMappingData>>
         where TKey : struct, IEquatable<TKey>
     {
         #region LodAtlasMapper Impl
@@ -15,9 +15,9 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <summary>
         /// Creates the registry specific to AABB spatial data.
         /// </summary>
-        protected override SpatialMetadataRegistry<TKey, AabbSpatialData, TextureMappingData> CreateRegistry(int totalCapacity, int batchSize)
+        protected override SpatialGpuDataRegistry<TKey, AabbSpatialData, TextureMappingData> CreateRegistry(int totalCapacity, int batchSize)
         {
-            return new SpatialMetadataRegistry<TKey, AabbSpatialData, TextureMappingData>(totalCapacity, batchSize);
+            return new SpatialGpuDataRegistry<TKey, AabbSpatialData, TextureMappingData>(totalCapacity, batchSize);
         }
 
         /// <summary>

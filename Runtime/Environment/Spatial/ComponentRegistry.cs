@@ -11,11 +11,10 @@ namespace Rayforge.Core.Environment.Spatial
 {
     /// <summary>
     /// Handles typed spatial partitioning for a specific component type.
-    /// Kapselt die Registrierung und das Bucket-Management für einen einzelnen Typen.
     /// </summary>
     /// <typeparam name="TKey">The spatial key type (e.g., Vector3Int).</typeparam>
     /// <typeparam name="TType">The component type to be managed (must be a Unity Component).</typeparam>
-    public class SpatialObjectRegistry<TKey, TType> : ISpatialRegistry<TKey, TType>
+    public class ComponentRegistry<TKey, TType> : ISpatialRegistry<TKey, TType>
         where TType : Component
         where TKey : struct, IEquatable<TKey>
     {
@@ -27,8 +26,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary> Spatial Index: CellKey -> Set of InstanceIDs. </summary>
         private readonly Dictionary<TKey, HashSet<int>> _buckets = new();
 
-        /// <summary> 
-        /// Tracks cells that need re-baking. 
+        /// <summary>  
         /// Reference to either an internal or external shared HashSet.
         /// </summary>
         private HashSet<TKey> _dirtyBuckets;
