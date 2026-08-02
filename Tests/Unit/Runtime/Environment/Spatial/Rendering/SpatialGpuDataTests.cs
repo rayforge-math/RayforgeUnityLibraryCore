@@ -3,9 +3,9 @@ using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial.Tests
+namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
 {
-    public class SpatialGPUDataTests
+    public class SpatialGpuDataTests
     {
         #region SphereSpatialData Tests
 

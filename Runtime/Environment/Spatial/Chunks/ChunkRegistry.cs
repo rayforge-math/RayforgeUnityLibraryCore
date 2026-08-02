@@ -15,7 +15,10 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     /// Implements spatial indexing, factory logic, and Floating Origin support.
     /// </summary>
     /// <typeparam name="T">The specific chunk type.</typeparam>
-    public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T>, ISpatialGridProvider<Vector3Int>
+    public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T>, 
+        ISpatialGridConfiguration<Vector3Int>, 
+        ISpatialCoordinateMapper<Vector3Int>, 
+        ISpatialGridQuery<Vector3Int>
         where T : Chunk<T>
     {
         #region Internal Structures
@@ -36,13 +39,13 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// Triggered when the grid's scale or fundamental structure changes 
         /// (e.g., GridSize change). Requires a full rebuild of dependent systems.
         /// </summary>
-        public event Action<ISpatialGridProvider<Vector3Int>> OnGridStructureChanged;
+        public event Action<ISpatialGridConfiguration<Vector3Int>> OnGridStructureChanged;
 
         /// <summary> 
         /// Triggered when the grid origin shifts. 
         /// Passes the provider and the delta movement.
         /// </summary>
-        public event Action<ISpatialGridProvider<Vector3Int>, Vector3> OnAnchorChanged;
+        public event Action<ISpatialGridConfiguration<Vector3Int>, Vector3> OnAnchorChanged;
 
         /// <summary> Gets the total number of cells currently tracked in the registry. </summary>
         public int TotalCellCount => Count;
@@ -314,7 +317,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         private bool CreateInternal<THandler>(Vector3Int validKey, ref THandler onConfigure, out T chunk)
             where THandler : struct, IExecutionHandler<T>
         {
-            var factory = new LambdaFunction<ChunkCreateData, ChunkRegistry<T>, T>(
+            var factory = new StatefulFuncHandler<EntryCreateData<Vector3Int>, ChunkRegistry<T>, T>(
                 this,
                 static (data, coord) =>
                 {

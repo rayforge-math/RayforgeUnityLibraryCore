@@ -14,6 +14,11 @@ namespace Rayforge.Core.Environment.Spatial
         bool IsDirty { get; }
 
         /// <summary> 
+        /// Marks the entry as dirty, indicating that its state needs to be updated.
+        /// </summary>
+        void MarkDirty();
+
+        /// <summary> 
         /// Resets the dirty state after a successful update or bake.
         /// </summary>
         void ClearDirty();

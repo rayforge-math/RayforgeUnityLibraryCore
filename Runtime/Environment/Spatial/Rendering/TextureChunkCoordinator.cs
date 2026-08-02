@@ -258,7 +258,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
             _mapper.ClearBakeQueue();
 
-            foreach (var chunk in _chunkRegistry.GetAllEntries())
+            foreach (var chunk in _chunkRegistry.AllEntries)
             {
                 if (chunk.IsVisible)
                 {
@@ -291,7 +291,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
                     if (hasData)
                     {
-                        var handler = new LambdaAction<TextureLodChunk, TextureChunkCoordinator>(this, static (chunk, coord) =>
+                        var handler = new StatefulActionHandler<TextureLodChunk, TextureChunkCoordinator>(this, static (chunk, coord) =>
                         {
                             coord.SetupChunk(chunk);
                         });

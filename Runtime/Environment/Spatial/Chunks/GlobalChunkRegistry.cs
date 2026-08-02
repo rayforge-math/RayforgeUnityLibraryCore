@@ -1,7 +1,6 @@
 using Rayforge.Core.Execution.Abstractions;
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Chunks
@@ -128,7 +127,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// <summary> 
         /// Provides a read-only collection of all currently active chunks. 
         /// </summary>
-        public static IEnumerable<T> AllChunks => Instance.GetAllEntries();
+        public static IEnumerable<T> AllChunks => Instance.AllEntries;
 
         /// <summary> 
         /// Returns true if the registry structure has changed or any individual chunk is marked as dirty. 

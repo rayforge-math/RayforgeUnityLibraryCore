@@ -358,7 +358,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public int UpdateLODs(Vector3 focusPos)
         {
             int changeCount = 0;
-            foreach (T chunk in GetAllEntries())
+            foreach (T chunk in AllEntries)
             {
                 if (chunk != null && UpdateChunkLOD(chunk, focusPos))
                 {

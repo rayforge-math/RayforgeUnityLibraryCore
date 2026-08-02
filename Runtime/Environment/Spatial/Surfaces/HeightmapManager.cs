@@ -52,7 +52,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #region Private Runtime State
 
-        private readonly SpatialSurfaceRegistry _surfaceRegistry = new();
+        private readonly SurfaceRegistry _surfaceRegistry = new();
         private readonly TextureChunkCoordinator _textureCoordinator = new();
         private ManagedRenderTexture _atlasArray;
 
@@ -250,7 +250,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             }
         }
 
-        private void InitSurfaceTracker(SpatialSurfaceRegistry registry, bool force = false)
+        private void InitSurfaceTracker(SurfaceRegistry registry, bool force = false)
         {
             if (registry == null)
                 throw new ArgumentNullException(nameof(registry), "Cannot init SurfaceTracker with a null Registry!");

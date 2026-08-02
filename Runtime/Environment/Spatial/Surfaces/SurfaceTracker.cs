@@ -10,7 +10,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// <summary>
     /// Manages the detection and synchronization of world surfaces.
     /// It maintains an internal serialized list and its own settings, 
-    /// syncing everything with an internally owned ComponentRegistry.
+    /// syncing everything with an internally owned SpatialComponentRegistry.
     /// </summary>
     [Serializable]
     public class SurfaceTracker
@@ -70,7 +70,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         #region Private Runtime State
 
         /// <summary> The shared spatial database where validated surfaces are stored. </summary>
-        private SpatialSurfaceRegistry _objectRegistry;
+        private SurfaceRegistry _objectRegistry;
 
         /// <summary> Cached root transform. </summary>
         private Transform _root;
@@ -149,7 +149,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         /// <param name="externalRegistry">The shared spatial database to populate.</param>
         /// <param name="root">The root transform to start the hierarchy scan from.</param>
-        public void Initialize(SpatialSurfaceRegistry externalRegistry, Transform root)
+        public void Initialize(SurfaceRegistry externalRegistry, Transform root)
         {
             ClearStateInternal();
 

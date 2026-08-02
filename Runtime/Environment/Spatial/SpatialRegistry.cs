@@ -7,6 +7,12 @@ using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial
 {
+    public struct EntryCreateData<TKey>
+    {
+        public TKey key;
+        public GameObject gameObject;
+    }
+
     /// <summary>
     /// A high-performance base class for managing the lifecycle and storage of spatial objects.
     /// Handles dictionary-based storage, automated GameObject instantiation, hierarchy management, 
@@ -17,16 +23,6 @@ namespace Rayforge.Core.Environment.Spatial
     public abstract class SpatialRegistry<TKey, TValue> : IDisposable
         where TValue : ISpatialEntry, IDisposable
     {
-        #region Chunk Create Struct
-
-        public struct ChunkCreateData
-        {
-            public TKey key;
-            public GameObject gameObject;
-        }
-
-        #endregion
-
         #region Private Members
 
         /// <summary> Internal storage for spatial objects. Encapsulated to ensure dirty-flag integrity. </summary>
@@ -76,14 +72,9 @@ namespace Rayforge.Core.Environment.Spatial
                     throw new ArgumentException("RegistryName cannot be null or whitespace.", nameof(value));
                 }
 
-                if (m_Container != null && m_Container.Equals(null))
-                {
-                    throw new ObjectDisposedException(nameof(m_Container), "The container is already destroyed.");
-                }
-
                 if (m_Container == null)
                 {
-                    throw new InvalidOperationException("Cannot set RegistryName: m_Container is not assigned.");
+                    throw new InvalidOperationException("Cannot set RegistryName: m_Container is not assigned or has been destroyed.");
                 }
 
                 int id = m_Container.gameObject.GetInstanceID();
@@ -112,7 +103,7 @@ namespace Rayforge.Core.Environment.Spatial
             if (string.IsNullOrWhiteSpace(defaultName))
                 throw new ArgumentException("Registry name cannot be null or empty.", nameof(defaultName));
 
-            if (IsInitialized) Clear();
+            if (IsInitialized) Reset();
 
             GameObject go = new GameObject(defaultName);
             m_Container = go.transform;
@@ -145,6 +136,16 @@ namespace Rayforge.Core.Environment.Spatial
         public bool TryGetEntry(TKey key, out TValue value)
         {
             return m_Storage.TryGetValue(key, out value);
+        }
+
+        /// <summary>
+        /// Determines whether the registry contains an entry with the specified key.
+        /// </summary>
+        /// <param name="key">The key to locate in the registry.</param>
+        /// <returns>True if the registry contains an entry with the key; otherwise, false.</returns>
+        public bool Contains(TKey key)
+        {
+            return m_Storage.ContainsKey(key);
         }
 
         /// <summary>
@@ -185,7 +186,7 @@ namespace Rayforge.Core.Environment.Spatial
 
         /// <summary>
         /// The master factory method. Retrieves an existing entry or creates, parents, and registers a new one.
-        /// Initialization logic is decoupled via the <see cref="IExecutionHandler{T}"/> pattern to avoid heap allocations.
+        /// Initialization logic is decoupled via the <see cref="IFunctionHandler{TData, TResult}"/> pattern to avoid heap allocations.
         /// </summary>
         /// <typeparam name="THandler">The struct handler type that implements the initialization logic.</typeparam>
         /// <param name="key">The spatial key for indexing.</param>
@@ -197,14 +198,27 @@ namespace Rayforge.Core.Environment.Spatial
         /// <exception cref="InvalidOperationException">Thrown if the registry is not initialized.</exception>
         /// <exception cref="NullReferenceException">Thrown if the component could not be added or the handler fails.</exception>
         protected bool GetOrCreate<THandler>(TKey key, string name, Vector3 position, ref THandler onCreate, out TValue result)
-            where THandler : struct, IFunctionHandler<ChunkCreateData, TValue>
+            where THandler : struct, IFunctionHandler<EntryCreateData<TKey>, TValue>
         {
             if (!IsInitialized)
                 throw new InvalidOperationException("Registry is not initialized. Call Initialize() first.");
 
-            if (m_Storage.TryGetValue(key, out result) && result != null && result.gameObject != null)
+            if (m_Storage.TryGetValue(key, out result) && result != null)
             {
-                return false;
+                bool isDestroyed = false;
+                try
+                {
+                    isDestroyed = (result.gameObject == null);
+                }
+                catch (MissingReferenceException)
+                {
+                    isDestroyed = true;
+                }
+
+                if (!isDestroyed)
+                {
+                    return false;
+                }
             }
 
             m_Storage.Remove(key);
@@ -214,7 +228,7 @@ namespace Rayforge.Core.Environment.Spatial
             if (m_Container != null) go.transform.SetParent(m_Container);
             go.transform.position = position;
 
-            var createData = new ChunkCreateData { key = key, gameObject = go };
+            var createData = new EntryCreateData<TKey> { key = key, gameObject = go };
 
             result = onCreate.Execute(createData);
 
@@ -293,37 +307,45 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Iteration
 
-        /// <summary> Provides read-only access to all currently registered entries. </summary>
-        public void ForEachEntry<TAction>(TAction action)
-            where TAction : struct, IExecutionHandler<TValue>
-        {
-            var iter = m_Storage.Values.GetEnumerator().ToIterator();
+        /// <summary>
+        /// Gets an iterator over all keys currently stored in the registry.
+        /// </summary>
+        public IIterator<TKey> AllKeys => m_Storage.Keys.GetEnumerator().ToIterator();
 
-            while (iter.MoveNext())
-            {
-                action.Execute(iter.Current);
-            }
-        }
+        /// <summary>
+        /// Gets an iterator over all entry values currently stored in the registry.
+        /// </summary>
+        public IIterator<TValue> AllEntries => m_Storage.Values.GetEnumerator().ToIterator();
 
-        /// <summary> Provides read-only access to all currently registered entries. </summary>
+        /// <summary>
+        /// Executes a given action on every key in the registry.
+        /// </summary>
+        /// <typeparam name="TAction">The type of the execution handler.</typeparam>
+        /// <param name="action">The action handler to execute for each key.</param>
         public void ForEachKey<TAction>(TAction action)
             where TAction : struct, IExecutionHandler<TKey>
         {
             var iter = m_Storage.Keys.GetEnumerator().ToIterator();
-
             while (iter.MoveNext())
             {
                 action.Execute(iter.Current);
             }
         }
 
-        /// <summary> Provides read-only access to all currently registered entries. </summary>
-        public IIterator<TValue> GetAllEntries()
-            => m_Storage.Values.GetEnumerator().ToIterator();
-
-        /// <summary> Provides read-only access to all currently registered entries. </summary>
-        public IIterator<TKey> GetAllKeys()
-            => m_Storage.Keys.GetEnumerator().ToIterator();
+        /// <summary>
+        /// Executes a given action on every entry value in the registry.
+        /// </summary>
+        /// <typeparam name="TAction">The type of the execution handler.</typeparam>
+        /// <param name="action">The action handler to execute for each entry.</param>
+        public void ForEachEntry<TAction>(TAction action)
+            where TAction : struct, IExecutionHandler<TValue>
+        {
+            var iter = m_Storage.Values.GetEnumerator().ToIterator();
+            while (iter.MoveNext())
+            {
+                action.Execute(iter.Current);
+            }
+        }
 
         #endregion
 

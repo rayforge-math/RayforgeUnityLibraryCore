@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Components
 {
     /// <summary>
     /// A generic spatial wrapper that binds a specific component to its anchor-relative transform data.
@@ -9,8 +9,10 @@ namespace Rayforge.Core.Environment.Spatial
     /// </summary>
     /// <typeparam name="T">The type of Component being tracked.</typeparam>
     [Serializable]
-    public struct SpatialState<T> : IEquatable<SpatialState<T>>
+    public struct ComponentState<T> : IEquatable<ComponentState<T>>
     {
+        #region Fields
+
         [Header("Relative Spatial Data")]
         public Bounds anchorBounds;
         public Matrix4x4 localToAnchor;
@@ -23,14 +25,23 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public int dataHash;
 
+        #endregion
+
         #region Factory Methods
 
         /// <summary>
         /// Specialized creator for MeshRenderers.
         /// Maps world-space bounds and matrices to the provided anchor.
         /// </summary>
-        public static SpatialState<MeshRenderer> Create(Vector3 anchor, MeshRenderer renderer)
+        public static ComponentState<MeshRenderer> Create(Vector3 anchor, MeshRenderer renderer)
         {
+            if (renderer == null)
+                throw new ArgumentNullException(nameof(renderer), "MeshRenderer cannot be null.");
+
+            var filter = renderer.GetComponent<MeshFilter>();
+            if (filter == null)
+                throw new InvalidOperationException($"The MeshRenderer on GameObject '{renderer.gameObject.name}' requires a MeshFilter component.");
+
             Matrix4x4 localToWorld = renderer.transform.localToWorldMatrix;
             Bounds worldBounds = renderer.bounds;
 
@@ -39,10 +50,9 @@ namespace Rayforge.Core.Environment.Spatial
             Matrix4x4 worldToAnchor = Matrix4x4.Translate(-anchor);
             Matrix4x4 localToAnchor = worldToAnchor * localToWorld;
 
-            var filter = renderer.GetComponent<MeshFilter>();
-            int gHash = (filter != null && filter.sharedMesh != null) ? filter.sharedMesh.GetInstanceID() : 0;
+            int gHash = (filter.sharedMesh != null) ? filter.sharedMesh.GetInstanceID() : 0;
 
-            return new SpatialState<MeshRenderer>
+            return new ComponentState<MeshRenderer>
             {
                 anchorBounds = anchorBounds,
                 localToAnchor = localToAnchor,
@@ -55,8 +65,14 @@ namespace Rayforge.Core.Environment.Spatial
         /// Specialized creator for Terrains.
         /// Terrains need different logic for bounds (terrainData.size).
         /// </summary>
-        public static SpatialState<Terrain> Create(Vector3 anchor, Terrain terrain)
+        public static ComponentState<Terrain> Create(Vector3 anchor, Terrain terrain)
         {
+            if (terrain == null)
+                throw new ArgumentNullException(nameof(terrain), "Terrain cannot be null.");
+
+            if (terrain.terrainData == null)
+                throw new InvalidOperationException($"The Terrain on GameObject '{terrain.gameObject.name}' is missing its TerrainData.");
+
             Matrix4x4 localToWorld = terrain.transform.localToWorldMatrix;
             Vector3 size = terrain.terrainData.size;
             Bounds worldBounds = new Bounds(terrain.transform.position + size * 0.5f, size);
@@ -65,7 +81,7 @@ namespace Rayforge.Core.Environment.Spatial
             Matrix4x4 worldToAnchor = Matrix4x4.Translate(-anchor);
             Matrix4x4 localToAnchor = worldToAnchor * localToWorld;
 
-            return new SpatialState<Terrain>
+            return new ComponentState<Terrain>
             {
                 anchorBounds = anchorBounds,
                 localToAnchor = localToAnchor,
@@ -78,7 +94,7 @@ namespace Rayforge.Core.Environment.Spatial
 
         #region Equality
 
-        public bool Equals(SpatialState<T> other)
+        public bool Equals(ComponentState<T> other)
         {
             return dataHash == other.dataHash &&
                    ReferenceEquals(component, other.component) &&
@@ -86,7 +102,7 @@ namespace Rayforge.Core.Environment.Spatial
                    anchorBounds.Equals(other.anchorBounds);
         }
 
-        public override bool Equals(object obj) => obj is SpatialState<T> other && Equals(other);
+        public override bool Equals(object obj) => obj is ComponentState<T> other && Equals(other);
 
         public override int GetHashCode()
         {
@@ -101,8 +117,8 @@ namespace Rayforge.Core.Environment.Spatial
             }
         }
 
-        public static bool operator ==(SpatialState<T> left, SpatialState<T> right) => left.Equals(right);
-        public static bool operator !=(SpatialState<T> left, SpatialState<T> right) => !left.Equals(right);
+        public static bool operator ==(ComponentState<T> left, ComponentState<T> right) => left.Equals(right);
+        public static bool operator !=(ComponentState<T> left, ComponentState<T> right) => !left.Equals(right);
 
         #endregion
     }

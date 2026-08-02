@@ -1,14 +1,13 @@
 using NUnit.Framework;
 using NUnit.Framework.Internal;
 using Rayforge.Core.Collections.Abstractions.Tests;
-using Rayforge.Core.Collections.Iterator;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial.Tests
+namespace Rayforge.Core.Environment.Spatial.Components.Tests
 {
-    public class MeshRenderer_SpatialIteratorStateTests : SpatialIteratorStateTests<MeshRenderer>
+    public class MeshRenderer_ComponentIteratorStateTests : ComponentIteratorStateTests<MeshRenderer>
     {
         #region Create Test Object
 
@@ -22,23 +21,23 @@ namespace Rayforge.Core.Environment.Spatial.Tests
         #region Stress Test
 
         [Test]
-        public void SpatialIteratorState_HandlesMissingEntriesAndComplexBucketsCorrectly()
+        public void ComponentIteratorState_HandlesMissingEntriesAndComplexBucketsCorrectly()
         {
             // Arrange
-            var registry = new Dictionary<int, SpatialState<MeshRenderer>>();
+            var registry = new Dictionary<int, ComponentState<MeshRenderer>>();
 
             var rendererA = new MeshRenderer();
             var rendererB = new MeshRenderer();
             var rendererC = new MeshRenderer();
 
-            registry[10] = new SpatialState<MeshRenderer> { component = rendererA };
-            registry[20] = new SpatialState<MeshRenderer> { component = rendererB };
-            registry[30] = new SpatialState<MeshRenderer> { component = rendererC };
+            registry[10] = new ComponentState<MeshRenderer> { component = rendererA };
+            registry[20] = new ComponentState<MeshRenderer> { component = rendererB };
+            registry[30] = new ComponentState<MeshRenderer> { component = rendererC };
 
             var bucket = new HashSet<int> { 5, 10, 99, 30, 20, 40 };
 
             // Direct instantiation of the raw state struct
-            var state = new SpatialIteratorState<int, MeshRenderer, HashSet<int>.Enumerator>(
+            var state = new ComponentIteratorState<int, MeshRenderer, HashSet<int>.Enumerator>(
                 bucket.GetEnumerator(),
                 registry
             );
@@ -59,15 +58,15 @@ namespace Rayforge.Core.Environment.Spatial.Tests
         #endregion
     }
 
-    public abstract class SpatialIteratorStateTests<T> : IIterationLogicTests<T, SpatialIteratorState<int, T, HashSet<int>.Enumerator>>
+    public abstract class ComponentIteratorStateTests<T> : IIterationLogicTests<T, ComponentIteratorState<int, T, HashSet<int>.Enumerator>>
     {
         #region IIterationLogicTests
 
-        protected override IterationTestData<T, SpatialIteratorState<int, T, HashSet<int>.Enumerator>> CreateLogic(int count)
+        protected override IterationTestData<T, ComponentIteratorState<int, T, HashSet<int>.Enumerator>> CreateLogic(int count)
         {
             var bucket = new HashSet<int>();
             var expectedValues = new List<T>(count);
-            var registry = new Dictionary<int, SpatialState<T>>();
+            var registry = new Dictionary<int, ComponentState<T>>();
 
             for (int i = 0; i < count; i++)
             {
@@ -77,15 +76,15 @@ namespace Rayforge.Core.Environment.Spatial.Tests
                 T val = CreateEntity();
                 expectedValues.Add(val);
 
-                registry[id] = new SpatialState<T> { component = val };
+                registry[id] = new ComponentState<T> { component = val };
             }
 
-            var state = new SpatialIteratorState<int, T, HashSet<int>.Enumerator>(
+            var state = new ComponentIteratorState<int, T, HashSet<int>.Enumerator>(
                 bucket.GetEnumerator(),
                 registry
             );
 
-            return new IterationTestData<T, SpatialIteratorState<int, T, HashSet<int>.Enumerator>>
+            return new IterationTestData<T, ComponentIteratorState<int, T, HashSet<int>.Enumerator>>
             {
                 expected = expectedValues.ToArray(),
                 logic = state
@@ -108,7 +107,7 @@ namespace Rayforge.Core.Environment.Spatial.Tests
             // Act & Assert
             Assert.Throws<ArgumentNullException>(() =>
             {
-                new SpatialIteratorState<int, string, HashSet<int>.Enumerator>(enumerator, null);
+                new ComponentIteratorState<int, string, HashSet<int>.Enumerator>(enumerator, null);
             });
         }
 

@@ -22,16 +22,16 @@ namespace Rayforge.Core.Execution.Handler
     /// </para>
     /// </summary>
     /// <typeparam name="TData">The type of data being processed during iteration.</typeparam>
-    public readonly struct LambdaAction<TData> : IExecutionHandler<TData>
+    public readonly struct ActionHandler<TData> : IExecutionHandler<TData>
     {
         private readonly Action<TData> _action;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="LambdaAction{TData}"/> struct.
+        /// Initializes a new instance of the <see cref="ActionHandler{TData}"/> struct.
         /// </summary>
         /// <param name="action">The delegate to execute for each element.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LambdaAction(Action<TData> action)
+        public ActionHandler(Action<TData> action)
         {
             _action = action;
         }
@@ -61,18 +61,18 @@ namespace Rayforge.Core.Execution.Handler
     /// </summary>
     /// <typeparam name="TData">The type of data being processed during iteration.</typeparam>
     /// <typeparam name="TState">The type of the external state/context to pass through.</typeparam>
-    public readonly struct LambdaAction<TData, TState> : IExecutionHandler<TData>
+    public readonly struct StatefulActionHandler<TData, TState> : IExecutionHandler<TData>
     {
         private readonly TState _state;
         private readonly Action<TData, TState> _action;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="LambdaAction{TData, TState}"/> struct.
+        /// Initializes a new instance of the <see cref="ActionHandler{TData, TState}"/> struct.
         /// </summary>
         /// <param name="state">The external context or state to be passed to the delegate.</param>
         /// <param name="action">The delegate to execute, accepting both the element and the state.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LambdaAction(TState state, Action<TData, TState> action)
+        public StatefulActionHandler(TState state, Action<TData, TState> action)
         {
             _state = state;
             _action = action;

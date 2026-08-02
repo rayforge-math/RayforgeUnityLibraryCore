@@ -7,73 +7,58 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Components
 {
     /// <summary>
     /// Handles typed spatial partitioning for a specific component type.
     /// </summary>
     /// <typeparam name="TKey">The spatial key type (e.g., Vector3Int).</typeparam>
     /// <typeparam name="TType">The component type to be managed (must be a Unity Component).</typeparam>
-    public class ComponentRegistry<TKey, TType> : ISpatialRegistry<TKey, TType>
+    public class SpatialComponentRegistry<TKey, TType> : ISpatialRegistry<TKey, TType>, ISpatialCollection<TKey>
         where TType : Component
         where TKey : struct, IEquatable<TKey>
     {
         #region Fields
 
         /// <summary> Primary storage: InstanceID -> State. </summary>
-        private readonly Dictionary<int, SpatialState<TType>> _registry = new();
+        private readonly Dictionary<int, ComponentState<TType>> _registry = new();
 
         /// <summary> Spatial Index: CellKey -> Set of InstanceIDs. </summary>
         private readonly Dictionary<TKey, HashSet<int>> _buckets = new();
 
-        /// <summary>  
-        /// Reference to either an internal or external shared HashSet.
-        /// </summary>
-        private HashSet<TKey> _dirtyBuckets;
+        /// <summary> Internal tracker for modified cells. </summary>
+        private readonly HashSet<TKey> _dirtyBuckets = new();
 
-        private ISpatialGridProvider<TKey> _gridProvider;
+        private ISpatialGridQuery<TKey> _gridProvider;
 
-        /// <summary> Gets the total number of registered objects. </summary>
-        public int RegisteredCount => _registry.Count;
+        /// <inheritdoc />
+        public int StateCount => _registry.Count;
 
-        /// <summary> Gets all registered instance IDs. </summary>
-        public IIterator<int> AllIds => _registry.Keys.GetEnumerator().ToIterator();
+        /// <inheritdoc />
+        public int CellCount => _buckets.Count;
 
-        /// <summary>
-        /// Checks if the registry is fully operational.
-        /// Requires a valid grid provider and an active dirty bucket collection.
-        /// </summary>
-        public bool IsInitialized => _gridProvider != null && _dirtyBuckets != null;
+        /// <inheritdoc />
+        public int DirtyCellCount => _dirtyBuckets.Count;
+
+        /// <inheritdoc />
+        public int GetCellStateCount(TKey key) => _buckets.TryGetValue(key, out var bucket) ? bucket.Count : 0;
+
+        /// <inheritdoc />
+        public bool IsInitialized => _gridProvider != null;
 
         #endregion
 
         #region Lifecycle
 
-        /// <summary>
-        /// Initializes the registry with a grid provider and an optional shared dirty tracker.
-        /// </summary>
-        /// <param name="gridProvider">The provider for coordinate mapping.</param>
-        /// <param name="externalDirtyTracker">Optional shared HashSet to track modified cells across multiple registries.</param>
-        public void Initialize(ISpatialGridProvider<TKey> gridProvider, HashSet<TKey> externalDirtyTracker = null)
+        /// <inheritdoc />
+        public void Initialize(ISpatialGridQuery<TKey> gridProvider)
         {
-            try
-            {
-                Reset();
+            _gridProvider = gridProvider ?? throw new ArgumentNullException(nameof(gridProvider));
 
-                _gridProvider = gridProvider ?? throw new ArgumentNullException(nameof(gridProvider));
-                _dirtyBuckets = externalDirtyTracker ?? new HashSet<TKey>();
-
-                FullRemap();
-            }
-            catch (Exception e)
-            {
-                throw new Exception($"Initialization failed: {e.Message}", e);
-            }
+            Reset();
         }
 
-        /// <summary>
-        /// Clears and rebuilds all spatial buckets based on the current registry state.
-        /// </summary>
+        /// <inheritdoc />
         public void FullRemap()
         {
             if (!IsInitialized) return;
@@ -94,9 +79,7 @@ namespace Rayforge.Core.Environment.Spatial
             }
         }
 
-        /// <summary>
-        /// Removes all objects and clears all spatial indices.
-        /// </summary>
+        /// <inheritdoc />
         public void Clear()
         {
             _registry?.Clear();
@@ -104,32 +87,22 @@ namespace Rayforge.Core.Environment.Spatial
             _dirtyBuckets?.Clear();
         }
 
-        /// <summary>
-        /// Hard reset: Clears all data and detaches the grid provider and dirty tracker.
-        /// </summary>
+        /// <inheritdoc />
         public void Reset()
         {
             Clear();
             _gridProvider = null;
-            _dirtyBuckets = null;
         }
 
-        /// <summary>
-        /// Clears the list of modified (dirty) cells.
-        /// </summary>
+        /// <inheritdoc />
         public void ClearDirtyCells() => _dirtyBuckets.Clear();
 
         #endregion
 
-        #region Registration Logic
+        #region Registration & Lookup Logic
 
-        /// <summary>
-        /// Registers or updates an object in the spatial grid.
-        /// Returns true if the registration resulted in a spatial change.
-        /// </summary>
-        /// <param name="id">The unique InstanceID of the object.</param>
-        /// <param name="newState">The new spatial state including bounds and component reference.</param>
-        public bool TryRegister(int id, SpatialState<TType> newState)
+        /// <inheritdoc />
+        public bool TryRegister(int id, ComponentState<TType> newState)
         {
             if (!IsInitialized)
                 throw new InvalidOperationException($"Registry not initialized!");
@@ -145,11 +118,7 @@ namespace Rayforge.Core.Environment.Spatial
             return true;
         }
 
-        /// <summary>
-        /// Removes an object from the registry and its corresponding spatial buckets.
-        /// </summary>
-        /// <param name="id">The unique InstanceID of the object to remove.</param>
-        /// <returns>True if the object was found and removed.</returns>
+        /// <inheritdoc />
         public bool Unregister(int id)
         {
             if (_registry.TryGetValue(id, out var state))
@@ -159,6 +128,12 @@ namespace Rayforge.Core.Environment.Spatial
             }
             return false;
         }
+
+        /// <inheritdoc />
+        public bool Contains(int id) => _registry.ContainsKey(id);
+
+        /// <inheritdoc />
+        public bool TryGetState(int id, out ComponentState<TType> state) => _registry.TryGetValue(id, out state);
 
         #endregion
 
@@ -209,7 +184,6 @@ namespace Rayforge.Core.Environment.Spatial
         public void ForEachDirtyCell<TAction>(ref TAction action)
             where TAction : struct, IExecutionHandler<TKey>
         {
-            if (_dirtyBuckets == null) return;
             foreach (var key in _dirtyBuckets)
             {
                 action.Execute(key);
@@ -223,12 +197,12 @@ namespace Rayforge.Core.Environment.Spatial
 
             if (_buckets.TryGetValue(key, out var bucket))
             {
-                var state = new SpatialIteratorState<int, TType, HashSet<int>.Enumerator>(
+                var state = new ComponentIteratorState<int, TType, HashSet<int>.Enumerator>(
                     bucket.GetEnumerator(),
                     _registry
                 );
 
-                iterator = new Iterator<TType, SpatialIteratorState<int, TType, HashSet<int>.Enumerator>>(state);
+                iterator = new Iterator<TType, ComponentIteratorState<int, TType, HashSet<int>.Enumerator>>(state);
                 return true;
             }
 
@@ -241,14 +215,68 @@ namespace Rayforge.Core.Environment.Spatial
             return _dirtyBuckets.GetEnumerator().ToIterator();
         }
 
-        #endregion
+        /// <inheritdoc />
+        public IIterator<int> AllIds => _registry.Keys.GetEnumerator().ToIterator();
 
-        #region te
+        /// <inheritdoc />
+        public IIterator<TKey> AllKeys => _buckets.Keys.GetEnumerator().ToIterator();
 
-        /// <summary> Returns an iterator over all cells that have been modified since the last clear. </summary>
-        public IIterator<TKey> GetDirtyCells()
+        /// <inheritdoc />
+        public IIterator<ComponentState<TType>> AllStates => _registry.Values.GetEnumerator().ToIterator();
+
+        /// <inheritdoc />
+        public IIterator<int> CellIds(TKey key)
         {
-            return _dirtyBuckets.GetEnumerator().ToIterator();
+            if (_buckets.TryGetValue(key, out var bucket))
+            {
+                return bucket.GetEnumerator().ToIterator();
+            }
+            return IIterator<int>.Empty();
+        }
+
+        /// <inheritdoc />
+        public void ForEachId<TAction>(ref TAction action)
+            where TAction : struct, IExecutionHandler<int>
+        {
+            foreach (var id in _registry.Keys)
+            {
+                action.Execute(id);
+            }
+        }
+
+        /// <inheritdoc />
+        public void ForEachKey<TAction>(ref TAction action)
+            where TAction : struct, IExecutionHandler<TKey>
+        {
+            foreach (var key in _buckets.Keys)
+            {
+                action.Execute(key);
+            }
+        }
+
+        /// <inheritdoc />
+        public bool TryForEachCellId<TAction>(TKey key, ref TAction action)
+            where TAction : struct, IExecutionHandler<int>
+        {
+            if (_buckets.TryGetValue(key, out var bucket))
+            {
+                foreach (int id in bucket)
+                {
+                    action.Execute(id);
+                }
+                return true;
+            }
+            return false;
+        }
+
+        /// <inheritdoc />
+        public void ForEachState<TAction>(ref TAction action)
+            where TAction : struct, IExecutionHandler<ComponentState<TType>>
+        {
+            foreach (var state in _registry.Values)
+            {
+                action.Execute(state);
+            }
         }
 
         #endregion
@@ -260,22 +288,41 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         private void UpdateBuckets(int id, Bounds bounds, bool add)
         {
-            var keys = _gridProvider.GetKeysInRelativeBounds(bounds);
+            var bucketUpdater = new BucketUpdaterHandler(this, id, add);
+            _gridProvider.ForEachKeyInRelativeBounds(bounds, ref bucketUpdater);
+        }
 
-            foreach (TKey key in keys)
+        /// <summary>
+        /// High-performance execution handler for updating spatial buckets without allocations.
+        /// </summary>
+        private struct BucketUpdaterHandler : IExecutionHandler<TKey>
+        {
+            private readonly SpatialComponentRegistry<TKey, TType> _registry;
+            private readonly int _id;
+            private readonly bool _add;
+
+            public BucketUpdaterHandler(SpatialComponentRegistry<TKey, TType> registry, int id, bool add)
             {
-                _dirtyBuckets.Add(key);
+                _registry = registry;
+                _id = id;
+                _add = add;
+            }
 
-                if (add)
+            public void Execute(TKey key)
+            {
+                _registry._dirtyBuckets.Add(key);
+
+                if (_add)
                 {
-                    if (!_buckets.TryGetValue(key, out var bucket))
-                        _buckets[key] = bucket = new HashSet<int>();
-                    bucket.Add(id);
+                    if (!_registry._buckets.TryGetValue(key, out var bucket))
+                        _registry._buckets[key] = bucket = new HashSet<int>();
+                    bucket.Add(_id);
                 }
-                else if (_buckets.TryGetValue(key, out var bucket))
+                else if (_registry._buckets.TryGetValue(key, out var bucket))
                 {
-                    bucket.Remove(id);
-                    if (bucket.Count == 0) _buckets.Remove(key);
+                    bucket.Remove(_id);
+                    if (bucket.Count == 0)
+                        _registry._buckets.Remove(key);
                 }
             }
         }

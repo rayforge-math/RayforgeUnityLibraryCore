@@ -5,7 +5,7 @@ using Rayforge.Core.Execution.Abstractions;
 using System;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial.Tests
+namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
 {
     public struct CullingTestData : IGpuData<CullingTestData>
     {

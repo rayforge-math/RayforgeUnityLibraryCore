@@ -13,16 +13,16 @@ namespace Rayforge.Core.Execution.Handler
     /// </summary>
     /// <typeparam name="TData">The type of data being processed.</typeparam>
     /// <typeparam name="TResult">The type of the result returned by the function.</typeparam>
-    public readonly struct LambdaFunction<TData, TResult> : IFunctionHandler<TData, TResult>
+    public readonly struct FuncHandler<TData, TResult> : IFunctionHandler<TData, TResult>
     {
         private readonly Func<TData, TResult> _func;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="LambdaFunction{TData, TResult}"/> struct.
+        /// Initializes a new instance of the <see cref="FuncHandler{TData, TResult}"/> struct.
         /// </summary>
         /// <param name="func">The delegate to execute, returning a result.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LambdaFunction(Func<TData, TResult> func)
+        public FuncHandler(Func<TData, TResult> func)
         {
             _func = func;
         }
@@ -49,18 +49,18 @@ namespace Rayforge.Core.Execution.Handler
     /// <typeparam name="TData">The type of data being processed.</typeparam>
     /// <typeparam name="TResult">The type of the result returned by the function.</typeparam>
     /// <typeparam name="TState">The type of the external state/context to pass through.</typeparam>
-    public readonly struct LambdaFunction<TData, TState, TResult> : IFunctionHandler<TData, TResult>
+    public readonly struct StatefulFuncHandler<TData, TState, TResult> : IFunctionHandler<TData, TResult>
     {
         private readonly TState _state;
         private readonly Func<TData, TState, TResult> _func;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="LambdaFunction{TData, TState, TResult}"/> struct.
+        /// Initializes a new instance of the <see cref="FuncHandler{TData, TState, TResult}"/> struct.
         /// </summary>
         /// <param name="state">The external context or state to be passed to the delegate.</param>
         /// <param name="func">The delegate to execute, accepting both the data and the state.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LambdaFunction(TState state, Func<TData, TState, TResult> func)
+        public StatefulFuncHandler(TState state, Func<TData, TState, TResult> func)
         {
             _state = state;
             _func = func;

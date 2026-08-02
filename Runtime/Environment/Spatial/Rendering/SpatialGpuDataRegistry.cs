@@ -5,7 +5,7 @@ using Rayforge.Core.Execution.Abstractions;
 using Rayforge.Core.Environment.Abstractions;
 using System;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Rendering
 {
     /// <summary>
     /// Generic bridge for registries that participate in a spatial culling and rendering pipeline.

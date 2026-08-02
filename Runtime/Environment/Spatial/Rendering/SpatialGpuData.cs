@@ -1,10 +1,9 @@
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Environment.Abstractions;
 using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Rendering
 {
     /// <summary>
     /// Lightweight sphere for fast distance-based culling.

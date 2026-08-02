@@ -2,7 +2,7 @@ using Rayforge.Core.Collections.Abstractions;
 using System;
 using System.Collections.Generic;
 
-namespace Rayforge.Core.Environment.Spatial
+namespace Rayforge.Core.Environment.Spatial.Components
 {
     /// <summary>
     /// A generic, zero-allocation state container that resolves keys from any struct-based enumerator
@@ -11,7 +11,7 @@ namespace Rayforge.Core.Environment.Spatial
     /// <typeparam name="TKey">The identifier type (e.g., int for InstanceID).</typeparam>
     /// <typeparam name="TValue">The resolved value type (e.g., MeshRenderer).</typeparam>
     /// <typeparam name="TEnumerator">The specific enumerator type to avoid boxing.</typeparam>
-    public struct SpatialIteratorState<TKey, TValue, TEnumerator> : IIterationLogic<TValue, SpatialIteratorState<TKey, TValue, TEnumerator>>
+    public struct ComponentIteratorState<TKey, TValue, TEnumerator> : IIterationLogic<TValue, ComponentIteratorState<TKey, TValue, TEnumerator>>
         where TKey : struct, IEquatable<TKey>
         where TEnumerator : struct, IEnumerator<TKey>
     {
@@ -26,7 +26,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// Reference to the storage dictionary for O(1) resolution.
         /// </summary>
-        private readonly Dictionary<TKey, SpatialState<TValue>> m_Storage;
+        private readonly Dictionary<TKey, ComponentState<TValue>> m_Storage;
 
         private TValue _cachedValue;
         private bool _hasCachedValue;
@@ -41,7 +41,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         /// <param name="bucketEnumerator">The specific enumerator (e.g. HashSet{int}.Enumerator).</param>
         /// <param name="storage">The dictionary used to resolve keys to values.</param>
-        public SpatialIteratorState(TEnumerator bucketEnumerator, Dictionary<TKey, SpatialState<TValue>> storage)
+        public ComponentIteratorState(TEnumerator bucketEnumerator, Dictionary<TKey, ComponentState<TValue>> storage)
         {
             _bucketEnumerator = bucketEnumerator;
             m_Storage = storage ?? throw new ArgumentNullException(nameof(storage));
@@ -55,14 +55,14 @@ namespace Rayforge.Core.Environment.Spatial
         #region IIterationLogic Implementation
 
         /// <inheritdoc />
-        public bool HasNext(ref SpatialIteratorState<TKey, TValue, TEnumerator> self)
+        public bool HasNext(ref ComponentIteratorState<TKey, TValue, TEnumerator> self)
         {
             MoveBeforeNext(ref self);
             return self._hasCachedValue;
         }
 
         /// <inheritdoc />
-        public bool TryPeekNext(ref SpatialIteratorState<TKey, TValue, TEnumerator> self, out TValue result)
+        public bool TryPeekNext(ref ComponentIteratorState<TKey, TValue, TEnumerator> self, out TValue result)
         {
             MoveBeforeNext(ref self);
             result = self._cachedValue;
@@ -70,7 +70,7 @@ namespace Rayforge.Core.Environment.Spatial
         }
 
         /// <inheritdoc />
-        public bool MoveNext(ref SpatialIteratorState<TKey, TValue, TEnumerator> self, out TValue result)
+        public bool MoveNext(ref ComponentIteratorState<TKey, TValue, TEnumerator> self, out TValue result)
         {
             MoveBeforeNext(ref self);
 
@@ -93,7 +93,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// <summary>
         /// Advances the generic enumerator and pre-resolves the value from storage.
         /// </summary>
-        private static void MoveBeforeNext(ref SpatialIteratorState<TKey, TValue, TEnumerator> self)
+        private static void MoveBeforeNext(ref ComponentIteratorState<TKey, TValue, TEnumerator> self)
         {
             if (self._hasCachedValue || self._isExhausted) return;
 
