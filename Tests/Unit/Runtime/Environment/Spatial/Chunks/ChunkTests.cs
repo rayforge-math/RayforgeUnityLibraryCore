@@ -2,7 +2,7 @@ using NUnit.Framework;
 using System.Reflection;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial.Chunks
+namespace Rayforge.Core.Environment.Spatial.Chunks.Tests
 {
     [TestFixture]
     public abstract class ChunkTests<T> where T : Chunk<T>

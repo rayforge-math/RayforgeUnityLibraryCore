@@ -58,6 +58,22 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public int Count => m_Storage.Count;
 
+        /// <summary>
+        /// Determines whether the registry contains an entry with the specified key.
+        /// </summary>
+        public bool ContainsKey(TKey key)
+        {
+            return m_Storage.ContainsKey(key);
+        }
+
+        /// <summary>
+        /// Attempts to get the value associated with the specified key.
+        /// </summary>
+        public bool TryGetValue(TKey key, out TValue value)
+        {
+            return m_Storage.TryGetValue(key, out value);
+        }
+
         /// <summary> 
         /// The unique identification string of this registry instance.
         /// Useful for logging and identifying the container in the hierarchy.
@@ -94,18 +110,17 @@ namespace Rayforge.Core.Environment.Spatial
 
         /// <summary>
         /// Initializes the registry, creates the container GameObject and sets up the hierarchy.
-        /// English comment: Call this to activate the registry. If already initialized, it will perform a Reset.
+        /// Call this to activate the registry. If already initialized, it will perform a Reset.
         /// </summary>
         /// <param name="parent">Optional parent transform.</param>
         /// <param name="defaultName">The name for the auto-generated container.</param>
-        public virtual void Initialize(Transform parent = null, string defaultName = "SpatialRegistry_Container")
+        public virtual void Initialize(Transform parent = null, string defaultName = "SpatialRegistry")
         {
-            if (string.IsNullOrWhiteSpace(defaultName))
-                throw new ArgumentException("Registry name cannot be null or empty.", nameof(defaultName));
-
             if (IsInitialized) Reset();
 
-            GameObject go = new GameObject(defaultName);
+            string registryName = string.IsNullOrEmpty(defaultName) ? "SpatialRegistry" : defaultName;
+
+            GameObject go = new GameObject(registryName);
             m_Container = go.transform;
 
             if (parent != null)
@@ -120,7 +135,7 @@ namespace Rayforge.Core.Environment.Spatial
                 m_ContainerLinkedToAnchor = false;
             }
 
-            RegistryName = defaultName;
+            RegistryName = registryName;
 
             m_IsInitialized = true;
         }
@@ -135,6 +150,9 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         public bool TryGetEntry(TKey key, out TValue value)
         {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Registry is not initialized. Call Initialize() first.");
+
             return m_Storage.TryGetValue(key, out value);
         }
 
@@ -145,6 +163,9 @@ namespace Rayforge.Core.Environment.Spatial
         /// <returns>True if the registry contains an entry with the key; otherwise, false.</returns>
         public bool Contains(TKey key)
         {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Registry is not initialized. Call Initialize() first.");
+
             return m_Storage.ContainsKey(key);
         }
 
@@ -196,52 +217,69 @@ namespace Rayforge.Core.Environment.Spatial
         /// <param name="result">When this method returns, contains the existing or newly created entry.</param>
         /// <returns><b>true</b> if a brand new entry was created; <b>false</b> if an existing one was retrieved.</returns>
         /// <exception cref="InvalidOperationException">Thrown if the registry is not initialized.</exception>
-        /// <exception cref="NullReferenceException">Thrown if the component could not be added or the handler fails.</exception>
         protected bool GetOrCreate<THandler>(TKey key, string name, Vector3 position, ref THandler onCreate, out TValue result)
             where THandler : struct, IFunctionHandler<EntryCreateData<TKey>, TValue>
         {
             if (!IsInitialized)
                 throw new InvalidOperationException("Registry is not initialized. Call Initialize() first.");
 
-            if (m_Storage.TryGetValue(key, out result) && result != null)
+            // 1. Try to retrieve and validate an existing entry
+            if (m_Storage.TryGetValue(key, out result) && IsValidEntry(result))
             {
-                bool isDestroyed = false;
-                try
-                {
-                    isDestroyed = (result.gameObject == null);
-                }
-                catch (MissingReferenceException)
-                {
-                    isDestroyed = true;
-                }
-
-                if (!isDestroyed)
-                {
-                    return false;
-                }
+                return false;
             }
 
+            // 2. Clean up stale reference if it was destroyed or invalid
             m_Storage.Remove(key);
 
+            // 3. Create and register the new entry
+            result = CreateNewEntry(key, name, position, ref onCreate);
+            m_Storage[key] = result;
+            m_GlobalDirty = true;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Safely checks if the entry is valid and not a destroyed native Unity object.
+        /// Eliminates the need for expensive try-catch blocks.
+        /// </summary>
+        private bool IsValidEntry(TValue entry)
+        {
+            if (entry == null)
+                return false;
+
+            if (entry is UnityEngine.Object unityObject)
+                return unityObject != null;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Handles the instantiation, parenting, and initialization of a new entry.
+        /// </summary>
+        private TValue CreateNewEntry<THandler>(TKey key, string name, Vector3 position, ref THandler onCreate)
+            where THandler : struct, IFunctionHandler<EntryCreateData<TKey>, TValue>
+        {
             GameObject go = new GameObject(name);
 
-            if (m_Container != null) go.transform.SetParent(m_Container);
+            if (m_Container != null)
+            {
+                go.transform.SetParent(m_Container);
+            }
+
             go.transform.position = position;
 
             var createData = new EntryCreateData<TKey> { key = key, gameObject = go };
+            TValue newEntry = onCreate.Execute(createData);
 
-            result = onCreate.Execute(createData);
-
-            if (result == null)
+            if (newEntry == null)
             {
                 DestroyGameObject(go);
                 throw new NullReferenceException($"Handler failed to create a valid instance for key {key}.");
             }
 
-            m_Storage[key] = result;
-            m_GlobalDirty = true;
-
-            return true;
+            return newEntry;
         }
 
         #endregion

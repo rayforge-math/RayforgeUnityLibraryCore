@@ -9,42 +9,45 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     {
         #region Decimal Options
         // English: 10m - High precision, small areas.
-        DecimalTiny = GridSizeDecimal.Tiny,
+        Size10 = GridSizeDecimal.Size10,
 
         // English: 50m - Good for dense environments.
-        DecimalSmall = GridSizeDecimal.Small,
+        Size50 = GridSizeDecimal.Size50,
 
         // English: 100m - The metric standard for open worlds.
-        DecimalMedium = GridSizeDecimal.Medium,
+        Size100 = GridSizeDecimal.Size100,
 
         // English: 200m - Balanced for performance and visibility.
-        DecimalLarge = GridSizeDecimal.Large,
+        Size200 = GridSizeDecimal.Size200,
 
         // English: 500m - Large scale for background elements.
-        DecimalHuge = GridSizeDecimal.Huge,
+        Size500 = GridSizeDecimal.Size500,
 
         // English: 1000m - Horizon scale.
-        DecimalEpic = GridSizeDecimal.Epic,
+        Size1000 = GridSizeDecimal.Size1000,
         #endregion
 
         #region Binary Options
-        // English: 16m - Power-of-two equivalent to Tiny.
-        BinaryTiny = GridSizeBinary.Tiny,
+        // English: 16m - Power-of-two equivalent.
+        Size16 = GridSizeBinary.Size16,
+
+        // English: 32m - Power-of-two tile size.
+        Size32 = GridSizeBinary.Size32,
 
         // English: 64m - Common tile size for GPU systems.
-        BinarySmall = GridSizeBinary.Small,
+        Size64 = GridSizeBinary.Size64,
 
         // English: 128m - Perfect 1:1 mapping for standard render targets.
-        BinaryMedium = GridSizeBinary.Medium,
+        Size128 = GridSizeBinary.Size128,
 
         // English: 256m - Large tile, efficient for GPU batching.
-        BinaryLarge = GridSizeBinary.Large,
+        Size256 = GridSizeBinary.Size256,
 
-        // English: 512m - Huge area, ideal for 270p/512p maps.
-        BinaryHuge = GridSizeBinary.Huge,
+        // English: 512m - Huge area, ideal for maps.
+        Size512 = GridSizeBinary.Size512,
 
         // English: 1024m - Epic scale, matches 1K texture resolution.
-        BinaryEpic = GridSizeBinary.Epic
+        Size1024 = GridSizeBinary.Size1024
         #endregion
     }
 
@@ -55,22 +58,22 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     public enum GridSizeDecimal : int
     {
         // 10m - High precision, small areas.
-        Tiny = 10,
+        Size10 = 10,
 
         // 50m - Good for dense environments.
-        Small = 50,
+        Size50 = 50,
 
         // 100m - The metric standard for open worlds.
-        Medium = 100,
+        Size100 = 100,
 
         // 200m - Balanced for performance and visibility.
-        Large = 200,
+        Size200 = 200,
 
         // 500m - Large scale for background elements.
-        Huge = 500,
+        Size500 = 500,
 
         // 1000m - Horizon scale, very low update frequency.
-        Epic = 1000
+        Size1000 = 1000
     }
 
     /// <summary>
@@ -81,21 +84,24 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     public enum GridSizeBinary : int
     {
         // 16m - Equivalent to 16x16 texels.
-        Tiny = 16,
+        Size16 = 16,
+
+        // 32m - Power-of-two size.
+        Size32 = 32,
 
         // 64m - Common tile size for many engines.
-        Small = 64,
+        Size64 = 64,
 
         // 128m - Perfect 1:1 mapping for standard render targets.
-        Medium = 128,
+        Size128 = 128,
 
         // 256m - Large tile, efficient for GPU batching.
-        Large = 256,
+        Size256 = 256,
 
         // 512m - Huge area, minimizes draw calls for distant fog.
-        Huge = 512,
+        Size512 = 512,
 
         // 1024m - Epic scale, matches 1K texture resolution.
-        Epic = 1024
+        Size1024 = 1024
     }
 }

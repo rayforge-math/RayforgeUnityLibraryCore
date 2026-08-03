@@ -70,24 +70,26 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// Initializes the LOD registry.
         /// Combines spatial setup with LOD threshold configuration.
         /// </summary>
-        public void Initialize(SpatialSettings spatialSettings, LodSettings lodSettings, Transform viewer = null, Transform container = null)
+        public void Initialize(
+            GridSize gridSize,
+            Vector3 anchor,
+            ReadOnlySpan<float> lodDistances,
+            bool deactivateOnCulled = true,
+            Transform viewer = null,
+            Transform parent = null,
+            string name = "LODChunkRegistry")
         {
-            try
+            if (lodDistances.IsEmpty)
             {
-                base.Initialize(spatialSettings, container, "LODChunkRegistry");
-
-                if (lodSettings.LodDistances == null || lodSettings.LodDistances.Length == 0)
-                    throw new ArgumentException("LOD distances are missing in configuration.");
-
-                _deactivateOnCulled = lodSettings.DeactivateOnCulled;
-                Viewer = viewer;
-
-                ApplyLodConfiguration(lodSettings.LodDistances);
+                throw new ArgumentException("LOD distances cannot be empty.", nameof(lodDistances));
             }
-            catch (Exception e)
-            {
-                throw new Exception($"Initialization failed: {e.Message}", e);
-            }
+
+            base.Initialize(gridSize, anchor, parent, name);
+
+            _deactivateOnCulled = deactivateOnCulled;
+            Viewer = viewer;
+
+            ApplyLodConfiguration(lodDistances);
         }
 
         /// <summary>

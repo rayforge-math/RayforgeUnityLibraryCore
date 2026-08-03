@@ -86,33 +86,38 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// Initializes the coordinator by extracting spatial and visual configurations from the provided LOD definitions.
         /// Acts as the central bridge to synchronize the LOD registry and the atlas mapping logic.
         /// </summary>
-        /// <param name="spatialSettings">The core grid configuration (size, active axes, etc.).</param>
+        /// <param name="gridSize">The size of the spatial grid.</param>
+        /// <param name="anchor">The spatial anchor position.</param>
         /// <param name="lodConfigs">The master list of LOD levels, defining both distances and texture resolutions.</param>
         /// <param name="batchSize">Number of elements to process in a single GPU update block.</param>
-        /// <param name="viewer">The transform used to calculate distances for LOD switching.</param>
-        /// <param name="container">The parent transform where chunk GameObjects will be organized.</param>
+        /// <param name="viewer">The transform used to calculate distances for LOD switching (cannot be null).</param>
+        /// <param name="parent">The parent transform where chunk GameObjects will be organized (optional).</param>
         /// <param name="deactivateOnCulled">If true, chunks outside the maximum LOD range will be disabled.</param>
         public void Initialize(
-            SpatialSettings spatialSettings,
+            GridSize gridSize,
+            Vector3 anchor,
             ReadOnlySpan<TextureLOD> lodConfigs,
             int batchSize,
             Transform viewer,
-            Transform container,
+            Transform parent,
             bool deactivateOnCulled = true)
         {
-            try
+            if (lodConfigs.IsEmpty)
             {
-                Reset();
-
-                ExtractLodConfiguration(lodConfigs, deactivateOnCulled, out var lodSettings, out var resolutions);
-
-                _chunkRegistry.Initialize(spatialSettings, lodSettings, viewer, container);
-                _mapper.Configure(_chunkRegistry, resolutions, batchSize);
+                throw new ArgumentException("LOD configurations cannot be empty.", nameof(lodConfigs));
             }
-            catch (Exception e)
+
+            if (viewer == null)
             {
-                throw new Exception($"Initialization failed. Check your LOD settings and spatial configuration: {e.Message}", e);
+                throw new ArgumentNullException(nameof(viewer), "Viewer transform cannot be null.");
             }
+
+            Reset();
+
+            ExtractLodConfiguration(lodConfigs, deactivateOnCulled, out var lodDistances, out var resolutions);
+
+            _chunkRegistry.Initialize(gridSize, anchor, lodDistances, deactivateOnCulled, viewer, parent);
+            _mapper.Configure(_chunkRegistry, resolutions, batchSize);
         }
 
         /// <summary>
@@ -155,7 +160,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public void SetAnchor(Vector3 newAnchor)
         {
             if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
-            _chunkRegistry.SetAnchor(newAnchor);
+            _chunkRegistry.Anchor =newAnchor;
         }
 
         /// <summary>
@@ -191,9 +196,9 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             if (!IsInitialized) return false;
 
-            ExtractLodConfiguration(lodConfigs, _chunkRegistry.DeactivateOnCulled, out var lodSettings, out var resolutions);
+            ExtractLodConfiguration(lodConfigs, _chunkRegistry.DeactivateOnCulled, out float[] lodDistances, out var resolutions);
 
-            bool distancesChanged = _chunkRegistry.UpdateLodDistances(lodSettings.LodDistances);
+            bool distancesChanged = _chunkRegistry.UpdateLodDistances(lodDistances);
             if (distancesChanged)
             {
                 UpdateLODs();
@@ -219,15 +224,9 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public bool UpdateGridSize(GridSize newGridSize)
         {
             if (!IsInitialized) return false;
-            if (_chunkRegistry.SetGridSize(newGridSize))
-            {
-                _mapper.Clear();
-                return true;
-            }
-            else
-            {
-                return false;
-            }
+            _chunkRegistry.GridSize = newGridSize;
+            _mapper.Clear();
+            return true;
         }
 
         /// <summary>
@@ -426,27 +425,20 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         private void ExtractLodConfiguration(
             ReadOnlySpan<TextureLOD> lodConfigs,
             bool deactivateOnCulled,
-            out LodSettings lodSettings,
-            out ReadOnlySpan<PowerOfTwoResolution> resolutions)
+            out float[] lodDistances,
+            out PowerOfTwoResolution[] resolutions)
         {
             if (lodConfigs.Length == 0)
-                throw new ArgumentException("LOD configurations cannot be empty.");
+                throw new ArgumentException("LOD configurations cannot be empty.", nameof(lodConfigs));
 
-            float[] distances = new float[lodConfigs.Length];
-            PowerOfTwoResolution[] resArray = new PowerOfTwoResolution[lodConfigs.Length];
+            lodDistances = new float[lodConfigs.Length];
+            resolutions = new PowerOfTwoResolution[lodConfigs.Length];
 
             for (int i = 0; i < lodConfigs.Length; i++)
             {
-                distances[i] = lodConfigs[i].distanceThreshold;
-                resArray[i] = lodConfigs[i].mapResolution;
+                lodDistances[i] = lodConfigs[i].distanceThreshold;
+                resolutions[i] = lodConfigs[i].mapResolution;
             }
-
-            lodSettings = new LodSettings
-            {
-                LodDistances = distances,
-                DeactivateOnCulled = deactivateOnCulled
-            };
-            resolutions = resArray;
         }
 
         #endregion

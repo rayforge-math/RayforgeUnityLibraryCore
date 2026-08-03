@@ -25,7 +25,7 @@ namespace Rayforge.Core.Environment.Abstractions
         bool IsInitialized { get; }
 
         /// <summary> Gets the total number of cells currently tracked or present in the spatial index. </summary>
-        int TotalCellCount { get; }
+        int Count { get; }
 
         /// <summary> Occurs when the grid's scale or fundamental structure changes. </summary>
         event Action<ISpatialGridConfiguration<TKey>> OnGridStructureChanged;

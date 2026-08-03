@@ -3,7 +3,7 @@ using Rayforge.Core.Environment.Abstractions;
 using System;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial.Chunks
+namespace Rayforge.Core.Environment.Spatial.Chunks.Tests
 {
     public abstract class LODChunkTests<T> : ChunkTests<T>
         where T : LODChunk<T>

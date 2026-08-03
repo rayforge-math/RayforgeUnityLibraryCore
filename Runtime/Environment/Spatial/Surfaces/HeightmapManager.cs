@@ -31,7 +31,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         [Header("LOD & Culling Settings")]
         public Transform lodReference;
         private Transform _activeLodReference = null;
-        public GridSizeBinary chunkSize = GridSizeBinary.Huge;
+        public GridSizeBinary chunkSize = GridSizeBinary.Size512;
         [Range(0.01f, 0.5f)] public float updateSensitivity = 0.1f;
         public TextureLodTable lodTable = new();
 
@@ -219,13 +219,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 LogDebug("Initializing TextureCoordinator...");
                 _textureCoordinator.Clear();
 
-                SpatialSettings spatialSettings = new SpatialSettings
-                {
-                    GridSize = (GridSize)chunkSize,
-                    Anchor = transform.position
-                };
-
-                _textureCoordinator.Initialize(spatialSettings, lodTable.ValidEntries, batchSize, lodReference, transform);
+                _textureCoordinator.Initialize((GridSize)chunkSize, transform.position, lodTable.ValidEntries, batchSize, lodReference, transform);
                 LogDebug("<color=green>TextureCoordinator initialized.</color>");
             }
         }
@@ -587,7 +581,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
             _textureCoordinator.UpdateTopology(sender.Registry);
 
-            LogDebug($"<color=green>Topology sync completed.</color> Coordinator is now managing {_textureCoordinator.LodGridProvider.TotalCellCount} chunk(s).");
+            LogDebug($"<color=green>Topology sync completed.</color> Coordinator is now managing {_textureCoordinator.LodGridProvider.Count} chunk(s).");
         }
 
         #endregion

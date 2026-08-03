@@ -2,7 +2,7 @@ using NUnit.Framework;
 using Rayforge.Core.Collections.Abstractions.Tests;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial.Chunks
+namespace Rayforge.Core.Environment.Spatial.Chunks.Tests
 {
     public class GridRangeStateTests : IIterationLogicTests<Vector3Int, GridRangeState>
     {

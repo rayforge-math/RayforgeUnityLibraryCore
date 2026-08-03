@@ -1,12 +1,10 @@
 using NUnit.Framework;
 using Rayforge.Core.Collections.Abstractions.Tests;
-using Rayforge.Core.Environment.Spatial;
-using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Helpers;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Rayforge.Core.Environment.Spatial.Chunks
+namespace Rayforge.Core.Environment.Spatial.Chunks.Tests
 {
     public class GridRadiusCentreStateTests : IIterationLogicTests<Vector3Int, GridRadiusCentreState>
     {

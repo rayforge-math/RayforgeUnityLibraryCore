@@ -111,7 +111,7 @@ namespace Rayforge.Core.Environment.Spatial.Tests
 
         #endregion
 
-        #region Inittialize
+        #region Initialize
 
         [Test]
         public void Initialize_DefaultParameters_CreatesContainerAndSetsProperties()
@@ -122,7 +122,7 @@ namespace Rayforge.Core.Environment.Spatial.Tests
             Assert.IsNotNull(m_Registry.Container);
             Assert.AreEqual(0, m_Registry.Count);
             Assert.IsFalse(m_Registry.ContainerLinkedToAnchor);
-            Assert.IsTrue(m_Registry.RegistryName.StartsWith("SpatialRegistry_Container"));
+            StringAssert.Contains("SpatialRegistry", m_Registry.RegistryName);
         }
 
         [Test]
@@ -137,7 +137,7 @@ namespace Rayforge.Core.Environment.Spatial.Tests
             Assert.IsNotNull(m_Registry.Container);
             Assert.AreEqual(parentTransform, m_Registry.Container.parent);
             Assert.IsTrue(m_Registry.ContainerLinkedToAnchor);
-            Assert.IsTrue(m_Registry.RegistryName.StartsWith("CustomRegistryName"));
+            StringAssert.Contains("CustomRegistryName", m_Registry.RegistryName);
 
             // Cleanup parent
             if (Application.isPlaying) UnityEngine.Object.Destroy(parentGameObject);
@@ -145,10 +145,17 @@ namespace Rayforge.Core.Environment.Spatial.Tests
         }
 
         [Test]
-        public void Initialize_NullOrWhitespaceName_ThrowsArgumentException()
+        public void Initialize_NullOrEmptyName_FallsBackToDefaultName()
         {
-            Assert.Throws<ArgumentException>(() => m_Registry.Initialize(null, null));
-            Assert.Throws<ArgumentException>(() => m_Registry.Initialize(null, "   "));
+            m_Registry.Initialize(null, null);
+
+            Assert.IsTrue(m_Registry.IsInitialized);
+            StringAssert.Contains("SpatialRegistry", m_Registry.RegistryName);
+
+            m_Registry.Initialize(null, string.Empty);
+
+            Assert.IsTrue(m_Registry.IsInitialized);
+            StringAssert.Contains("SpatialRegistry", m_Registry.RegistryName);
         }
 
         [Test]
@@ -167,7 +174,7 @@ namespace Rayforge.Core.Environment.Spatial.Tests
             Assert.IsNotNull(secondContainer);
             Assert.IsFalse(ReferenceEquals(firstContainer, secondContainer), "A brand new container transform should be created.");
             Assert.AreEqual(0, m_Registry.Count);
-            Assert.IsTrue(m_Registry.RegistryName.StartsWith("SecondInit"));
+            StringAssert.Contains("SecondInit", m_Registry.RegistryName);
         }
 
         [UnityTest]
@@ -285,6 +292,42 @@ namespace Rayforge.Core.Environment.Spatial.Tests
             Assert.AreEqual(0, m_Registry.Count);
         }
 
+        [Test]
+        public void ContainsKey_WhenKeyExists_ReturnsTrue()
+        {
+            var handler = new TestCreateHandler();
+            m_Registry.PublicGetOrCreate(1, "Entry1", Vector3.zero, ref handler, out _);
+
+            Assert.IsTrue(m_Registry.ContainsKey(1));
+        }
+
+        [Test]
+        public void ContainsKey_WhenKeyDoesNotExist_ReturnsFalse()
+        {
+            Assert.IsFalse(m_Registry.ContainsKey(999));
+        }
+
+        [Test]
+        public void TryGetValue_WhenKeyExists_ReturnsTrueAndCorrectValue()
+        {
+            var handler = new TestCreateHandler();
+            m_Registry.PublicGetOrCreate(42, "EntryObj", Vector3.zero, ref handler, out var expectedEntry);
+
+            bool success = m_Registry.TryGetValue(42, out var retrievedValue);
+
+            Assert.IsTrue(success);
+            Assert.AreEqual(expectedEntry, retrievedValue);
+        }
+
+        [Test]
+        public void TryGetValue_WhenKeyDoesNotExist_ReturnsFalseAndDefault()
+        {
+            bool success = m_Registry.TryGetValue(999, out var retrievedValue);
+
+            Assert.IsFalse(success);
+            Assert.IsNull(retrievedValue);
+        }
+
         #endregion
 
         #region RegistryName Property Tests
@@ -394,6 +437,17 @@ namespace Rayforge.Core.Environment.Spatial.Tests
             Assert.IsNull(retrievedEntry, "The retrieved entry should be null after removal.");
         }
 
+        [Test]
+        public void TryGetEntry_WhenNotInitialized_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var uninitializedRegistry = new TestSpatialRegistry();
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() =>
+                uninitializedRegistry.TryGetEntry(42, out _));
+        }
+
         #endregion
 
         #region Contains Tests
@@ -428,6 +482,17 @@ namespace Rayforge.Core.Environment.Spatial.Tests
 
             // Act & Assert
             Assert.IsFalse(m_Registry.Contains(10), "Contains should return false after the key has been removed.");
+        }
+
+        [Test]
+        public void Contains_WhenNotInitialized_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var uninitializedRegistry = new TestSpatialRegistry();
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() =>
+                uninitializedRegistry.Contains(42));
         }
 
         #endregion
@@ -540,9 +605,11 @@ namespace Rayforge.Core.Environment.Spatial.Tests
         [Test]
         public void GetOrCreate_WhenNotInitialized_ThrowsInvalidOperationException()
         {
+            // Arrange
             var freshRegistry = new TestSpatialRegistry();
             var handler = new TestCreateHandler();
 
+            // Act & Assert
             Assert.Throws<InvalidOperationException>(() =>
                 freshRegistry.PublicGetOrCreate(1, "TestObj", Vector3.zero, ref handler, out _));
         }
@@ -550,79 +617,95 @@ namespace Rayforge.Core.Environment.Spatial.Tests
         [Test]
         public void GetOrCreate_NewKey_CreatesInstanceParentsAndReturnsTrue()
         {
+            // Arrange
             m_Registry.Initialize(null, "Container");
             var handler = new TestCreateHandler();
+            var targetPosition = new Vector3(1, 2, 3);
 
-            bool isNew = m_Registry.PublicGetOrCreate(1, "EntryObj", new Vector3(1, 2, 3), ref handler, out var result);
+            // Act
+            bool isNew = m_Registry.PublicGetOrCreate(1, "EntryObj", targetPosition, ref handler, out var result);
 
-            Assert.IsTrue(isNew, "GetOrCreate should return true when a brand new entry is created.");
+            // Assert
+            Assert.IsTrue(isNew, "Method should return true indicating a brand new entry was created.");
             Assert.IsNotNull(result, "The resulting entry must not be null.");
+
+            // Verify GameObject setup
             Assert.AreEqual("EntryObj", result.gameObject.name);
-            Assert.AreEqual(m_Registry.Container, result.gameObject.transform.parent, "The new GameObject must be parented to the registry container.");
-            Assert.AreEqual(new Vector3(1, 2, 3), result.gameObject.transform.position);
-            Assert.IsTrue(m_Registry.GlobalDirty, "Creating a new entry must set GlobalDirty to true.");
+            Assert.AreEqual(targetPosition, result.gameObject.transform.position);
+            Assert.AreEqual(m_Registry.Container, result.gameObject.transform.parent, "The new GameObject must be parented to the registry's container.");
+
+            // Verify registry state
+            Assert.IsTrue(m_Registry.GlobalDirty, "Creating a new entry must flag the registry as dirty.");
             Assert.AreEqual(1, m_Registry.Count);
         }
 
         [Test]
         public void GetOrCreate_ExistingValidKey_RetrievesInstanceAndReturnsFalse()
         {
+            // Arrange
             m_Registry.Initialize(null, "Container");
             var handler = new TestCreateHandler();
 
-            // First creation
+            // Create initial entry and reset dirty state
             m_Registry.PublicGetOrCreate(1, "EntryObj", Vector3.zero, ref handler, out var firstResult);
             m_Registry.ResetDirtyFlags();
 
-            // Second call with same key
+            // Act
             bool isNew = m_Registry.PublicGetOrCreate(1, "EntryObj", Vector3.one, ref handler, out var secondResult);
 
-            Assert.IsFalse(isNew, "GetOrCreate should return false when retrieving an existing entry.");
+            // Assert
+            Assert.IsFalse(isNew, "Method should return false indicating an existing entry was retrieved.");
             Assert.AreEqual(firstResult, secondResult, "Should return the exact same entry instance.");
-            Assert.IsFalse(m_Registry.GlobalDirty, "Retrieving an existing entry should not mark GlobalDirty as true.");
+
+            // Verify registry state remains unaffected
+            Assert.IsFalse(m_Registry.GlobalDirty, "Retrieving an existing entry should not flag the registry as dirty.");
             Assert.AreEqual(1, m_Registry.Count);
         }
 
         [UnityTest]
         public IEnumerator GetOrCreate_ExistingKeyButDestroyedGameObject_OverwritesAndCreatesNew()
         {
+            // Arrange
             m_Registry.Initialize(null, "Container");
             var handler = new TestCreateHandler();
 
-            // First creation
             m_Registry.PublicGetOrCreate(1, "EntryObj", Vector3.zero, ref handler, out var firstResult);
 
-            // Destroy the underlying GameObject manually
-            if (Application.isPlaying) UnityEngine.Object.Destroy(firstResult.gameObject);
-            else UnityEngine.Object.DestroyImmediate(firstResult.gameObject);
+            // Simulate destruction of the underlying native Unity object
+            if (Application.isPlaying)
+                UnityEngine.Object.Destroy(firstResult.gameObject);
+            else
+                UnityEngine.Object.DestroyImmediate(firstResult.gameObject);
 
+            // Wait one frame to ensure Unity's lifecycle processes the destruction
             yield return null;
 
             m_Registry.ResetDirtyFlags();
 
-            // Second call with same key should recognize the destroyed object and recreate it
+            // Act
+            // The registry should recognize the native object is dead via the IsValidEntry check
             bool isNew = m_Registry.PublicGetOrCreate(1, "NewEntryObj", Vector3.zero, ref handler, out var secondResult);
 
-            Assert.IsTrue(isNew, "GetOrCreate should treat a destroyed GameObject as non-existent and create a new entry.");
-            Assert.AreNotEqual(firstResult, secondResult);
-            Assert.IsTrue(m_Registry.GlobalDirty);
+            // Assert
+            Assert.IsTrue(isNew, "Method should detect the destroyed native object, clean up the stale reference, and create a new entry.");
+            Assert.AreNotEqual(firstResult, secondResult, "A brand new entry instance should have been created.");
+            Assert.IsTrue(m_Registry.GlobalDirty, "Creating the replacement entry must flag the registry as dirty.");
         }
 
         [Test]
         public void GetOrCreate_HandlerReturnsNull_DestroysGameObjectAndThrowsNullReferenceException()
         {
+            // Arrange
             m_Registry.Initialize(null, "Container");
             var failingHandler = new TestFailingCreateHandler();
-
-            GameObject preExistingObjectsCountCheck = null;
 
             // Act & Assert
             Assert.Throws<NullReferenceException>(() =>
                 m_Registry.PublicGetOrCreate(1, "FailObj", Vector3.zero, ref failingHandler, out _));
 
-            // Verify that no orphaned entry remains in storage and the GameObject was cleaned up
-            Assert.IsFalse(m_Registry.Contains(1));
-            Assert.AreEqual(0, m_Registry.Count);
+            // Verify cleanup: The dictionary should not contain the key if creation failed
+            Assert.IsFalse(m_Registry.Contains(1), "Storage should not contain the key if creation failed.");
+            Assert.AreEqual(0, m_Registry.Count, "Storage count should be 0.");
         }
 
         #endregion

@@ -13,7 +13,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     public static class GlobalChunkRegistry<T>
         where T : Chunk<T>
     {
-        private const GridSize k_DefaultGridSize = (GridSize)GridSizeBinary.Medium;
+        private const GridSize k_DefaultGridSize = (GridSize)GridSizeBinary.Size128;
 
         /// <summary> 
         /// The underlying singleton instance of the registry. 
@@ -28,14 +28,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         static GlobalChunkRegistry()
         {
             Instance = new ChunkRegistry<T>();
-
-            var defaultSettings = new SpatialSettings
-            {
-                GridSize = k_DefaultGridSize,
-                Anchor = Vector3.zero
-            };
-
-            Instance.Initialize(defaultSettings);
+            Instance.Initialize(k_DefaultGridSize, Vector3.zero);
         }
 
         #region Grid Properties
