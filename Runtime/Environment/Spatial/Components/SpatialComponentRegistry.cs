@@ -53,38 +53,33 @@ namespace Rayforge.Core.Environment.Spatial.Components
         /// <inheritdoc />
         public void Initialize(ISpatialGridQuery<TKey> gridProvider)
         {
-            _gridProvider = gridProvider ?? throw new ArgumentNullException(nameof(gridProvider));
-
             Reset();
+            _gridProvider = gridProvider ?? throw new ArgumentNullException(nameof(gridProvider));
         }
 
         /// <inheritdoc />
         public void FullRemap()
         {
-            if (!IsInitialized) return;
-
-            try
+            if (!IsInitialized)
             {
-                _buckets.Clear();
-                _dirtyBuckets.Clear();
-
-                foreach (var entry in _registry)
-                {
-                    UpdateBuckets(entry.Key, entry.Value.anchorBounds, true);
-                }
+                throw new InvalidOperationException("Registry not initialized!");
             }
-            catch (Exception e)
+
+            _buckets.Clear();
+            _dirtyBuckets.Clear();
+
+            foreach (var entry in _registry)
             {
-                throw new Exception($"FullRemap failed: {e.Message}", e);
+                UpdateBuckets(entry.Key, entry.Value.anchorBounds, true);
             }
         }
 
         /// <inheritdoc />
         public void Clear()
         {
-            _registry?.Clear();
-            _buckets?.Clear();
-            _dirtyBuckets?.Clear();
+            _registry.Clear();
+            _buckets.Clear();
+            _dirtyBuckets.Clear();
         }
 
         /// <inheritdoc />
