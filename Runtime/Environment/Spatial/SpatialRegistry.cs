@@ -177,9 +177,14 @@ namespace Rayforge.Core.Environment.Spatial
         {
             if (m_Storage.Remove(key, out TValue value))
             {
-                if (value != null && value.gameObject != null)
+                if (value != null)
                 {
-                    DestroyGameObject(value.gameObject);
+                    if (value.gameObject != null)
+                    {
+                        DestroyGameObject(value.gameObject);
+                    }
+
+                    value.Dispose();
                 }
                 m_GlobalDirty = true;
             }
@@ -192,9 +197,14 @@ namespace Rayforge.Core.Environment.Spatial
         {
             foreach (var value in m_Storage.Values)
             {
-                if (value != null && value.gameObject != null)
+                if (value != null)
                 {
-                    DestroyGameObject(value.gameObject);
+                    if (value.gameObject != null)
+                    {
+                        DestroyGameObject(value.gameObject);
+                    }
+
+                    value.Dispose();
                 }
             }
 
@@ -236,7 +246,7 @@ namespace Rayforge.Core.Environment.Spatial
             result = CreateNewEntry(key, name, position, ref onCreate);
             m_Storage[key] = result;
             m_GlobalDirty = true;
-
+            
             return true;
         }
 
@@ -360,7 +370,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         /// <typeparam name="TAction">The type of the execution handler.</typeparam>
         /// <param name="action">The action handler to execute for each key.</param>
-        public void ForEachKey<TAction>(TAction action)
+        public void ForEachKey<TAction>(ref TAction action)
             where TAction : struct, IExecutionHandler<TKey>
         {
             var iter = m_Storage.Keys.GetEnumerator().ToIterator();
@@ -375,7 +385,7 @@ namespace Rayforge.Core.Environment.Spatial
         /// </summary>
         /// <typeparam name="TAction">The type of the execution handler.</typeparam>
         /// <param name="action">The action handler to execute for each entry.</param>
-        public void ForEachEntry<TAction>(TAction action)
+        public void ForEachEntry<TAction>(ref TAction action)
             where TAction : struct, IExecutionHandler<TValue>
         {
             var iter = m_Storage.Values.GetEnumerator().ToIterator();

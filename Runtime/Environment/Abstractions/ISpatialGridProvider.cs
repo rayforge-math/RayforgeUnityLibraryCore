@@ -13,6 +13,5 @@ namespace Rayforge.Core.Environment.Abstractions
         ISpatialCoordinateMapper<TKey>,
         ISpatialGridQuery<TKey>
         where TKey : struct, IEquatable<TKey>
-    {
-    }
+    { }
 }

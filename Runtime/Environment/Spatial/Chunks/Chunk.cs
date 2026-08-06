@@ -108,6 +108,8 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #region Cleanup
 
+        private bool m_Disposed = false;
+
         /// <summary> 
         /// Callback for cleanup when chunk is disposed.
         /// (e.g., returning heightmap leases to the pool) during disposal.
@@ -120,42 +122,33 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         /// </summary>
         protected abstract void OnDispose();
 
-        private bool _isDisposed = false;
-
         /// <summary>
-        /// Public entry point to safely remove a chunk from the world.
-        /// Triggers resource cleanup and destroys the GameObject.
+        /// Releases resources and triggers cleanup callbacks.
+        /// Does NOT call Destroy(gameObject) as lifecycle is managed by SpatialRegistry.
         /// </summary>
         void IDisposable.Dispose()
         {
-            if (_isDisposed) return;
-            _isDisposed = true;
+            if (m_Disposed) return;
+            m_Disposed = true;
 
             OnCleanup?.Invoke((T)this);
             OnDispose();
 
             OnCleanup = null;
-
-            if (gameObject != null)
-            {
-                if (Application.isPlaying)
-                    Destroy(gameObject);
-                else
-                    DestroyImmediate(gameObject);
-            }
-
             GC.SuppressFinalize(this);
         }
 
-        void IChunkControl.Dispose()
-            => ((IDisposable)this).Dispose();
+        void IChunkControl.Dispose() => ((IDisposable)this).Dispose();
 
         /// <summary>
-        /// Safety fallback for manual deletion via the Unity Editor or Scripts.
+        /// Fallback if the GameObject is destroyed externally (e.g. Scene unload).
         /// </summary>
         private void OnDestroy()
         {
-            if (!_isDisposed) ((IChunkControl)this).Dispose();
+            if (!m_Disposed)
+            {
+                ((IDisposable)this).Dispose();
+            }
         }
 
         #endregion

@@ -16,46 +16,82 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     public class LODChunkRegistry<T> : ChunkRegistry<T>, ILODGridProvider<Vector3Int>
         where T : LODChunk<T>
     {
+        #region Private Structs
+
+        private struct CountHandler : IExecutionHandler<Vector3Int>
+        {
+            public int Count;
+
+            public void Execute(Vector3Int value)
+            {
+                Count++;
+            }
+        }
+
+        #endregion
+
         #region Fields & Config
 
-        private float[] _lodSqrDistances;
-        private float[] _lodDistances;
-        private bool _deactivateOnCulled;
+        private float[] m_LodSqrDistances;
+        private float[] m_LodDistances;
+        private bool m_DeactivateOnCulled;
 
-        public Transform Viewer { get; private set; }
+        private Transform m_Viewer;
+
+        /// <summary>
+        /// Gets or sets the current world-space position reference of the player or camera focus.
+        /// </summary>
+        public Transform Viewer
+        {
+            get => m_Viewer;
+            set
+            {
+                if (value == null)
+                    throw new ArgumentNullException(nameof(value), "Viewer cannot be null.");
+
+                if (m_Viewer != value)
+                {
+                    m_Viewer = value;
+                }
+            }
+        }
+
+        /// <summary> Implementation of ILODGridProvider. Returns current viewer position. </summary>
+        public Vector3 ViewerPos => (Viewer != null) ? Viewer.position : Vector3.zero;
 
         /// <summary>
         /// If true, chunks exceeding the maximum LOD distance threshold are automatically deactivated.
         /// Use this to save performance by disabling GameObjects that are too far away to be visible.
         /// </summary>
-        public bool DeactivateOnCulled => _deactivateOnCulled;
+        public bool DeactivateOnCulled => m_DeactivateOnCulled;
 
         /// <summary> 
         /// High-performance access to the squared thresholds. 
         /// Avoids array copying and heap allocations.
         /// </summary>
-        public ReadOnlySpan<float> LodSqrDistances => _lodSqrDistances;
+        public ReadOnlySpan<float> LodSqrDistances => m_LodSqrDistances;
 
         /// <summary>
         /// High-performance access to the thresholds. 
         /// Avoids array copying and heap allocations.
         /// </summary>
-        public ReadOnlySpan<float> LodDistances => _lodDistances;
-
-        /// <summary> Implementation of ILODGridProvider. Returns current viewer position. </summary>
-        public Vector3 ViewerPos => (Viewer != null) ? Viewer.position : Vector3.zero;
+        public ReadOnlySpan<float> LodDistances => m_LodDistances;
 
         /// <summary> Implementation of ILODGridProvider. Returns number of LOD levels. </summary>
-        public int LodCount => _lodSqrDistances?.Length ?? 0;
-
-        /// <summary> Implementation of ILODGridProvider. </summary>
-        public event Action<ILODGridProvider<Vector3Int>> OnLODSettingsChanged;
+        public int LodCount => m_LodSqrDistances?.Length ?? 0;
 
         /// <summary> 
         /// Returns the number of chunks that are currently within a valid LOD range (LOD >= 0).
         /// </summary>
         public int ActiveCellCount => _activeCellCountCache;
         private int _activeCellCountCache = 0;
+
+        #endregion
+
+        #region Events
+
+        /// <summary> Implementation of ILODGridProvider. </summary>
+        public event Action<ILODGridConfiguration<Vector3Int>> OnLODSettingsChanged;
 
         #endregion
 
@@ -74,57 +110,51 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             GridSize gridSize,
             Vector3 anchor,
             ReadOnlySpan<float> lodDistances,
+            Transform viewer,
             bool deactivateOnCulled = true,
-            Transform viewer = null,
             Transform parent = null,
             string name = "LODChunkRegistry")
         {
+            if (viewer == null)
+            {
+                throw new ArgumentNullException(nameof(viewer), "Viewer transform is required for LOD calculations and cannot be null.");
+            }
+
             if (lodDistances.IsEmpty)
             {
-                throw new ArgumentException("LOD distances cannot be empty.", nameof(lodDistances));
+                throw new ArgumentException("LOD distances cannot be empty. At least one LOD level must be defined.", nameof(lodDistances));
+            }
+
+            if (lodDistances[0] <= 0f)
+            {
+                throw new ArgumentException("The first LOD distance must be greater than zero.", nameof(lodDistances));
             }
 
             base.Initialize(gridSize, anchor, parent, name);
 
-            _deactivateOnCulled = deactivateOnCulled;
-            Viewer = viewer;
+            m_DeactivateOnCulled = deactivateOnCulled;
+            m_Viewer = viewer;
 
-            ApplyLodConfiguration(lodDistances);
+            UpdateLodDistances(lodDistances);
         }
 
         /// <summary>
         /// Updates the internal squared distance thresholds.
-        /// Re-calculates squared values to keep the Update loop math simple and fast.
         /// </summary>
         public bool UpdateLodDistances(ReadOnlySpan<float> newDistances)
-            => ApplyLodConfiguration(newDistances);
-
-        /// <summary> Updates the viewer reference (e.g., when switching cameras). </summary>
-        public bool SetViewer(Transform viewer)
         {
-            if (Viewer != viewer)
-            {
-                Viewer = viewer;
-                return true;
-            }
-            return false;
-        }
+            if (!IsInitialized)
+                throw new InvalidOperationException("Cannot update LOD distances on an uninitialized registry.");
 
-        /// <summary>
-        /// The single source of truth for changing LOD arrays.
-        /// Handles validation, allocation, and notification.
-        /// </summary>
-        private bool ApplyLodConfiguration(ReadOnlySpan<float> newDistances)
-        {
-            if (newDistances.Length == 0)
-                throw new ArgumentException("Cannot apply an empty LOD configuration.");
+            if (newDistances.IsEmpty)
+                throw new ArgumentException("Cannot apply an empty LOD configuration.", nameof(newDistances));
 
-            if (_lodDistances != null && _lodDistances.Length == newDistances.Length)
+            if (m_LodDistances != null && m_LodDistances.Length == newDistances.Length)
             {
                 bool changed = false;
                 for (int i = 0; i < newDistances.Length; i++)
                 {
-                    if (!Mathf.Approximately(_lodDistances[i], newDistances[i]))
+                    if (!Mathf.Approximately(m_LodDistances[i], newDistances[i]))
                     {
                         changed = true;
                         break;
@@ -134,18 +164,26 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             }
 
             int count = newDistances.Length;
-            _lodDistances = new float[count];
-            _lodSqrDistances = new float[count];
+
+            float[] newLinearDistances = new float[count];
+            float[] newSqrDistances = new float[count];
 
             for (int i = 0; i < count; i++)
             {
                 float d = newDistances[i];
-                if (i > 0 && d <= _lodDistances[i - 1])
-                    throw new InvalidOperationException($"LOD Distance at index {i} ({d}) must be greater than index {i - 1} ({_lodDistances[i - 1]}).");
 
-                _lodDistances[i] = d;
-                _lodSqrDistances[i] = d * d;
+                if (d <= 0f)
+                    throw new ArgumentException($"LOD distance at index {i} ({d}) must be greater than zero.", nameof(newDistances));
+
+                if (i > 0 && d <= newLinearDistances[i - 1])
+                    throw new ArgumentException($"LOD distance at index {i} ({d}) must be strictly greater than the previous index ({newLinearDistances[i - 1]}).", nameof(newDistances));
+
+                newLinearDistances[i] = d;
+                newSqrDistances[i] = d * d;
             }
+
+            m_LodDistances = newLinearDistances;
+            m_LodSqrDistances = newSqrDistances;
 
             OnLODSettingsChanged?.Invoke(this);
 
@@ -154,23 +192,34 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #endregion
 
-        #region Factory Overrides
+        #region Helpers
 
         /// <summary>
-        /// Overrides the base factory using the <see cref="IExecutionHandler{T}"/> pattern.
+        /// Calculates a radius extent vector that zeroes out inactive axes to prevent Bounding Box expansion on unused axes.
         /// </summary>
-        /// <typeparam name="THandler">The struct handler used to configure the chunk.</typeparam>
-        /// <param name="key">The 3D grid coordinate for the chunk.</param>
-        /// <param name="onConfigure">A struct handler containing the state and logic for chunk setup.</param>
-        /// <param name="chunk">When this method returns, contains the initialized and LOD-configured chunk instance.</param>
-        /// <returns>True if a brand new chunk was created; otherwise, false.</returns>
+        private Vector3 GetActiveRadiusExtent(float radius)
+        {
+            return new Vector3(
+                IsXActive ? radius : 0f,
+                IsYActive ? radius : 0f,
+                IsZActive ? radius : 0f
+            );
+        }
+
+        #endregion
+
+        #region Factory Overrides
+
         public override bool GetOrCreateChunk<THandler>(Vector3Int key, ref THandler onConfigure, out T chunk)
         {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Cannot create or retrieve chunks on an uninitialized registry.");
+
             bool isNew = base.GetOrCreateChunk(key, ref onConfigure, out chunk);
 
             if (isNew)
             {
-                ((ILODReceiver)chunk).ConfigureLODRange(_lodDistances.Length - 1);
+                ((ILODReceiver)chunk).ConfigureLODRange(m_LodDistances.Length - 1);
 
                 chunk.OnLODChanged += HandleChunkLODChanged;
                 chunk.OnCleanup += HandleChunkDestroyed;
@@ -181,9 +230,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return isNew;
         }
 
-        /// <summary>
-        /// Reacts to individual chunk LOD changes to keep the global ActiveCellCount in sync.
-        /// </summary>
         private void HandleChunkLODChanged(ILODState sender, int oldLod, int newLod)
         {
             bool wasActive = oldLod >= 0;
@@ -193,9 +239,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             else if (wasActive && !isActive) _activeCellCountCache--;
         }
 
-        /// <summary>
-        /// Ensures the active count is decremented if an active chunk is destroyed.
-        /// </summary>
         private void HandleChunkDestroyed(T chunk)
         {
             chunk.OnLODChanged -= HandleChunkLODChanged;
@@ -209,11 +252,14 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         #endregion
 
-        #region ILODGridProvider Implementation
+        #region ILODGridQuery Implementation
 
         /// <inheritdoc />
-        public int CalculateTargetLOD(float sqrDistance)
+        public int CalculateTargetLODSqr(float sqrDistance)
         {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Call Initialize() first.");
+
             ReadOnlySpan<float> thresholds = LodSqrDistances;
             for (int i = 0; i < thresholds.Length; i++)
             {
@@ -221,99 +267,182 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             }
             return -1;
         }
-        
+
         /// <inheritdoc />
-        public IIterator<Vector3Int> GetKeysInLODLevel(int lodIndex, Vector3 center)
+        public int CalculateTargetLOD(float distance)
         {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Call Initialize() first.");
+
+            ReadOnlySpan<float> thresholds = LodDistances;
+            for (int i = 0; i < thresholds.Length; i++)
+            {
+                if (distance < thresholds[i]) return i;
+            }
+            return -1;
+        }
+
+        /// <inheritdoc />
+        public IIterator<Vector3Int> GetKeysInLOD(int lodIndex, Vector3 center)
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Call Initialize() first.");
+
             if (lodIndex < 0 || lodIndex >= LodCount)
                 return IIterator<Vector3Int>.Empty();
 
-            return IIterator<Vector3Int>.Empty();
-        }
-        
-        /// <inheritdoc />
-        public int GetKeyCountInLODLevel(int lodIndex, Vector3 center)
-        {
-            if (lodIndex < 0 || lodIndex >= LodCount) return 0;
+            float minSqrRadius = lodIndex == 0 ? 0f : LodSqrDistances[lodIndex - 1];
+            float maxSqrRadius = LodSqrDistances[lodIndex];
 
             float outerRadius = LodDistances[lodIndex];
-            Bounds searchBounds = new Bounds(center, Vector3.one * outerRadius * 2f);
-            int count = 0;
+            Vector3 radiusExtent = GetActiveRadiusExtent(outerRadius);
+            Vector3Int minKey = WorldToGrid(center - radiusExtent);
+            Vector3Int maxKey = WorldToGrid(center + radiusExtent);
+            float gridSize = (float)GridSize;
 
-            foreach (var key in GetKeysInBounds(searchBounds))
-            {
-                float sqrDist = GetSqrDistanceToClosestEdge(key, center);
-                if (CalculateTargetLOD(sqrDist) == lodIndex)
-                {
-                    count++;
-                }
-            }
-            return count;
+            var state = new GridLODEdgeState(
+                minKey,
+                maxKey,
+                center,
+                minSqrRadius,
+                maxSqrRadius,
+                new Vector3(gridSize, gridSize, gridSize),
+                ActiveAxes
+            );
+
+            return new Iterator<Vector3Int, GridLODEdgeState>(state);
+        }
+
+        /// <inheritdoc />
+        public IIterator<Vector3Int> GetKeysInFullRange(Vector3 center)
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Call Initialize() first.");
+
+            if (LodCount == 0)
+                return IIterator<Vector3Int>.Empty();
+
+            float maxRadius = LodDistances[LodCount - 1];
+            Vector3 radiusExtent = GetActiveRadiusExtent(maxRadius);
+            Vector3Int minKey = WorldToGrid(center - radiusExtent);
+            Vector3Int maxKey = WorldToGrid(center + radiusExtent);
+            float gridSize = (float)GridSize;
+
+            var state = new GridLODEdgeState(
+                minKey,
+                maxKey,
+                center,
+                0f,
+                LodSqrDistances[LodCount - 1],
+                new Vector3(gridSize, gridSize, gridSize),
+                ActiveAxes
+            );
+
+            return new Iterator<Vector3Int, GridLODEdgeState>(state);
         }
 
         /// <inheritdoc />
         public void ForEachKeyInLOD<TAction>(int lodIndex, Vector3 center, ref TAction action)
             where TAction : struct, IExecutionHandler<Vector3Int>
         {
-            if (lodIndex < 0 || lodIndex >= LodCount) return;
+            if (!IsInitialized)
+                throw new InvalidOperationException("Call Initialize() first.");
+
+            if (lodIndex < 0 || lodIndex >= LodCount)
+                return;
+
+            float minSqrRadius = lodIndex == 0 ? 0f : LodSqrDistances[lodIndex - 1];
+            float maxSqrRadius = LodSqrDistances[lodIndex];
 
             float outerRadius = LodDistances[lodIndex];
-            Bounds searchBounds = new Bounds(center, Vector3.one * outerRadius * 2f);
+            Vector3 radiusExtent = GetActiveRadiusExtent(outerRadius);
+            Vector3Int minKey = WorldToGrid(center - radiusExtent);
+            Vector3Int maxKey = WorldToGrid(center + radiusExtent);
+            float gridSize = (float)GridSize;
 
-            foreach (var key in GetKeysInBounds(searchBounds))
-            {
-                float sqrDist = GetSqrDistanceToClosestEdge(key, center);
+            var state = new GridLODEdgeState(
+                minKey,
+                maxKey,
+                center,
+                minSqrRadius,
+                maxSqrRadius,
+                new Vector3(gridSize, gridSize, gridSize),
+                ActiveAxes
+            );
 
-                if (CalculateTargetLOD(sqrDist) == lodIndex)
-                {
-                    action.Execute(key);
-                }
-            }
-        }
-
-        /// <inheritdoc />
-        public IIterator<Vector3Int> GetKeysInFullRange(Vector3 center)
-        {
-            if (LodCount == 0)
-                return IIterator<Vector3Int>.Empty();
-
-            float maxRadius = LodDistances[LodCount - 1];
-            return GetKeysInRadius(center, maxRadius, useEdgeDistance: true);
-        }
-
-        /// <inheritdoc />
-        public void ForEachKeyInRange<TAction>(Vector3 center, ref TAction action)
-            where TAction : struct, IExecutionHandler<Vector3Int>
-        {
-            if (LodCount == 0) return;
-
-            float maxRadius = LodDistances[LodCount - 1];
-
-            foreach (var key in GetKeysInRadius(center, maxRadius, useEdgeDistance: true))
+            while (state.MoveNext(ref state, out Vector3Int key))
             {
                 action.Execute(key);
             }
         }
 
         /// <inheritdoc />
-        public int GetKeyCountInFullRange(Vector3 center)
+        public void ForEachKeyInFullRange<TAction>(Vector3 center, ref TAction action)
+            where TAction : struct, IExecutionHandler<Vector3Int>
         {
-            if (LodCount == 0) return 0;
+            if (!IsInitialized)
+                throw new InvalidOperationException("Call Initialize() first.");
+
+            if (LodCount == 0) return;
 
             float maxRadius = LodDistances[LodCount - 1];
-            int count = 0;
+            Vector3 radiusExtent = GetActiveRadiusExtent(maxRadius);
+            Vector3Int minKey = WorldToGrid(center - radiusExtent);
+            Vector3Int maxKey = WorldToGrid(center + radiusExtent);
+            float gridSize = (float)GridSize;
 
-            foreach (var _ in GetKeysInRadius(center, maxRadius, useEdgeDistance: true))
+            var state = new GridLODEdgeState(
+                minKey,
+                maxKey,
+                center,
+                0f,
+                LodSqrDistances[LodCount - 1],
+                new Vector3(gridSize, gridSize, gridSize),
+                ActiveAxes
+            );
+
+            while (state.MoveNext(ref state, out Vector3Int key))
             {
-                count++;
+                action.Execute(key);
             }
+        }
 
-            return count;
+        #endregion
+
+        #region ILODGridMetrics Implementation
+
+        /// <inheritdoc />
+        public int GetKeyCountInLODLevel(int lodIndex, Vector3 center)
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Call Initialize() first.");
+
+            if (lodIndex < 0 || lodIndex >= LodCount) return 0;
+
+            var handler = new CountHandler();
+            ForEachKeyInLOD(lodIndex, center, ref handler);
+            return handler.Count;
+        }
+
+        /// <inheritdoc />
+        public int GetKeyCountInFullRange(Vector3 center)
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Call Initialize() first.");
+
+            if (LodCount == 0) return 0;
+
+            var handler = new CountHandler();
+            ForEachKeyInFullRange(center, ref handler);
+            return handler.Count;
         }
 
         /// <inheritdoc />
         public int GetMaxCapacityForLODLevel(int lodIndex)
         {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Call Initialize() first.");
+
             if (lodIndex < 0 || lodIndex >= LodCount) return 0;
 
             float outerRadius = LodDistances[lodIndex];
@@ -333,12 +462,12 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
             return Mathf.Max(0, outerMaxCount - innerMinCount);
         }
 
-        /// <summary>
-        /// Helper to calculate cell counts based on which axes are currently active.
-        /// Handles 1D, 2D, and 3D configurations automatically.
-        /// </summary>
+        /// <inheritdoc />
         private int CalculateCountForActiveAxes(int axisCount)
         {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Call Initialize() first.");
+
             if (axisCount <= 0) return 0;
 
             int total = 1;
@@ -359,6 +488,9 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
 
         public int UpdateLODs(Vector3 focusPos)
         {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Call Initialize() first.");
+
             int changeCount = 0;
             foreach (T chunk in AllEntries)
             {
@@ -373,8 +505,8 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         private bool UpdateChunkLOD(T chunk, Vector3 pos)
         {
             float sqrDist = GetSqrDistanceToClosestEdge(chunk.GridKey, pos);
-            int targetLod = CalculateTargetLOD(sqrDist);
-            return ((ILODReceiver)chunk).UpdateLOD(targetLod, _deactivateOnCulled);
+            int targetLod = CalculateTargetLODSqr(sqrDist);
+            return ((ILODReceiver)chunk).UpdateLOD(targetLod, m_DeactivateOnCulled);
         }
 
         #endregion

@@ -18,18 +18,6 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
     public class ChunkRegistry<T> : SpatialRegistry<Vector3Int, T>, ISpatialGridProvider<Vector3Int>
         where T : Chunk<T>
     {
-        #region Internal Structures
-
-        private struct CreateMeta
-        {
-            public GridSize gridSize;
-            public bool isXActive;
-            public bool isYActive;
-            public bool isZActive;
-        }
-
-        #endregion
-
         #region Events & State
 
         /// <summary>
@@ -366,6 +354,9 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
         public virtual bool GetOrCreateChunk<THandler>(Vector3Int key, ref THandler onConfigure, out T chunk)
             where THandler : struct, IExecutionHandler<T>
         {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Registry is not initialized. Call Initialize() first.");
+
             Vector3Int validKey = MaskKey(key);
 
             var factory = new StatefulFuncHandler<EntryCreateData<Vector3Int>, ChunkRegistry<T>, T>(

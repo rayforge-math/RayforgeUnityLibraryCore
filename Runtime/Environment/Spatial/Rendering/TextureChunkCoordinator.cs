@@ -116,7 +116,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
             ExtractLodConfiguration(lodConfigs, deactivateOnCulled, out var lodDistances, out var resolutions);
 
-            _chunkRegistry.Initialize(gridSize, anchor, lodDistances, deactivateOnCulled, viewer, parent);
+            _chunkRegistry.Initialize(gridSize, anchor, lodDistances, viewer, deactivateOnCulled, parent);
             _mapper.Configure(_chunkRegistry, resolutions, batchSize);
         }
 
@@ -151,16 +151,16 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public void SetViewer(Transform viewer)
         {
             if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
-            _chunkRegistry.SetViewer(viewer);
+            _chunkRegistry.Viewer = viewer;
         }
 
         /// <summary>
         /// Shifts the coordinate system anchor to support large-scale world movement.
         /// </summary>
-        public void SetAnchor(Vector3 newAnchor)
+        public void SetAnchor(Vector3 anchor)
         {
             if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
-            _chunkRegistry.Anchor =newAnchor;
+            _chunkRegistry.Anchor = anchor;
         }
 
         /// <summary>

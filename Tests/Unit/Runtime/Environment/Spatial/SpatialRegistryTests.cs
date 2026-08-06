@@ -942,7 +942,7 @@ namespace Rayforge.Core.Environment.Spatial.Tests
             m_Registry.PublicGetOrCreate(20, "Entry2", Vector3.zero, ref handler, out _);
 
             var actionHandler = new TestKeyActionHandler();
-            m_Registry.ForEachKey(actionHandler);
+            m_Registry.ForEachKey(ref actionHandler);
         }
 
         [Test]
@@ -954,7 +954,8 @@ namespace Rayforge.Core.Environment.Spatial.Tests
             m_Registry.PublicGetOrCreate(2, "Entry2", Vector3.zero, ref handler, out var entry2);
 
             int executionCount = 0;
-            m_Registry.ForEachEntry(new TestActionHandler { OnExecute = () => executionCount++ });
+            var resultHandler = new TestActionHandler { OnExecute = () => executionCount++ };
+            m_Registry.ForEachEntry(ref resultHandler);
 
             Assert.AreEqual(2, executionCount, "ForEachEntry should execute the handler action for every entry in storage.");
         }
@@ -985,7 +986,8 @@ namespace Rayforge.Core.Environment.Spatial.Tests
             m_Registry.Initialize(null, "Container");
 
             int executionCount = 0;
-            m_Registry.ForEachKey(new TestKeyActionHandler { OnExecute = () => executionCount++ });
+            var keyHandler = new TestKeyActionHandler { OnExecute = () => executionCount++ };
+            m_Registry.ForEachKey(ref keyHandler);
 
             Assert.AreEqual(0, executionCount, "ForEachKey should not execute any actions when the registry is empty.");
         }
@@ -996,7 +998,8 @@ namespace Rayforge.Core.Environment.Spatial.Tests
             m_Registry.Initialize(null, "Container");
 
             int executionCount = 0;
-            m_Registry.ForEachEntry(new TestActionHandler { OnExecute = () => executionCount++ });
+            var resultHandler = new TestActionHandler { OnExecute = () => executionCount++ };
+            m_Registry.ForEachEntry(ref resultHandler);
 
             Assert.AreEqual(0, executionCount, "ForEachEntry should not execute any actions when the registry is empty.");
         }
