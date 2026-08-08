@@ -1,3 +1,4 @@
+using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Diagnostics;
 using Rayforge.Core.EditorExtensions.EditorStructures;
 using Rayforge.Core.Environment.Abstractions;
@@ -5,7 +6,6 @@ using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Surfaces;
 using Rayforge.Core.Environment.Tracking;
 using Rayforge.Core.ManagedResources.NativeMemory;
-using Rayforge.Core.Rendering.EditorStructures;
 using Rayforge.Core.Rendering.Helpers;
 using System;
 using System.Diagnostics;
@@ -33,7 +33,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         private Transform _activeLodReference = null;
         public GridSizeBinary chunkSize = GridSizeBinary.Size512;
         [Range(0.01f, 0.5f)] public float updateSensitivity = 0.1f;
-        public TextureLodTable lodTable = new();
+        public PowerOfTwoResolution baseResolution = PowerOfTwoResolution.Res256;
+        public float[] lodDistances;
 
         [Header("Atlas & Batching")]
         [Range(2, 64)] public int batchSize = 16;
@@ -69,8 +70,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void Awake()
         {
-            lodTable.OnTableChanged += HandleLodTableChanged;
-
             ValidateSettings();
 
             UpdateShiftRelaySubscription(shiftRelay);
@@ -116,8 +115,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void OnDestroy()
         {
-            lodTable.OnTableChanged -= HandleLodTableChanged;
-
             UpdateShiftRelaySubscription(null);
             UpdateLodReferenceSubscription(null);
 
@@ -128,7 +125,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         {
             LogDebug("Refreshing dependencies and sanitizing LOD table...");
             SetupDependencies();
-            lodTable.Sanitize();
             LogDebug("<color=green>Editor refresh completed.</color>");
         }
 
@@ -208,9 +204,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void InitCoordinator(bool force = false)
         {
-            if (lodTable == null)
-                throw new NullReferenceException($"{nameof(lodTable)} is missing on {gameObject.name}!");
-
             if (lodReference == null)
                 throw new InvalidOperationException("Cannot initialize Coordinator without a LOD Reference (Viewer)!");
 
@@ -219,7 +212,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 LogDebug("Initializing TextureCoordinator...");
                 _textureCoordinator.Clear();
 
-                _textureCoordinator.Initialize((GridSize)chunkSize, transform.position, lodTable.ValidEntries, batchSize, lodReference, transform);
+                _textureCoordinator.Initialize((GridSize)chunkSize, transform.position, lodDistances, baseResolution, batchSize, lodReference, transform);
                 LogDebug("<color=green>TextureCoordinator initialized.</color>");
             }
         }
@@ -546,27 +539,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         {
             _textureCoordinator?.NotifyOriginShift(delta);
             _lastUpdatePos += delta;
-        }
-
-        private void HandleLodTableChanged(UniversalLodTable<TextureLOD> lodTable)
-        {
-            LogDebug("LodTable reported LOD update. Syncing with components...");
-
-            if(lodTable == null || _textureCoordinator == null || !_textureCoordinator.IsInitialized)
-            {
-                LogDebug("<color=orange>LOD sync aborted: LodTable is null or TextureCoordinator is null or uninitialized.</color>");
-                return;
-            }
-
-
-            if (_textureCoordinator.UpdateLodConfiguration(lodTable.ValidEntries))
-            {
-                CheckAndAllocateAtlas(_textureCoordinator);
-            }
-            else
-            {
-                LogDebug("<color=green>LodTable update resulted in no structural changes. System state preserved.</color>");
-            }
         }
 
         private void HandleSurfacesChanged(SurfaceTracker sender)

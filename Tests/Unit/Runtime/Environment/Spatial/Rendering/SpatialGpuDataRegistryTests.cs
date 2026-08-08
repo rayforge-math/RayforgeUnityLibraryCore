@@ -7,6 +7,8 @@ using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
 {
+    #region Test Structs
+
     public struct CullingTestData : IGpuData<CullingTestData>
     {
         public int data;
@@ -68,6 +70,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
             Count++;
         }
     }
+
+    #endregion
 
     [TestFixture]
     public class SpatialGpuDataRegistryTests : ISpatialMetadataProviderTests<Vector2Int, CullingTestData, RenderTestData, SpatialGpuDataRegistry<Vector2Int, CullingTestData, RenderTestData>>

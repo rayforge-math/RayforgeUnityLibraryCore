@@ -4,7 +4,6 @@ using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Rendering;
 using Rayforge.Core.Execution.Handler;
 using Rayforge.Core.Rendering.Abstractions;
-using Rayforge.Core.Rendering.EditorStructures;
 using System;
 using UnityEngine;
 
@@ -16,7 +15,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// </summary>
     public class TextureChunkCoordinator
     {
-        private readonly SphereLodAtlasMapper<Vector3Int> _mapper = new();
+        private readonly SphereAtlasMapper<Vector3Int> _mapper = new();
         private readonly LODChunkRegistry<TextureLodChunk> _chunkRegistry = new();
 
         #region GPU Buffer Metadata Access
@@ -96,17 +95,13 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public void Initialize(
             GridSize gridSize,
             Vector3 anchor,
-            ReadOnlySpan<TextureLOD> lodConfigs,
+            ReadOnlySpan<float> lodDistances,
+            PowerOfTwoResolution baseResolution,
             int batchSize,
             Transform viewer,
-            Transform parent,
-            bool deactivateOnCulled = true)
+            bool deactivateOnCulled = true,
+            Transform parent = null)
         {
-            if (lodConfigs.IsEmpty)
-            {
-                throw new ArgumentException("LOD configurations cannot be empty.", nameof(lodConfigs));
-            }
-
             if (viewer == null)
             {
                 throw new ArgumentNullException(nameof(viewer), "Viewer transform cannot be null.");
@@ -114,10 +109,8 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
             Reset();
 
-            ExtractLodConfiguration(lodConfigs, deactivateOnCulled, out var lodDistances, out var resolutions);
-
             _chunkRegistry.Initialize(gridSize, anchor, lodDistances, viewer, deactivateOnCulled, parent);
-            _mapper.Configure(_chunkRegistry, resolutions, batchSize);
+            _mapper.Initialize(_chunkRegistry, baseResolution, batchSize);
         }
 
         /// <summary>
@@ -192,11 +185,9 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// After updating thresholds, we refresh all chunks to apply the new logic.
         /// </summary>
         /// <returns>True if the underlying atlas layout has been changed.</returns>
-        public bool UpdateLodConfiguration(ReadOnlySpan<TextureLOD> lodConfigs)
+        public bool UpdateLodConfiguration(ReadOnlySpan<float> lodDistances, PowerOfTwoResolution baseResolution)
         {
             if (!IsInitialized) return false;
-
-            ExtractLodConfiguration(lodConfigs, _chunkRegistry.DeactivateOnCulled, out float[] lodDistances, out var resolutions);
 
             bool distancesChanged = _chunkRegistry.UpdateLodDistances(lodDistances);
             if (distancesChanged)
@@ -204,13 +195,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 UpdateLODs();
             }
 
-            bool layoutChanged = _mapper.Configure(_chunkRegistry, resolutions, _mapper.Registry.BatchSize);
-            if (layoutChanged)
-            {
-                ForceRequeueAll();
-            }
+            _mapper.Initialize(_chunkRegistry, baseResolution, _mapper.Registry.BatchSize);
+            ForceRequeueAll();
 
-            return distancesChanged || layoutChanged;
+            return distancesChanged;
         }
 
         /// <summary>
@@ -254,8 +242,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public void ForceRequeueAll()
         {
             if (!IsInitialized) return;
-
-            _mapper.ClearBakeQueue();
 
             foreach (var chunk in _chunkRegistry.AllEntries)
             {
@@ -413,32 +399,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         private void RemoveChunkTile(TextureLodChunk chunk)
         {
             _mapper.ReleaseTile(chunk.GridKey);
-        }
-
-        #endregion
-
-        #region Helpers
-
-        /// <summary>
-        /// Centralized helper to extract distances and resolutions from the master config.
-        /// </summary>
-        private void ExtractLodConfiguration(
-            ReadOnlySpan<TextureLOD> lodConfigs,
-            bool deactivateOnCulled,
-            out float[] lodDistances,
-            out PowerOfTwoResolution[] resolutions)
-        {
-            if (lodConfigs.Length == 0)
-                throw new ArgumentException("LOD configurations cannot be empty.", nameof(lodConfigs));
-
-            lodDistances = new float[lodConfigs.Length];
-            resolutions = new PowerOfTwoResolution[lodConfigs.Length];
-
-            for (int i = 0; i < lodConfigs.Length; i++)
-            {
-                lodDistances[i] = lodConfigs[i].distanceThreshold;
-                resolutions[i] = lodConfigs[i].mapResolution;
-            }
         }
 
         #endregion

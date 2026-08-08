@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Components.Tests
 {
-    public class MeshRenderer_ComponentIteratorStateTests : ComponentIteratorStateTests<MeshRenderer>
+    public class ComponentIteratorStateTests : ComponentIteratorStateTestsBase<MeshRenderer>
     {
         #region Create Test Object
 
@@ -58,7 +58,7 @@ namespace Rayforge.Core.Environment.Spatial.Components.Tests
         #endregion
     }
 
-    public abstract class ComponentIteratorStateTests<T> : IIterationLogicTests<T, ComponentIteratorState<int, T, HashSet<int>.Enumerator>>
+    public abstract class ComponentIteratorStateTestsBase<T> : IIterationLogicTests<T, ComponentIteratorState<int, T, HashSet<int>.Enumerator>>
     {
         #region IIterationLogicTests
 

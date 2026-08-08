@@ -76,8 +76,8 @@ namespace Rayforge.Core.Common.Rendering.Helpers
         /// <returns>The decremented resolution step.</returns>
         public static PowerOfTwoResolution Downscale(this PowerOfTwoResolution current)
         {
-            if (current <= PowerOfTwoResolution.Resolution1)
-                return PowerOfTwoResolution.Resolution1;
+            if (current <= PowerOfTwoResolution.Res1)
+                return PowerOfTwoResolution.Res1;
 
             return (PowerOfTwoResolution)((int)current >> 1);
         }
@@ -90,8 +90,8 @@ namespace Rayforge.Core.Common.Rendering.Helpers
         /// <returns>The incremented resolution step.</returns>
         public static PowerOfTwoResolution Upscale(this PowerOfTwoResolution current)
         {
-            if (current >= PowerOfTwoResolution.Resolution8192)
-                return PowerOfTwoResolution.Resolution8192;
+            if (current >= PowerOfTwoResolution.Res8192)
+                return PowerOfTwoResolution.Res8192;
 
             return (PowerOfTwoResolution)((int)current << 1);
         }

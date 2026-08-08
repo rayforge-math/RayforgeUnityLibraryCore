@@ -1,6 +1,7 @@
 using Rayforge.Core.Common.Rendering;
-using Rayforge.Core.Rendering.Helpers;
+using Rayforge.Core.Common.Rendering.Helpers;
 using Rayforge.Core.Rendering.Abstractions;
+using Rayforge.Core.Rendering.Helpers;
 using System;
 using UnityEngine;
 
@@ -30,6 +31,11 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         #region Properties
 
         /// <summary>
+        /// Gets a value indicating whether this layout has been initialized.
+        /// </summary>
+        public bool IsInitialized => m_Levels != null;
+
+        /// <summary>
         /// The total number of texture array slices required to accommodate all configured LOD levels.
         /// </summary>
         public int RequiredSliceCount { get; private set; }
@@ -53,48 +59,62 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #region Fields
 
-        // English: Removed readonly to allow the array to be resized or replaced during reconfiguration
+        // Note: Removed readonly to allow the array to be resized or replaced during reconfiguration
         private LodLevelInfo[] m_Levels;
 
         #endregion
 
-        /// <summary>
-        /// Initializes a new atlas layout. 
-        /// Use <see cref="Reconfigure"/> to populate data.
-        /// </summary>
-        public LodAtlasLayout() { }
+        #region Lifecycle
 
         /// <summary>
-        /// Initializes a new atlas layout based on the provided LOD grid and resolution settings.
+        /// Initializes a new atlas layout. 
+        /// Use <see cref="Initialize"/> to populate data.
         /// </summary>
-        /// <param name="lodCount">Number of LOD levels to support.</param>
-        /// <param name="maxCapacities">An array containing the maximum tile count for each LOD level.</param>
-        /// <param name="lodResolutions">The target resolutions for each level (Index 0 is the base).</param>
-        public LodAtlasLayout(int lodCount, int[] maxCapacities, ReadOnlySpan<PowerOfTwoResolution> lodResolutions)
-        {
-            Reconfigure(lodCount, maxCapacities, lodResolutions);
-        }
+        public LodAtlasLayout() { }
 
         /// <summary>
         /// Updates the layout parameters and recalculates slice distribution.
         /// Reuses existing internal structures where possible to minimize GC pressure.
         /// </summary>
-        /// <param name="lodCount">Number of LOD levels to support.</param>
-        /// <param name="maxCapacities">An array containing the maximum tile count for each LOD level.</param>
-        /// <param name="lodResolutions">The target resolutions for each level (Index 0 is the base).</param>
-        /// <exception cref="ArgumentException">Thrown if <paramref name="lodResolutions"/> is empty.</exception>
-        /// <exception cref="InvalidOperationException">Thrown if resolution math results in zero slots.</exception>
-        public void Reconfigure(int lodCount, int[] maxCapacities, ReadOnlySpan<PowerOfTwoResolution> lodResolutions)
+        /// <param name="maxCapacities">An array containing the maximum tile count for each LOD level. Its length defines the LOD count.</param>
+        /// <param name="baseResolution">The resolution of LOD level 0. Subsequent levels are automatically derived via Downscale.</param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="maxCapacities"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="maxCapacities"/> is empty.</exception>
+        /// <exception cref="InvalidOperationException">Thrown if resolution math results in zero slots or insufficient downscales.</exception>
+        public void Initialize(int[] maxCapacities, PowerOfTwoResolution baseResolution)
         {
-            if (lodResolutions.Length == 0)
-                throw new ArgumentException("[LodAtlasLayout] LOD resolutions cannot be empty.");
+            if (maxCapacities == null)
+                throw new ArgumentNullException(nameof(maxCapacities), "[LodAtlasLayout] Max capacities array cannot be null.");
+
+            if (maxCapacities.Length == 0)
+                throw new ArgumentException("[LodAtlasLayout] Max capacities array cannot be empty.", nameof(maxCapacities));
+
+            int lodCount = maxCapacities.Length;
+
+            Span<PowerOfTwoResolution> lodResolutions = stackalloc PowerOfTwoResolution[lodCount];
+            PowerOfTwoResolution currentRes = baseResolution;
+
+            for (int i = 0; i < lodCount; i++)
+            {
+                lodResolutions[i] = currentRes;
+
+                if (i < lodCount - 1)
+                {
+                    if (currentRes <= PowerOfTwoResolution.Res1)
+                    {
+                        throw new InvalidOperationException(
+                            $"[LodAtlasLayout] Insufficient downscales available: Cannot provide {lodCount} distinct LOD levels starting from base resolution {baseResolution}.");
+                    }
+                    currentRes = currentRes.Downscale();
+                }
+            }
 
             if (m_Levels == null || m_Levels.Length != lodCount)
             {
                 m_Levels = new LodLevelInfo[lodCount];
             }
 
-            BaseResolution = lodResolutions[0];
+            BaseResolution = baseResolution;
             int currentSliceOffset = 0;
             int accumulatedCapacity = 0;
 
@@ -107,7 +127,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                     throw new InvalidOperationException($"[LodAtlasLayout] Resolution for LOD {i} is invalid relative to BaseResolution.");
 
                 int slotsPerSlice = slotsPerDim * slotsPerDim;
-
                 int reqSlices = (tilesInLevel > 0) ? Mathf.CeilToInt((float)tilesInLevel / slotsPerSlice) : 0;
                 int levelCapacity = reqSlices * slotsPerSlice;
 
@@ -126,10 +145,20 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             TotalCombinedCapacity = accumulatedCapacity;
         }
 
+        #endregion
+
+        #region Public API
+
         /// <summary>
         /// Gets the maximum number of slots available for a specific LOD level.
         /// </summary>
-        public int GetLevelCapacity(int lodIndex) => m_Levels[lodIndex].TotalCapacity;
+        /// <exception cref="InvalidOperationException">Thrown if the layout has not been initialized.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="lodIndex"/> is out of bounds.</exception>
+        public int GetLodCapacity(int lodIndex)
+        {
+            ValidateStateAndIndex(lodIndex);
+            return m_Levels[lodIndex].TotalCapacity;
+        }
 
         /// <summary>
         /// Calculates the normalized UV mapping data (Slice, Scale, Offset) for a specific slot within a LOD level.
@@ -137,8 +166,12 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <param name="lodIndex">The LOD level the slot belongs to.</param>
         /// <param name="slotIndex">The local index within that LOD level.</param>
         /// <returns>A TextureMappingData structure containing GPU-ready coordinates.</returns>
+        /// <exception cref="InvalidOperationException">Thrown if the layout has not been initialized.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="lodIndex"/> is out of bounds.</exception>
         public TextureMappingData GetMapping(int lodIndex, int slotIndex)
         {
+            ValidateStateAndIndex(lodIndex);
+
             var info = m_Levels[lodIndex];
 
             int slotsPerSlice = info.SlotsPerDim * info.SlotsPerDim;
@@ -157,13 +190,19 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             };
         }
 
-        /// <summary>
-        /// Checks if a configuration is compatible with this layout to avoid unnecessary recalculations.
-        /// </summary>
-        public bool IsCompatible(int lodCount, int batchSize, PowerOfTwoResolution baseRes)
+        #endregion
+
+        #region Helpers
+
+        private void ValidateStateAndIndex(int lodIndex)
         {
-            if (m_Levels == null) return false;
-            return m_Levels.Length == lodCount && BaseResolution.Equals(baseRes);
+            if (!IsInitialized)
+                throw new InvalidOperationException("[LodAtlasLayout] Layout is not initialized. Call Initialize first.");
+
+            if (lodIndex < 0 || lodIndex >= m_Levels.Length)
+                throw new ArgumentOutOfRangeException(nameof(lodIndex), $"[LodAtlasLayout] LOD index {lodIndex} is out of bounds for {m_Levels.Length} levels.");
         }
+
+        #endregion
     }
 }

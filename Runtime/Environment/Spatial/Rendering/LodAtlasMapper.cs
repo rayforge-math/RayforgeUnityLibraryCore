@@ -2,11 +2,11 @@ using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Rendering.Abstractions;
+using Rayforge.Core.Collections.Buffering;
+using Rayforge.Core.Collections.Helpers;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using Rayforge.Core.Collections.Buffering;
-using Rayforge.Core.Collections.Helpers;
 
 namespace Rayforge.Core.Environment.Spatial.Rendering
 {
@@ -58,15 +58,15 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <summary>
         /// The total number of slices required in the Texture2DArray to fit all LOD levels.
         /// </summary>
-        public int RequiredSliceCount { get; private set; }
+        public int RequiredSliceCount => m_Layout?.RequiredSliceCount ?? 0;
 
         /// <summary>
         /// The reference resolution of a single slot at LOD 0.
         /// All other LOD resolutions are relative to this base.
         /// </summary>
-        public PowerOfTwoResolution BaseResolution { get; private set; }
+        public PowerOfTwoResolution BaseResolution => m_Layout?.BaseResolution ?? PowerOfTwoResolution.None;
 
-        public bool IsInitialized => m_Layout != null && m_Registry != null;
+        public bool IsInitialized => m_Layout != null && m_Layout.IsInitialized && m_Registry != null;
 
         /// <summary>
         /// Indicates if there are pending requests (adds or removals) in the queue.
@@ -98,20 +98,63 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         #region Configuration & Cleanup
 
         /// <summary>
-        /// Configures or reconfigures the atlas layout based on the provided LOD settings.
-        /// This method checks if the structural configuration (resolutions, capacities, or batching) 
-        /// has changed before triggering a heavy rebuild of the internal slot management.
+        /// Central internal method to unconditionally calculate the atlas layout and structural slot management.
+        /// Wipes the current state and redefines how texture slots are distributed across slices
+        /// based on a base resolution that is automatically downscaled for each subsequent LOD level.
         /// </summary>
-        /// <param name="provider">The source of truth for spatial logic and maximum tile capacities per LOD level.</param>
-        /// <param name="lodResolutions">A span of resolutions for each LOD level. Index 0 defines the BaseResolution.</param>
+        /// <param name="provider">The source of truth for spatial logic and maximum tile capacities per ring.</param>
+        /// <param name="baseResolution">The resolution of LOD level 0. Subsequent levels are derived via Downscale.</param>
         /// <param name="batchSize">The number of entries per dirty-tracking batch for GPU synchronization.</param>
-        /// <returns>
-        /// True if the configuration changed and a full layout rebuild was performed (invalidating current mappings). 
-        /// False if the configuration was identical to the current state, resulting in no changes.
-        /// </returns>
-        public bool Configure(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="provider"/> is null.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown if the provider LOD count is invalid, or if insufficient downscales are available from the base resolution.
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="batchSize"/> is less than 1.</exception>
+        public void Initialize<TProvider>(TProvider provider, PowerOfTwoResolution baseResolution, int batchSize)
+            where TProvider : ILODGridConfiguration<TKey>, ILODGridMetrics<TKey>
         {
-            return CheckAndCalculateLayout(provider, lodResolutions, batchSize);
+            if (provider == null)
+                throw new ArgumentNullException(nameof(provider), "Provider is null. Initialization aborted.");
+
+            if (provider.LodCount <= 0)
+                throw new InvalidOperationException("Provider LOD count must be greater than zero.");
+
+            if (batchSize <= 0)
+                throw new ArgumentOutOfRangeException(nameof(batchSize), "Batch size must be at least 1.");
+
+            int[] capacities = new int[provider.LodCount];
+            for (int i = 0; i < provider.LodCount; i++)
+                capacities[i] = provider.GetMaxCapacityForLODLevel(i);
+
+            if (m_Layout == null)
+                m_Layout = new LodAtlasLayout();
+
+            m_Layout.Initialize(capacities, baseResolution);
+
+            if (m_Allocators == null || m_Allocators.Length != m_Layout.LodCount)
+            {
+                m_Allocators = new LinearSlotAllocator[m_Layout.LodCount];
+            }
+
+            int currentGlobalOffset = 0;
+            for (int i = 0; i < m_Layout.LodCount; i++)
+            {
+                int levelCap = m_Layout.GetLodCapacity(i);
+
+                if (m_Allocators[i] == null)
+                    m_Allocators[i] = new LinearSlotAllocator(levelCap, currentGlobalOffset);
+                else
+                    m_Allocators[i].Reconfigure(levelCap, currentGlobalOffset);
+
+                currentGlobalOffset += levelCap;
+            }
+
+            if (m_Registry == null)
+                CreateRegistry(m_Layout.TotalCombinedCapacity, batchSize);
+            else
+                m_Registry.Reconfigure(m_Layout.TotalCombinedCapacity, batchSize);
+
+            Clear();
         }
 
         /// <summary>
@@ -147,88 +190,10 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         #endregion
 
-        #region Internal Setup
-
-        /// <summary>
-        /// Central internal method to (re)calculate the atlas layout and structural slot management.
-        /// Wipes the current state and redefines how texture slots are distributed across slices
-        /// based on the provided LOD resolutions.
-        /// </summary>
-        /// <param name="provider">The source of truth for spatial logic and maximum tile capacities per ring.</param>
-        /// <param name="lodResolutions">A span of resolutions for each LOD level. Index 0 defines the BaseResolution.</param>
-        /// <param name="batchSize">The number of entries per dirty-tracking batch for GPU synchronization.</param>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="provider"/> is null.</exception>
-        /// <exception cref="ArgumentException">Thrown if <paramref name="lodResolutions"/> is empty.</exception>
-        /// <exception cref="InvalidOperationException">
-        /// Thrown if the number of resolutions doesn't match the provider's LOD count, 
-        /// or if a LOD resolution is larger than the base resolution.
-        /// </exception>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="batchSize"/> is less than 1.</exception>
-        /// <returns>
-        /// True if the layout was rebuilt (all current mappings were cleared).
-        /// False if the configuration was compatible and the state remains intact.
-        /// </returns>
-        private bool CheckAndCalculateLayout(ILODGridProvider<TKey> provider, ReadOnlySpan<PowerOfTwoResolution> lodResolutions, int batchSize)
-        {
-            if (provider == null)
-                throw new ArgumentNullException(nameof(provider), $"Provider is null. Initialization aborted.");
-
-            if (lodResolutions.Length == 0)
-                throw new ArgumentException($"lodResolutions array is empty.", nameof(lodResolutions));
-
-            if (provider.LodCount != lodResolutions.Length)
-                throw new InvalidOperationException($"LOD Count mismatch: Provider expects {provider.LodCount}, but received {lodResolutions.Length} configurations.");
-
-            if (batchSize <= 0)
-                throw new ArgumentOutOfRangeException(nameof(batchSize), $"Batch size must be at least 1.");
-
-            if (IsInitialized && m_Layout.IsCompatible(provider.LodCount, batchSize, lodResolutions[0]) && m_Registry.BatchSize == batchSize)
-            {
-                return false;
-            }
-
-            int[] capacities = new int[provider.LodCount];
-            for (int i = 0; i < provider.LodCount; i++)
-                capacities[i] = provider.GetMaxCapacityForLODLevel(i);
-
-            if (m_Layout == null)
-                m_Layout = new LodAtlasLayout(provider.LodCount, capacities, lodResolutions);
-            else
-                m_Layout.Reconfigure(provider.LodCount, capacities, lodResolutions);
-
-            if (m_Allocators == null || m_Allocators.Length != m_Layout.LodCount)
-            {
-                m_Allocators = new LinearSlotAllocator[m_Layout.LodCount];
-            }
-
-            int currentGlobalOffset = 0;
-            for (int i = 0; i < m_Layout.LodCount; i++)
-            {
-                int levelCap = m_Layout.GetLevelCapacity(i);
-
-                if (m_Allocators[i] == null)
-                    m_Allocators[i] = new LinearSlotAllocator(levelCap, currentGlobalOffset);
-                else
-                    m_Allocators[i].Reconfigure(levelCap, currentGlobalOffset);
-
-                currentGlobalOffset += levelCap;
-            }
-
-            if (m_Registry == null)
-                CreateRegistry(m_Layout.TotalCombinedCapacity, batchSize);
-            else
-                m_Registry.Reconfigure(m_Layout.TotalCombinedCapacity, batchSize);
-
-            Clear();
-            return true;
-        }
-
-        #endregion
-
         #region Enqueue Change Requests (Deferred)
 
         /// <summary>
-        /// Queues a tile to be updated or added. The actual processing is deferred until <see cref="ApplyChanges"/> is called.
+        /// Queues a tile to be updated or added. The actual processing is deferred until <see cref="FlushTileRequests"/> is called.
         /// </summary>
         /// <param name="key">The unique identifier for the tile.</param>
         /// <param name="lodIndex">The target LOD level index.</param>
@@ -240,7 +205,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </remarks>
         public void RequestTile(TKey key, int lodIndex, Vector3 worldPos, float extent)
         {
-            if (lodIndex < 0 || lodIndex >= m_Allocators.Length) return;
+            if (m_Allocators == null || lodIndex < 0 || lodIndex >= m_Allocators.Length) return;
 
             m_Queue.EnqueueUpdate(key, new TileUpdateRequest
             {
@@ -257,7 +222,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <param name="key">The unique identifier of the tile to remove.</param>
         /// <remarks>
         /// If an update for this tile was already queued in the same frame, it will be discarded.
-        /// The actual slot release happens during <see cref="ApplyChanges"/>.
+        /// The actual slot release happens during <see cref="FlushTileRequests"/>.
         /// </remarks>
         public void ReleaseTile(TKey key) => m_Queue.EnqueueRemoval(key);
 
@@ -275,6 +240,8 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </remarks>
         public void FlushTileRequests()
         {
+            m_BakeLookup.Clear();
+
             if (!m_Queue.HasRequests) return;
 
             var removeIt = m_Queue.GetRemovalIterator();
@@ -379,10 +346,10 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             var spatialData = CreateSpatialEntry(req.WorldPos, req.Extent);
 
             int bufferIndex = m_Registry.SetMetadata(req.Key, spatialData, atlasMapping);
-            m_BakeLookup[bufferIndex] = new TileMetadata 
-            { 
-                Key = req.Key, 
-                Mapping = atlasMapping 
+            m_BakeLookup[bufferIndex] = new TileMetadata
+            {
+                Key = req.Key,
+                Mapping = atlasMapping
             };
 
             return isNew;
