@@ -416,6 +416,27 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         }
 
         /// <summary>
+        /// Tries to retrieve the texture mapping data for an active tile.
+        /// </summary>
+        /// <param name="key">The unique identifier of the tile.</param>
+        /// <param name="mapping">The texture mapping data if the tile is active.</param>
+        /// <returns>True if the tile is active; otherwise, false.</returns>
+        public bool TryGetTextureMapping(TKey key, out TextureMappingData mapping)
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            if (m_ActiveMappings.TryGetValue(key, out var internalMapping))
+            {
+                mapping = m_Layout.GetMapping(internalMapping.lodIndex, internalMapping.slotIndex);
+                return true;
+            }
+
+            mapping = default;
+            return false;
+        }
+
+        /// <summary>
         /// Clears the bake lookup. Useful when the whole atlas is invalidated.
         /// </summary>
         public void ClearBakeQueue() => m_BakeQueue.Clear();

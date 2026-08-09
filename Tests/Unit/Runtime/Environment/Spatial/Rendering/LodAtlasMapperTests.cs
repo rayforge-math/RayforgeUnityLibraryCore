@@ -896,6 +896,53 @@ namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
 
         #endregion
 
+        #region TryGetTextureMapping Tests
+
+        [Test]
+        public void TryGetTextureMapping_WhenTileIsActive_ReturnsTrueAndMapping()
+        {
+            // Arrange
+            var mapper = new MockAtlasMapper<int>();
+            mapper.Initialize(new[] { 10 }, PowerOfTwoResolution.Res64, batchSize: 1);
+
+            int key = 42;
+            mapper.RequestTile(key, lodIndex: 0, Vector3.zero, 1f);
+            mapper.FlushTileRequests();
+
+            // Act
+            bool found = mapper.TryGetTextureMapping(key, out var mapping);
+
+            // Assert
+            Assert.IsTrue(found, "Should successfully retrieve texture mapping for an active tile.");
+        }
+
+        [Test]
+        public void TryGetTextureMapping_WhenTileIsInactive_ReturnsFalse()
+        {
+            // Arrange
+            var mapper = new MockAtlasMapper<int>();
+            mapper.Initialize(new[] { 10 }, PowerOfTwoResolution.Res64, batchSize: 1);
+
+            // Act
+            bool found = mapper.TryGetTextureMapping(999, out var mapping);
+
+            // Assert
+            Assert.IsFalse(found, "Should return false for an inactive or non-existent tile.");
+        }
+
+        [Test]
+        public void TryGetTextureMapping_WhenUninitialized_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var mapper = new MockAtlasMapper<int>();
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() => mapper.TryGetTextureMapping(42, out var mapping),
+                "TryGetTextureMapping should throw InvalidOperationException when the mapper is not initialized.");
+        }
+
+        #endregion
+
         #region ClearBakeQueue Tests
 
         [Test]
@@ -930,6 +977,65 @@ namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
 
             // Act & Assert
             Assert.DoesNotThrow(() => mapper.ClearBakeQueue(), "Clearing an already empty bake queue should be safe and not throw.");
+        }
+
+        #endregion
+
+        #region Full System Test
+
+        [Test]
+        public void LodAtlasMapper_FullProgramFlow_HandlesLifecycle()
+        {
+            // Arrange: Initialize the mapper with multi-LOD capacities that are multiples of batchSize (2)
+            var mapper = new MockAtlasMapper<int>();
+            mapper.Initialize(new[] { 4, 4 }, PowerOfTwoResolution.Res64, batchSize: 2);
+
+            Assert.IsTrue(mapper.IsInitialized, "Mapper should be initialized.");
+            Assert.AreEqual(0, mapper.ActiveTileCount, "Initial active tile count must be zero.");
+
+            // Act 1: Request multiple tiles across different LOD levels
+            int key1 = 101;
+            int key2 = 102;
+            mapper.RequestTile(key1, lodIndex: 0, new Vector3(0, 0, 0), 10f);
+            mapper.RequestTile(key2, lodIndex: 1, new Vector3(10, 0, 10), 20f);
+
+            Assert.IsTrue(mapper.HasPendingRequests, "Requests should be pending before flush.");
+
+            // Act 2: Flush tile requests to apply allocations and generate bake commands
+            mapper.FlushTileRequests();
+
+            Assert.IsFalse(mapper.HasPendingRequests, "Pending requests should be cleared after flush.");
+            Assert.AreEqual(2, mapper.ActiveTileCount, "Two tiles should be active.");
+            Assert.IsTrue(mapper.HasBakeCommands, "Bake commands should be available after new allocations.");
+
+            // Act 3: Process pending bakes using the allocation handler
+            var bakeHandler = new TestBakeHandler { Collected = new List<MockAtlasMapper<int>.TileMetadata>() };
+            mapper.ForEachPendingBake(ref bakeHandler);
+
+            Assert.AreEqual(2, bakeHandler.Collected.Count, "All active tiles should require a bake.");
+
+            // Act 4: Verify dirty culling and render updates
+            var cullingHandler = new TestCullingHandler<AabbSpatialData>();
+            mapper.ForEachCullingDirty(ref cullingHandler, merge: false);
+            Assert.Greater(cullingHandler.Count, 0, "Culling dirty segments should be processed.");
+
+            var renderHandler = new TestRenderHandler();
+            mapper.ForEachRenderDirty(ref renderHandler, merge: false);
+            Assert.Greater(renderHandler.Count, 0, "Render dirty segments should be processed.");
+
+            // Act 5: Release one tile and flush again
+            mapper.ReleaseTile(key1);
+            mapper.FlushTileRequests();
+
+            Assert.AreEqual(1, mapper.ActiveTileCount, "Active tile count should drop after release.");
+            Assert.IsFalse(mapper.IsTileActive(key1), "Released tile should no longer be active.");
+            Assert.IsTrue(mapper.IsTileActive(key2), "Remaining tile should still be active.");
+
+            // Act 6: Clear the mapper state completely
+            mapper.Clear();
+
+            Assert.AreEqual(0, mapper.ActiveTileCount, "Active tile count should be zero after clear.");
+            Assert.IsFalse(mapper.HasBakeCommands, "Bake commands should be cleared.");
         }
 
         #endregion
