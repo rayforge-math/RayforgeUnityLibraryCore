@@ -63,62 +63,6 @@ namespace Rayforge.Core.Collections.Buffering.Tests
 
         #endregion
 
-        #region Reconfigure
-
-        [Test]
-        public void Reconfigure_ValidInputs_UpdatesPropertiesAndResetsState()
-        {
-            // 1. Setup: Allocate and release to populate internal state
-            var allocator = new LinearSlotAllocator(10, 0);
-            allocator.Acquire(); // Index 0 occupied
-            allocator.Release(0); // Index 0 added to free stack
-
-            // 2. Perform Reconfigure
-            allocator.Reconfigure(20, 100);
-
-            // 3. Assert: Verify properties were updated
-            Assert.AreEqual(20, allocator.Capacity);
-            Assert.AreEqual(100, allocator.BaseOffset);
-
-            // 4. Assert: Verify internal state reset
-            // New allocation should start from new BaseOffset
-            Assert.AreEqual(20, allocator.AvailableCount, "Available count should be reset to full capacity.");
-            Assert.AreEqual(100, allocator.Acquire(), "Allocation should restart from the new BaseOffset.");
-        }
-
-        [TestCase(0)]
-        [TestCase(-1)]
-        public void Reconfigure_InvalidCapacity_ThrowsArgumentOutOfRangeException(int invalidCapacity)
-        {
-            var allocator = new LinearSlotAllocator(10, 0);
-            // Ensure invalid capacity triggers validation
-            Assert.Throws<ArgumentOutOfRangeException>(() => allocator.Reconfigure(invalidCapacity, 0));
-        }
-
-        [TestCase(-1)]
-        [TestCase(-500)]
-        public void Reconfigure_InvalidBaseOffset_ThrowsArgumentOutOfRangeException(int invalidOffset)
-        {
-            var allocator = new LinearSlotAllocator(10, 0);
-            // Ensure negative base offset triggers validation
-            Assert.Throws<ArgumentOutOfRangeException>(() => allocator.Reconfigure(10, invalidOffset));
-        }
-
-        [Test]
-        public void Reconfigure_StateIsResetEvenIfInputsMatchPrevious()
-        {
-            var allocator = new LinearSlotAllocator(10, 0);
-            allocator.Acquire(); // Index 0 occupied
-
-            // Reconfigure with identical parameters
-            allocator.Reconfigure(10, 0);
-
-            // Verify that the internal counter was reset despite same values
-            Assert.AreEqual(0, allocator.Acquire(), "Allocator should reset even if values remain unchanged.");
-        }
-
-        #endregion
-
         #region Properties
 
         [Test]

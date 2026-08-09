@@ -1,9 +1,10 @@
 using Rayforge.Core.Collections.Abstractions;
-using Rayforge.Core.Common.Rendering;
-using Rayforge.Core.Environment.Abstractions;
-using Rayforge.Core.Rendering.Abstractions;
 using Rayforge.Core.Collections.Buffering;
 using Rayforge.Core.Collections.Helpers;
+using Rayforge.Core.Common.Rendering;
+using Rayforge.Core.Environment.Abstractions;
+using Rayforge.Core.Execution.Abstractions;
+using Rayforge.Core.Rendering.Abstractions;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -49,7 +50,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         private readonly RequestQueue<TKey, TileUpdateRequest> m_Queue = new();
 
         private readonly Dictionary<TKey, (int lodIndex, int slotIndex)> m_ActiveMappings = new();
-        private readonly Dictionary<int, TileMetadata> m_BakeLookup = new();
+        private readonly Dictionary<int, TileMetadata> m_BakeQueue = new();
 
         #endregion
 
@@ -78,7 +79,50 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// Indicates if new atlas mappings were generated during the last flush.
         /// If true, a bake pass is required to update the texture content.
         /// </summary>
-        public bool HasBakeCommands => m_BakeLookup.Count > 0;
+        public bool HasBakeCommands => m_BakeQueue.Count > 0;
+
+        /// <summary>
+        /// The total number of LOD levels configured in the atlas layout.
+        /// </summary>
+        public int LodCount => m_Layout?.LodCount ?? 0;
+
+        /// <summary>
+        /// The number of currently active tile mappings.
+        /// </summary>
+        public int ActiveTileCount => m_ActiveMappings.Count;
+
+        /// <summary>
+        /// Gets the maximum capacity for a specific LOD level.
+        /// </summary>
+        /// <param name="lodIndex">The target LOD index.</param>
+        public int GetLodCapacity(int lodIndex)
+        {
+            if (m_Layout == null || lodIndex < 0 || lodIndex >= m_Layout.LodCount)
+                return 0;
+            return m_Layout.GetLodCapacity(lodIndex);
+        }
+
+        /// <summary>
+        /// Checks if a tile is currently active in the atlas.
+        /// </summary>
+        public bool IsTileActive(TKey key) => m_ActiveMappings.ContainsKey(key);
+
+        /// <summary>
+        /// Tries to retrieve the current LOD index and mapping data for an active tile.
+        /// </summary>
+        public bool TryGetActiveTile(TKey key, out int lodIndex, out TextureMappingData mapping)
+        {
+            if (m_ActiveMappings.TryGetValue(key, out var internalMapping))
+            {
+                lodIndex = internalMapping.lodIndex;
+                mapping = m_Layout.GetMapping(lodIndex, internalMapping.slotIndex);
+                return true;
+            }
+
+            lodIndex = -1;
+            mapping = default;
+            return false;
+        }
 
         /// <summary>
         /// Provides read-only access to the underlying metadata registry.
@@ -102,34 +146,26 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// Wipes the current state and redefines how texture slots are distributed across slices
         /// based on a base resolution that is automatically downscaled for each subsequent LOD level.
         /// </summary>
-        /// <param name="provider">The source of truth for spatial logic and maximum tile capacities per ring.</param>
+        /// <param name="maxCapacities">An array containing the maximum tile count for each LOD level.</param>
         /// <param name="baseResolution">The resolution of LOD level 0. Subsequent levels are derived via Downscale.</param>
         /// <param name="batchSize">The number of entries per dirty-tracking batch for GPU synchronization.</param>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="provider"/> is null.</exception>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="maxCapacities"/> is null.</exception>
         /// <exception cref="InvalidOperationException">
-        /// Thrown if the provider LOD count is invalid, or if insufficient downscales are available from the base resolution.
+        /// Thrown if insufficient downscales are available from the base resolution.
         /// </exception>
         /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="batchSize"/> is less than 1.</exception>
-        public void Initialize<TProvider>(TProvider provider, PowerOfTwoResolution baseResolution, int batchSize)
-            where TProvider : ILODGridConfiguration<TKey>, ILODGridMetrics<TKey>
+        public void Initialize(int[] maxCapacities, PowerOfTwoResolution baseResolution, int batchSize)
         {
-            if (provider == null)
-                throw new ArgumentNullException(nameof(provider), "Provider is null. Initialization aborted.");
-
-            if (provider.LodCount <= 0)
-                throw new InvalidOperationException("Provider LOD count must be greater than zero.");
+            if (maxCapacities == null)
+                throw new ArgumentNullException(nameof(maxCapacities), "Max capacities array cannot be null.");
 
             if (batchSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(batchSize), "Batch size must be at least 1.");
 
-            int[] capacities = new int[provider.LodCount];
-            for (int i = 0; i < provider.LodCount; i++)
-                capacities[i] = provider.GetMaxCapacityForLODLevel(i);
-
             if (m_Layout == null)
                 m_Layout = new LodAtlasLayout();
 
-            m_Layout.Initialize(capacities, baseResolution);
+            m_Layout.Initialize(maxCapacities, baseResolution);
 
             if (m_Allocators == null || m_Allocators.Length != m_Layout.LodCount)
             {
@@ -140,19 +176,11 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             for (int i = 0; i < m_Layout.LodCount; i++)
             {
                 int levelCap = m_Layout.GetLodCapacity(i);
-
-                if (m_Allocators[i] == null)
-                    m_Allocators[i] = new LinearSlotAllocator(levelCap, currentGlobalOffset);
-                else
-                    m_Allocators[i].Reconfigure(levelCap, currentGlobalOffset);
-
+                m_Allocators[i] = new LinearSlotAllocator(levelCap, currentGlobalOffset);
                 currentGlobalOffset += levelCap;
             }
 
-            if (m_Registry == null)
-                CreateRegistry(m_Layout.TotalCombinedCapacity, batchSize);
-            else
-                m_Registry.Reconfigure(m_Layout.TotalCombinedCapacity, batchSize);
+            m_Registry = CreateRegistry(m_Layout.TotalCombinedCapacity, batchSize);
 
             Clear();
         }
@@ -180,7 +208,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
             m_ActiveMappings.Clear();
             m_Queue.Clear();
-            m_BakeLookup.Clear();
+            m_BakeQueue.Clear();
 
             if (m_Allocators != null)
             {
@@ -199,13 +227,19 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// <param name="lodIndex">The target LOD level index.</param>
         /// <param name="worldPos">The world space position for spatial culling.</param>
         /// <param name="extent">The bounding extent for spatial culling.</param>
+        /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="lodIndex"/> is out of valid LOD bounds.</exception>
         /// <remarks>
         /// If the tile was previously queued for removal in the same frame, the removal is cancelled.
         /// If multiple updates are queued for the same key, only the last one is preserved.
         /// </remarks>
         public void RequestTile(TKey key, int lodIndex, Vector3 worldPos, float extent)
         {
-            if (m_Allocators == null || lodIndex < 0 || lodIndex >= m_Allocators.Length) return;
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            if (lodIndex < 0 || lodIndex >= m_Allocators.Length)
+                throw new ArgumentOutOfRangeException(nameof(lodIndex), "LOD index is out of valid range.");
 
             m_Queue.EnqueueUpdate(key, new TileUpdateRequest
             {
@@ -220,11 +254,18 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// Queues a tile for removal from the atlas and the culling registry.
         /// </summary>
         /// <param name="key">The unique identifier of the tile to remove.</param>
+        /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
         /// <remarks>
         /// If an update for this tile was already queued in the same frame, it will be discarded.
         /// The actual slot release happens during <see cref="FlushTileRequests"/>.
         /// </remarks>
-        public void ReleaseTile(TKey key) => m_Queue.EnqueueRemoval(key);
+        public void ReleaseTile(TKey key)
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            m_Queue.EnqueueRemoval(key);
+        }
 
         #endregion
 
@@ -240,21 +281,18 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </remarks>
         public void FlushTileRequests()
         {
-            m_BakeLookup.Clear();
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            m_BakeQueue.Clear();
 
             if (!m_Queue.HasRequests) return;
 
-            var removeIt = m_Queue.GetRemovalIterator();
-            while (removeIt.MoveNext())
-            {
-                ExecuteRemove(removeIt.Current);
-            }
+            var removeHandler = new RemovalHandler(this);
+            m_Queue.ForEachRemoval(ref removeHandler);
 
-            var updateIt = m_Queue.GetUpdateIterator();
-            while (updateIt.MoveNext())
-            {
-                ExecuteSet(updateIt.Current.Value);
-            }
+            var updateHandler = new UpdateHandler(this);
+            m_Queue.ForEachUpdate(ref updateHandler);
 
             m_Queue.Clear();
         }
@@ -263,22 +301,40 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// Provides an iterator over all pending tile bakes. 
         /// Each element contains the tile metadata required for bake.
         /// </summary>
+        /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
         public IIterator<TileMetadata> GetPendingBakes()
-            => m_BakeLookup.Values.GetEnumerator().ToIterator();
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            return m_BakeQueue.Values.GetEnumerator().ToIterator();
+        }
 
         /// <summary>
         /// Provides a fresh iterator for all segments that need a GPU update (metadata or texture).
         /// </summary>
         /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
+        /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
         public IIterator<BufferSegmentMeta<TSpatial>> GetCullingDirtyIterator(bool merge = false)
-            => m_Registry.GetCullingDirtyIterator(merge);
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            return m_Registry.GetCullingDirtyIterator(merge);
+        }
 
         /// <summary>
         /// Provides a fresh iterator for all segments that need a GPU update (metadata or texture).
         /// </summary>
         /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
+        /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
         public IIterator<BufferSegmentMeta<TextureMappingData>> GetRenderDirtyIterator(bool merge = false)
-            => m_Registry.GetRenderDirtyIterator(merge);
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            return m_Registry.GetRenderDirtyIterator(merge);
+        }
 
         /// <summary>
         /// Provides a synchronized iterator that yields dirty segments from both stores.
@@ -288,19 +344,115 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// How many dirty batches to process in one sync window. 
         /// Higher values reduce SetData calls, lower values improve time-slicing granularity.
         /// </param>
+        /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
         public IIterator<SyncedSegmentMeta<TSpatial, TextureMappingData>> GetSyncedDirtyIterator(int batchesPerWindow = 1)
-            => m_Registry.GetSyncedDirtyIterator(batchesPerWindow);
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            return m_Registry.GetSyncedDirtyIterator(batchesPerWindow);
+        }
 
         /// <summary>
-        /// Tries to retrieve the metadata for a specific registry index if it's marked for baking.
+        /// Executes a handler for each pending tile bake without allocations.
         /// </summary>
-        public bool TryGetBakeTile(int registryIndex, out TileMetadata metadata)
-            => m_BakeLookup.TryGetValue(registryIndex, out metadata);
+        /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
+        public void ForEachPendingBake<THandler>(ref THandler handler)
+            where THandler : struct, IExecutionHandler<TileMetadata>
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            var iter = m_BakeQueue.Values.GetEnumerator().ToIterator();
+            while (iter.MoveNext())
+            {
+                handler.Execute(iter.Current);
+            }
+        }
+
+        /// <summary>
+        /// Executes a handler for each culling dirty segment without allocations.
+        /// </summary>
+        /// <param name="handler">The execution handler to process each segment.</param>
+        /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
+        /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
+        public void ForEachCullingDirty<THandler>(ref THandler handler, bool merge = false)
+            where THandler : struct, IExecutionHandler<BufferSegmentMeta<TSpatial>>
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            m_Registry.ForEachCullingDirty(ref handler, merge);
+        }
+
+        /// <summary>
+        /// Executes a handler for each render dirty segment without allocations.
+        /// </summary>
+        /// <param name="handler">The execution handler to process each segment.</param>
+        /// <param name="merge">If true, contiguous dirty batches are merged into larger segments.</param>
+        /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
+        public void ForEachRenderDirty<THandler>(ref THandler handler, bool merge = false)
+            where THandler : struct, IExecutionHandler<BufferSegmentMeta<TextureMappingData>>
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            m_Registry.ForEachRenderDirty(ref handler, merge);
+        }
+
+        /// <summary>
+        /// Executes a handler for each synchronized dirty segment from both stores without allocations.
+        /// </summary>
+        /// <param name="handler">The execution handler to process each synchronized segment.</param>
+        /// <param name="batchesPerWindow">How many dirty batches to process in one sync window.</param>
+        /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
+        public void ForEachSyncedDirty<THandler>(ref THandler handler, int batchesPerWindow = 1)
+            where THandler : struct, IExecutionHandler<SyncedSegmentMeta<TSpatial, TextureMappingData>>
+        {
+            if (!IsInitialized)
+                throw new InvalidOperationException("Mapper is not initialized.");
+
+            m_Registry.ForEachSyncedDirty(ref handler, batchesPerWindow);
+        }
 
         /// <summary>
         /// Clears the bake lookup. Useful when the whole atlas is invalidated.
         /// </summary>
-        public void ClearBakeQueue() => m_BakeLookup.Clear();
+        public void ClearBakeQueue() => m_BakeQueue.Clear();
+
+        #endregion
+
+        #region Execution Handlers (Zero-Allocation)
+
+        private struct RemovalHandler : IExecutionHandler<TKey>
+        {
+            private readonly LodAtlasMapper<TKey, TSpatial, TRegistry> m_Mapper;
+
+            public RemovalHandler(LodAtlasMapper<TKey, TSpatial, TRegistry> mapper)
+            {
+                m_Mapper = mapper;
+            }
+
+            public void Execute(TKey key)
+            {
+                m_Mapper.ExecuteRemove(key);
+            }
+        }
+
+        private struct UpdateHandler : IExecutionHandler<KeyValuePair<TKey, TileUpdateRequest>>
+        {
+            private readonly LodAtlasMapper<TKey, TSpatial, TRegistry> m_Mapper;
+
+            public UpdateHandler(LodAtlasMapper<TKey, TSpatial, TRegistry> mapper)
+            {
+                m_Mapper = mapper;
+            }
+
+            public void Execute(KeyValuePair<TKey, TileUpdateRequest> kvp)
+            {
+                m_Mapper.ExecuteSet(kvp.Value);
+            }
+        }
 
         #endregion
 
@@ -346,7 +498,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             var spatialData = CreateSpatialEntry(req.WorldPos, req.Extent);
 
             int bufferIndex = m_Registry.SetMetadata(req.Key, spatialData, atlasMapping);
-            m_BakeLookup[bufferIndex] = new TileMetadata
+            m_BakeQueue[bufferIndex] = new TileMetadata
             {
                 Key = req.Key,
                 Mapping = atlasMapping

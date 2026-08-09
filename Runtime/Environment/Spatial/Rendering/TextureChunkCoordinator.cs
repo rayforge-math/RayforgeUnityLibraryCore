@@ -109,8 +109,15 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
             Reset();
 
+            int lodCount = _chunkRegistry.LodCount;
+            int[] capacities = new int[lodCount];
+            for (int i = 0; i < lodCount; i++)
+            {
+                capacities[i] = _chunkRegistry.GetMaxCapacityForLODLevel(i);
+            }
+
             _chunkRegistry.Initialize(gridSize, anchor, lodDistances, viewer, deactivateOnCulled, parent);
-            _mapper.Initialize(_chunkRegistry, baseResolution, batchSize);
+            _mapper.Initialize(capacities, baseResolution, batchSize);
         }
 
         /// <summary>
@@ -195,7 +202,14 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 UpdateLODs();
             }
 
-            _mapper.Initialize(_chunkRegistry, baseResolution, _mapper.Registry.BatchSize);
+            int lodCount = _chunkRegistry.LodCount;
+            int[] capacities = new int[lodCount];
+            for (int i = 0; i < lodCount; i++)
+            {
+                capacities[i] = _chunkRegistry.GetMaxCapacityForLODLevel(i);
+            }
+
+            _mapper.Initialize(capacities, baseResolution, _mapper.Registry.BatchSize);
             ForceRequeueAll();
 
             return distancesChanged;

@@ -62,33 +62,6 @@ namespace Rayforge.Core.Collections.Buffering
             m_FreeSlots = new Stack<int>(capacity);
         }
 
-        /// <summary>
-        /// Updates the capacity and base offset, then resets the allocator state.
-        /// </summary>
-        /// <param name="newCapacity">The new maximum capacity of the allocator.</param>
-        /// <param name="newBaseOffset">The new global starting index.</param>
-        public void Reconfigure(int newCapacity, int newBaseOffset)
-        {
-            if (newCapacity <= 0)
-                throw new ArgumentOutOfRangeException(nameof(newCapacity), "Capacity must be at least 1.");
-            if (newBaseOffset < 0)
-                throw new ArgumentOutOfRangeException(nameof(newBaseOffset), "BaseOffset cannot be negative.");
-
-            if (newCapacity == m_Capacity)
-            {
-                Reset();
-            }
-            else
-            {
-                m_IsSlotFreed = new BitArray(newCapacity);
-                m_FreeSlots = new Stack<int>(newCapacity);
-                m_NextLocalIndex = 0;
-            }
-
-            m_Capacity = newCapacity;
-            m_BaseOffset = newBaseOffset;
-        }
-
         #endregion
 
         #region Public API
