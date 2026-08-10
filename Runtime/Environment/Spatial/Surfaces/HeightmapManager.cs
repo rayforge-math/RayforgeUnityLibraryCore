@@ -420,12 +420,12 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
 
         private void ValidateSettings()
         {
-            ValidateGridSettings();
-            ValidateBatchSize();
+            //ValidateGridSettings();
+            //ValidateBatchSize();
             ValidateYRange();
             ValidateTrackerSettings();
         }
-
+        /*
         private void ValidateGridSettings()
         {
             if (_textureCoordinator == null || !_textureCoordinator.IsInitialized) return;
@@ -459,7 +459,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                  $"This will affect the number of chunks processed per frame.");
             }
         }
-
+        */
         private void ValidateTrackerSettings()
         {
             if (surfaceTracker.SettingsDirty)

@@ -12,6 +12,24 @@ using UnityEngine;
 namespace Rayforge.Core.Environment.Spatial.Rendering
 {
     /// <summary>
+    /// Represents metadata for a specific grid tile, binding a spatial key to its texture mapping configuration.
+    /// </summary>
+    /// <typeparam name="TKey">The type of the spatial key, must be a struct and implement IEquatable.</typeparam>
+    public struct TileMetadata<TKey>
+        where TKey : struct, IEquatable<TKey>
+    {
+        /// <summary>
+        /// The unique key identifying the tile within the spatial collection.
+        /// </summary>
+        public TKey Key;
+
+        /// <summary>
+        /// The texture mapping configuration and resource data assigned to the tile.
+        /// </summary>
+        public TextureMappingData Mapping;
+    }
+
+    /// <summary>
     /// Manages a multi-LOD texture atlas by calculating slice requirements.
     /// </summary>
     /// <typeparam name="TKey">The unique identifier type for tiles (must be equatable).</typeparam>
@@ -21,12 +39,6 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         where TRegistry : SpatialGpuDataRegistry<TKey, TSpatial, TextureMappingData>
     {
         #region Internal Types
-
-        public struct TileMetadata
-        {
-            public TKey Key;
-            public TextureMappingData Mapping;
-        }
 
         /// <summary>
         /// Stores the parameters for a pending tile update request.
@@ -50,7 +62,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         private readonly RequestQueue<TKey, TileUpdateRequest> m_Queue = new();
 
         private readonly Dictionary<TKey, (int lodIndex, int slotIndex)> m_ActiveMappings = new();
-        private readonly Dictionary<int, TileMetadata> m_BakeQueue = new();
+        private readonly Dictionary<int, TileMetadata<TKey>> m_BakeQueue = new();
 
         #endregion
 
@@ -180,7 +192,10 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 currentGlobalOffset += levelCap;
             }
 
-            m_Registry = CreateRegistry(m_Layout.TotalCombinedCapacity, batchSize);
+            int totalCapacity = m_Layout.TotalCombinedCapacity;
+            totalCapacity = BufferMath.GetTotalBatches(totalCapacity, batchSize) * batchSize;
+
+            m_Registry = CreateRegistry(totalCapacity, batchSize);
 
             Clear();
         }
@@ -214,6 +229,19 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             {
                 foreach (var alloc in m_Allocators) alloc.Reset();
             }
+        }
+
+        /// <summary>
+        /// Clears all runtime mappings, wipes the layout, and disposes/resets the registry,
+        /// returning the mapper to an uninitialized state.
+        /// </summary>
+        public void Reset()
+        {
+            Clear();
+
+            m_Registry = null;
+            m_Layout = null;
+            m_Allocators = null;
         }
 
         #endregion
@@ -302,7 +330,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// Each element contains the tile metadata required for bake.
         /// </summary>
         /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
-        public IIterator<TileMetadata> GetPendingBakes()
+        public IIterator<TileMetadata<TKey>> GetPendingBakes()
         {
             if (!IsInitialized)
                 throw new InvalidOperationException("Mapper is not initialized.");
@@ -358,7 +386,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </summary>
         /// <exception cref="InvalidOperationException">Thrown if the mapper is not initialized.</exception>
         public void ForEachPendingBake<THandler>(ref THandler handler)
-            where THandler : struct, IExecutionHandler<TileMetadata>
+            where THandler : struct, IExecutionHandler<TileMetadata<TKey>>
         {
             if (!IsInitialized)
                 throw new InvalidOperationException("Mapper is not initialized.");
@@ -519,7 +547,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             var spatialData = CreateSpatialEntry(req.WorldPos, req.Extent);
 
             int bufferIndex = m_Registry.SetMetadata(req.Key, spatialData, atlasMapping);
-            m_BakeQueue[bufferIndex] = new TileMetadata
+            m_BakeQueue[bufferIndex] = new TileMetadata<TKey>
             {
                 Key = req.Key,
                 Mapping = atlasMapping

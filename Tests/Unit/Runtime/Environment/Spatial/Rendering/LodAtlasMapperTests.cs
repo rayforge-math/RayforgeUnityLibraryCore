@@ -31,11 +31,11 @@ namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
             }
         }
 
-        private struct TestBakeHandler : IExecutionHandler<MockAtlasMapper<int>.TileMetadata>
+        private struct TestBakeHandler : IExecutionHandler<TileMetadata<int>>
         {
-            public List<MockAtlasMapper<int>.TileMetadata> Collected;
+            public List<TileMetadata<int>> Collected;
 
-            public void Execute(MockAtlasMapper<int>.TileMetadata metadata)
+            public void Execute(TileMetadata<int> metadata)
             {
                 Collected.Add(metadata);
             }
@@ -159,6 +159,40 @@ namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
             Assert.IsTrue(mapper.IsInitialized, "Mapper must remain initialized after re-initialization.");
             Assert.IsNotNull(mapper.Registry, "Registry must be re-created properly.");
             Assert.IsFalse(mapper.HasPendingRequests, "State should be cleared upon re-initialization.");
+        }
+
+        [Test]
+        public void Initialize_WhenTotalCapacityIsNotBatchAligned_PadsToNextMultiple()
+        {
+            // Arrange
+            int[] maxCapacities = new int[] { 4, 6 };
+            int batchSize = 4;
+            var baseRes = PowerOfTwoResolution.Res64;
+
+            var mapper = new SphereAtlasMapper<Vector3Int>();
+
+            // Act
+            mapper.Initialize(maxCapacities, baseRes, batchSize);
+
+            // Assert
+            Assert.AreEqual(12, mapper.Registry.Capacity, "Buffer capacity should be padded to the next multiple of the batch size.");
+        }
+
+        [Test]
+        public void Initialize_WhenTotalCapacityIsAlreadyBatchAligned_KeepsExactCapacity()
+        {
+            // Arrange
+            int[] maxCapacities = new int[] { 4, 4 };
+            int batchSize = 4;
+            var baseRes = PowerOfTwoResolution.Res64;
+
+            var mapper = new SphereAtlasMapper<Vector3Int>();
+
+            // Act
+            mapper.Initialize(maxCapacities, baseRes, batchSize);
+
+            // Assert
+            Assert.AreEqual(8, mapper.Registry.Capacity, "Buffer capacity should remain unchanged if it is already a multiple of the batch size.");
         }
 
         #endregion
@@ -407,6 +441,65 @@ namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
             Assert.IsTrue(mapper.IsInitialized, "Clearing must keep the internal structures and registry allocated.");
             Assert.IsFalse(mapper.HasPendingRequests, "Pending requests queue must be cleared.");
             Assert.IsFalse(mapper.HasBakeCommands, "Bake lookup dictionary must be cleared.");
+        }
+
+        #endregion
+
+        #region Reset Tests
+
+        [Test]
+        public void Reset_WhenInitialized_ReturnsToUninitializedState()
+        {
+            // Arrange
+            var mapper = new MockAtlasMapper<int>();
+            int[] capacities = { 10, 20 };
+            mapper.Initialize(capacities, PowerOfTwoResolution.Res64, batchSize: 2);
+
+            Assert.IsTrue(mapper.IsInitialized, "Precondition: Mapper should be initialized.");
+            Assert.Greater(mapper.LodCount, 0, "Precondition: LodCount should be greater than zero.");
+
+            // Act
+            mapper.Reset();
+
+            // Assert
+            Assert.IsFalse(mapper.IsInitialized, "Mapper should not be initialized after Reset.");
+            Assert.AreEqual(0, mapper.LodCount, "LodCount should be 0 after Reset.");
+            Assert.AreEqual(0, mapper.RequiredSliceCount, "RequiredSliceCount should be 0 after Reset.");
+            Assert.IsNull(mapper.Registry, "Registry reference should be null after Reset.");
+        }
+
+        [Test]
+        public void Reset_WhenNotInitialized_DoesNotThrow()
+        {
+            // Arrange
+            var mapper = new MockAtlasMapper<int>();
+
+            // Assert
+            Assert.IsFalse(mapper.IsInitialized, "Precondition: Mapper should not be initialized.");
+
+            // Act & Assert
+            Assert.DoesNotThrow(() => mapper.Reset(), "Reset on an uninitialized mapper should safely handle null references.");
+        }
+
+        [Test]
+        public void Reset_ClearsActiveMappingsAndQueues()
+        {
+            // Arrange
+            var mapper = new MockAtlasMapper<int>();
+            mapper.Initialize(new[] { 10 }, PowerOfTwoResolution.Res64, batchSize: 1);
+
+            int testKey = 42;
+            mapper.RequestTile(testKey, lodIndex: 0, Vector3.zero, 1f);
+            mapper.FlushTileRequests();
+
+            Assert.IsTrue(mapper.IsTileActive(testKey), "Precondition: Test tile should be active.");
+
+            // Act
+            mapper.Reset();
+
+            // Assert
+            Assert.IsFalse(mapper.IsTileActive(testKey), "Active mappings should be cleared after Reset.");
+            Assert.AreEqual(0, mapper.ActiveTileCount, "ActiveTileCount should be 0 after Reset.");
         }
 
         #endregion
@@ -767,7 +860,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
             mapper.RequestTile(key, lodIndex: 0, Vector3.zero, 1f);
             mapper.FlushTileRequests();
 
-            var handler = new TestBakeHandler { Collected = new List<MockAtlasMapper<int>.TileMetadata>() };
+            var handler = new TestBakeHandler { Collected = new List<TileMetadata<int>>() };
 
             // Act
             mapper.ForEachPendingBake(ref handler);
@@ -782,7 +875,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
         {
             // Arrange
             var mapper = new MockAtlasMapper<int>();
-            var handler = new TestBakeHandler { Collected = new List<MockAtlasMapper<int>.TileMetadata>() };
+            var handler = new TestBakeHandler { Collected = new List<TileMetadata<int>>() };
 
             // Act & Assert
             Assert.Throws<InvalidOperationException>(() => mapper.ForEachPendingBake(ref handler),
@@ -1009,7 +1102,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering.Tests
             Assert.IsTrue(mapper.HasBakeCommands, "Bake commands should be available after new allocations.");
 
             // Act 3: Process pending bakes using the allocation handler
-            var bakeHandler = new TestBakeHandler { Collected = new List<MockAtlasMapper<int>.TileMetadata>() };
+            var bakeHandler = new TestBakeHandler { Collected = new List<TileMetadata<int>>() };
             mapper.ForEachPendingBake(ref bakeHandler);
 
             Assert.AreEqual(2, bakeHandler.Collected.Count, "All active tiles should require a bake.");

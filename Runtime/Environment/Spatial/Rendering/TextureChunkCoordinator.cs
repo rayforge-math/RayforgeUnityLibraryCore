@@ -2,9 +2,10 @@ using Rayforge.Core.Common.Rendering;
 using Rayforge.Core.Environment.Abstractions;
 using Rayforge.Core.Environment.Spatial.Chunks;
 using Rayforge.Core.Environment.Spatial.Rendering;
+using Rayforge.Core.Execution.Abstractions;
 using Rayforge.Core.Execution.Handler;
-using Rayforge.Core.Rendering.Abstractions;
 using System;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace Rayforge.Core.Environment.Spatial.Surfaces
@@ -15,67 +16,102 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
     /// </summary>
     public class TextureChunkCoordinator
     {
-        private readonly SphereAtlasMapper<Vector3Int> _mapper = new();
-        private readonly LODChunkRegistry<TextureChunk> _chunkRegistry = new();
+        private readonly SphereAtlasMapper<Vector3Int> m_Mapper = new();
+        private readonly LODChunkRegistry<TextureChunk> m_ChunkRegistry = new();
 
-        #region GPU Buffer Metadata Access
+        #region Properties
 
         /// <summary>
         /// The total number of slices required in the Texture2DArray to fit all LOD levels.
         /// Use this value as the 'depth' when allocating your Texture2DArray.
         /// </summary>
-        public int RequiredSliceCount => _mapper?.RequiredSliceCount ?? 0;
+        public int RequiredSliceCount => m_Mapper?.RequiredSliceCount ?? 0;
 
         /// <summary>
         /// The reference resolution of a single slot at LOD 0.
         /// This defines the width and height of the Texture2DArray.
         /// </summary>
-        public PowerOfTwoResolution BaseResolution => _mapper?.BaseResolution ?? default;
+        public PowerOfTwoResolution BaseResolution => m_Mapper?.BaseResolution ?? default;
 
         /// <summary>
         /// Gets the total capacity (number of slots) required for the GPU buffers.
         /// Use this as the 'count' parameter for ComputeBuffer allocation.
         /// </summary>
-        public int BufferCapacity => _mapper?.Registry.Capacity ?? 0;
+        public int BufferCapacity => m_Mapper?.Registry?.Capacity ?? 0;
 
         /// <summary>
         /// Gets the number of entries processed per dirty-tracking batch.
         /// Used to align GPU buffer updates and optimize the transfer of modified data.
         /// </summary>
-        public int BatchSize => _mapper?.Registry.BatchSize ?? 0;
+        public int BatchSize => m_Mapper?.Registry?.BatchSize ?? 0;
 
         /// <summary>
         /// Gets the stride (byte size) for the culling data buffer.
         /// </summary>
-        public int CullingStride => _mapper?.Registry.CullingStride ?? 0;
+        public int CullingStride => m_Mapper?.Registry?.CullingStride ?? 0;
 
         /// <summary>
         /// Gets the stride (byte size) for the render mapping buffer.
         /// </summary>
-        public int RenderStride => _mapper?.Registry.RenderStride ?? 0;
+        public int RenderStride => m_Mapper?.Registry?.RenderStride ?? 0;
 
         /// <summary>
         /// Gets the highest index currently in use to optimize Compute Shader dispatch.
         /// Helps avoiding unnecessary thread groups on the GPU.
         /// </summary>
-        public int HighestActiveIndex => _mapper?.Registry.HighestIndex ?? -1;
-
-        #endregion
-
-        #region Properties
+        public int HighestActiveIndex => m_Mapper?.Registry?.HighestIndex ?? -1;
 
         /// <summary>
         /// Provides read-only access to the LOD configuration and spatial queries.
         /// Returns null if not initialized.
         /// </summary>
-        public ILODGridProvider<Vector3Int> LodGridProvider => _chunkRegistry;
+        public ILODGridProvider<Vector3Int> LodGridProvider => m_ChunkRegistry;
+
+        /// <summary>
+        /// Gets or sets the viewer transform used for LOD calculations.
+        /// Safe to update every frame. Call UpdateLODs() afterwards.
+        /// </summary>
+        public Transform Viewer
+        {
+            get
+            {
+                if (!IsInitialized)
+                    throw new InvalidOperationException("TextureChunkCoordinator must be initialized before getting the viewer.");
+                return m_ChunkRegistry.Viewer;
+            }
+            set
+            {
+                if (!IsInitialized)
+                    throw new InvalidOperationException("TextureChunkCoordinator must be initialized before setting the viewer.");
+                m_ChunkRegistry.Viewer = value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the coordinate system anchor to support large-scale world movement.
+        /// </summary>
+        public Vector3 Anchor
+        {
+            get
+            {
+                if (!IsInitialized)
+                    throw new InvalidOperationException("TextureChunkCoordinator must be initialized before getting the anchor.");
+                return m_ChunkRegistry.Anchor;
+            }
+            set
+            {
+                if (!IsInitialized)
+                    throw new InvalidOperationException("TextureChunkCoordinator must be initialized before setting the anchor.");
+                m_ChunkRegistry.Anchor = value;
+            }
+        }
 
         /// <summary>
         /// Checks if the coordinator has been initialized with a valid registry and mapper.
         /// </summary>
         public bool IsInitialized =>
-            _mapper != null && _mapper.IsInitialized &&
-            _chunkRegistry != null && _chunkRegistry.IsInitialized;
+            m_Mapper != null && m_Mapper.IsInitialized &&
+            m_ChunkRegistry != null && m_ChunkRegistry.IsInitialized;
 
         #endregion
 
@@ -87,11 +123,12 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         /// <param name="gridSize">The size of the spatial grid.</param>
         /// <param name="anchor">The spatial anchor position.</param>
-        /// <param name="lodConfigs">The master list of LOD levels, defining both distances and texture resolutions.</param>
+        /// <param name="lodDistances">The master list of LOD distances, defining the threshold ranges.</param>
+        /// <param name="baseResolution">The reference resolution of a single slot at LOD 0.</param>
         /// <param name="batchSize">Number of elements to process in a single GPU update block.</param>
         /// <param name="viewer">The transform used to calculate distances for LOD switching (cannot be null).</param>
-        /// <param name="parent">The parent transform where chunk GameObjects will be organized (optional).</param>
         /// <param name="deactivateOnCulled">If true, chunks outside the maximum LOD range will be disabled.</param>
+        /// <param name="parent">The parent transform where chunk GameObjects will be organized (optional).</param>
         public void Initialize(
             GridSize gridSize,
             Vector3 anchor,
@@ -107,17 +144,41 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 throw new ArgumentNullException(nameof(viewer), "Viewer transform cannot be null.");
             }
 
+            if (batchSize <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(batchSize), "Batch size must be greater than zero.");
+            }
+
+            if (lodDistances.IsEmpty)
+            {
+                throw new ArgumentException("LOD distances span cannot be empty.", nameof(lodDistances));
+            }
+
+            for (int i = 0; i < lodDistances.Length; i++)
+            {
+                if (lodDistances[i] <= 0f)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(lodDistances), "LOD distances must be greater than zero.");
+                }
+
+                if (i > 0 && lodDistances[i] <= lodDistances[i - 1])
+                {
+                    throw new ArgumentException("LOD distances must be strictly increasing.", nameof(lodDistances));
+                }
+            }
+
             Reset();
 
-            int lodCount = _chunkRegistry.LodCount;
+            m_ChunkRegistry.Initialize(gridSize, anchor, lodDistances, viewer, deactivateOnCulled, parent);
+
+            int lodCount = m_ChunkRegistry.LodCount;
             int[] capacities = new int[lodCount];
             for (int i = 0; i < lodCount; i++)
             {
-                capacities[i] = _chunkRegistry.GetMaxCapacityForLODLevel(i);
+                capacities[i] = m_ChunkRegistry.GetMaxCapacityForLODLevel(i);
             }
 
-            _chunkRegistry.Initialize(gridSize, anchor, lodDistances, viewer, deactivateOnCulled, parent);
-            _mapper.Initialize(capacities, baseResolution, batchSize);
+            m_Mapper.Initialize(capacities, baseResolution, batchSize);
         }
 
         /// <summary>
@@ -126,17 +187,18 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         public void Clear()
         {
-            _chunkRegistry?.Clear();
-            _mapper?.Clear();
+            m_ChunkRegistry?.Clear();
+            m_Mapper?.Clear();
         }
 
         /// <summary>
-        /// Clears all chunks and resets the atlas mapping, but keeps the coordinator alive.
+        /// Resets the coordinator, requires re-initialization.
         /// </summary>
         public void Reset()
         {
             Clear();
-            _chunkRegistry?.Reset();
+            m_ChunkRegistry?.Reset();
+            m_Mapper?.Reset();
         }
 
         #endregion
@@ -144,33 +206,15 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         #region High-Frequency Updates
 
         /// <summary>
-        /// Updates the viewer position for LOD calculations. 
-        /// Safe to call every frame or when the camera changes.
-        /// Call UpdateLODs() afterwards.
-        /// </summary>
-        public void SetViewer(Transform viewer)
-        {
-            if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
-            _chunkRegistry.Viewer = viewer;
-        }
-
-        /// <summary>
-        /// Shifts the coordinate system anchor to support large-scale world movement.
-        /// </summary>
-        public void SetAnchor(Vector3 anchor)
-        {
-            if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
-            _chunkRegistry.Anchor = anchor;
-        }
-
-        /// <summary>
         /// Shifts the coordinate system anchor to support large-scale world movement.
         /// Updates the registry and ensures the spatial mapping stays consistent.
         /// </summary>
         public void NotifyOriginShift(Vector3 delta)
         {
-            if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return;
-            _chunkRegistry.NotifyOriginShift(delta);
+            if (!IsInitialized)
+                throw new InvalidOperationException("TextureChunkCoordinator must be initialized before notifying origin shifts.");
+
+            m_ChunkRegistry.NotifyOriginShift(delta);
         }
 
         /// <summary>
@@ -179,70 +223,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <returns>The number of chunks that actually changed their LOD level.</returns>
         public int UpdateLODs()
         {
-            if (_chunkRegistry == null || !_chunkRegistry.IsInitialized) return 0;
-            return _chunkRegistry.UpdateLODs();
-        }
+            if (!IsInitialized)
+                throw new InvalidOperationException("TextureChunkCoordinator must be initialized before updating LODs.");
 
-        #endregion
-
-        #region Low-Frequency Updates
-
-        /// <summary>
-        /// Passes new LOD distance thresholds directly to the registry.
-        /// After updating thresholds, we refresh all chunks to apply the new logic.
-        /// </summary>
-        /// <returns>True if the underlying atlas layout has been changed.</returns>
-        public bool UpdateLodConfiguration(ReadOnlySpan<float> lodDistances, PowerOfTwoResolution baseResolution)
-        {
-            if (!IsInitialized) return false;
-
-            bool distancesChanged = _chunkRegistry.UpdateLodDistances(lodDistances);
-            if (distancesChanged)
-            {
-                UpdateLODs();
-            }
-
-            int lodCount = _chunkRegistry.LodCount;
-            int[] capacities = new int[lodCount];
-            for (int i = 0; i < lodCount; i++)
-            {
-                capacities[i] = _chunkRegistry.GetMaxCapacityForLODLevel(i);
-            }
-
-            _mapper.Initialize(capacities, baseResolution, _mapper.Registry.BatchSize);
-            ForceRequeueAll();
-
-            return distancesChanged;
-        }
-
-        /// <summary>
-        /// Updates the physical size of the grid cells. 
-        /// Warning: Changing the grid size at runtime will force a full clear of the current registry 
-        /// as the spatial keys (GridKey) will no longer align with world positions.
-        /// After calling this, you MUST call UpdateTopology with your master source to rebuild the world.
-        /// </summary>
-        /// <param name="newGridSize">The new size of a chunk (e.g., from GridSizeBinary).</param>
-        /// <returns>True if the grid size was actually changed and a rebuild is required.</returns>
-        public bool UpdateGridSize(GridSize newGridSize)
-        {
-            if (!IsInitialized) return false;
-            _chunkRegistry.GridSize = newGridSize;
-            _mapper.Clear();
-            return true;
-        }
-
-        /// <summary>
-        /// Updates the number of chunks processed in a single execution frame.
-        /// This is a performance tuning parameter and does not require a world rebuild.
-        /// </summary>
-        /// <param name="newBatchSize">The maximum number of chunks to bake/update per frame.</param>
-        /// <returns>True if the batch size was actually changed.</returns>
-        public bool UpdateBatchSize(int newBatchSize)
-        {
-            if (!IsInitialized) return false;
-
-            int validatedSize = Mathf.Max(1, newBatchSize);
-            return _mapper.UpdateBatchSize(validatedSize);
+            return m_ChunkRegistry.UpdateLODs();
         }
 
         #endregion
@@ -255,9 +239,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         public void ForceRequeueAll()
         {
-            if (!IsInitialized) return;
+            if (!IsInitialized)
+                throw new InvalidOperationException("TextureChunkCoordinator is not initialized.");
 
-            foreach (var chunk in _chunkRegistry.AllEntries)
+            foreach (var chunk in m_ChunkRegistry.AllEntries)
             {
                 if (chunk.IsVisible)
                 {
@@ -269,7 +254,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
                 }
             }
 
-            _mapper.FlushTileRequests();
+            m_Mapper.FlushTileRequests();
         }
 
         /// <summary>
@@ -279,31 +264,15 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public void UpdateTopology<TCollection>(TCollection masterSource)
             where TCollection : ISpatialCollection<Vector3Int>
         {
-            if (!IsInitialized) return;
+            if (!IsInitialized)
+                throw new InvalidOperationException("TextureChunkCoordinator is not initialized.");
 
             try
             {
-                foreach (var key in masterSource.GetDirtyCellIterator())
-                {
-                    bool hasData = masterSource.IsCellActive(key);
-                    bool exists = _chunkRegistry.TryGetEntry(key, out TextureChunk chunk);
+                var handler = new TopologyUpdateHandler<TCollection>(this, masterSource);
+                masterSource.ForEachDirtyCell(ref handler);
 
-                    if (hasData)
-                    {
-                        var handler = new StatefulActionHandler<TextureChunk, TextureChunkCoordinator>(this, static (chunk, coord) =>
-                        {
-                            coord.SetupChunk(chunk);
-                        });
-
-                        _chunkRegistry.GetOrCreateChunk(key, ref handler, out chunk);
-                    }
-                    else if (exists)
-                    {
-                        _chunkRegistry.RemoveAndDestroy(key);
-                    }
-                }
-
-                _mapper.FlushTileRequests();
+                m_Mapper.FlushTileRequests();
             }
             catch (Exception e)
             {
@@ -312,31 +281,57 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         }
 
         /// <summary>
+        /// Internal handler for zero-allocation dirty cell topology updates.
+        /// </summary>
+        private readonly struct TopologyUpdateHandler<TCollection> : IExecutionHandler<Vector3Int>
+            where TCollection : ISpatialCollection<Vector3Int>
+        {
+            private readonly TextureChunkCoordinator _coordinator;
+            private readonly TCollection _masterSource;
+
+            public TopologyUpdateHandler(TextureChunkCoordinator coordinator, TCollection masterSource)
+            {
+                _coordinator = coordinator;
+                _masterSource = masterSource;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void Execute(Vector3Int key)
+            {
+                bool hasData = _masterSource.IsCellActive(key);
+                bool exists = _coordinator.m_ChunkRegistry.TryGetEntry(key, out TextureChunk chunk);
+
+                if (hasData)
+                {
+                    var handler = new StatefulActionHandler<TextureChunk, TextureChunkCoordinator>(_coordinator, static (c, coord) =>
+                    {
+                        coord.SetupChunk(c);
+                    });
+
+                    _coordinator.m_ChunkRegistry.GetOrCreateChunk(key, ref handler, out chunk);
+                }
+                else if (exists)
+                {
+                    _coordinator.m_ChunkRegistry.RemoveAndDestroy(key);
+                }
+            }
+        }
+
+        /// <summary>
         /// Phase 2: Execution.
         /// Iterates over the result set. This allows multiple bake-passes (Height, Splat, etc.) using the passed in function pointer.
         /// </summary>
-        public void ExecuteBake(Action<Vector3Int, TextureMappingData> onBakeTile)
+        public void ForEachBakeCommand<THandler>(ref THandler handler) 
+            where THandler : struct, IExecutionHandler<TileMetadata<Vector3Int>>
         {
-            if (!IsInitialized || !_mapper.HasBakeCommands) return;
+            if (!IsInitialized)
+                throw new InvalidOperationException("TextureChunkCoordinator is not initialized.");
 
             try
             {
-                /*
-                //_mapper
-                if(_mapper.TryGetBakeIterator(out var iter))
-                {
-                    foreach(var entry in iter)
-                    {
-                        if (_chunkRegistry.TryGetEntry(entry.Key, out var chunk))
-
-                        {
-                            chunk.SetTextureMapping(entry.Mapping);
-                            onBakeTile?.Invoke(entry.Key, entry.Mapping);
-
-                        }
-                    }
-                }
-                */
+                var bridge = new BakeBridgeHandler<THandler>(this, ref handler);
+                m_Mapper.ForEachPendingBake(ref bridge);
+                handler = bridge._userHandler;
             }
             catch (Exception e)
             {
@@ -344,7 +339,32 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             }
             finally
             {
-                _mapper.ClearBakeQueue();
+                m_Mapper.ClearBakeQueue();
+            }
+        }
+
+        /// <summary>
+        /// Internal bridge to link high-level chunk tracking with the low-level mapper output.
+        /// </summary>
+        private struct BakeBridgeHandler<TUserHandler> : IExecutionHandler<TileMetadata<Vector3Int>>
+            where TUserHandler : struct, IExecutionHandler<TileMetadata<Vector3Int>>
+        {
+            private TextureChunkCoordinator _coordinator;
+            public TUserHandler _userHandler;
+
+            public BakeBridgeHandler(TextureChunkCoordinator coordinator, ref TUserHandler userHandler)
+            {
+                _coordinator = coordinator;
+                _userHandler = userHandler;
+            }
+
+            public void Execute(TileMetadata<Vector3Int> metadata)
+            {
+                if (_coordinator.m_ChunkRegistry.TryGetEntry(metadata.Key, out var chunk))
+                {
+                    chunk.SetTextureMapping(metadata.Mapping);
+                    _userHandler.Execute(metadata);
+                }
             }
         }
 
@@ -403,7 +423,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             if (chunk != null && chunk.CurrentLOD >= 0)
             {
-                _mapper.RequestTile(chunk.GridKey, chunk.CurrentLOD, chunk.WorldPosition, chunk.LocalExtent.x);
+                m_Mapper.RequestTile(chunk.GridKey, chunk.CurrentLOD, chunk.WorldPosition, chunk.LocalExtent.x);
             }
         }
 
@@ -412,7 +432,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         private void RemoveChunkTile(TextureChunk chunk)
         {
-            _mapper.ReleaseTile(chunk.GridKey);
+            m_Mapper.ReleaseTile(chunk.GridKey);
         }
 
         #endregion
