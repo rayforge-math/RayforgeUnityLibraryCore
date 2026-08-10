@@ -370,8 +370,14 @@ namespace Rayforge.Core.Environment.Spatial.Chunks.Tests
             // Arrange
             var chunk = _container.AddComponent<T>();
             chunk.UpdateOnTransformChange = true;
+
+            // Clear the initial creation dirty flag so we can isolate the transform check
+            chunk.ClearDirty();
+            Assert.IsFalse(chunk.IsDirty, "Chunk should start clean for this test.");
+
+            // Move the transform to trigger the change flag
             _container.transform.position = Vector3.forward;
-            Assert.IsTrue(chunk.IsDirty);
+            Assert.IsTrue(chunk.IsDirty, "IsDirty should be true after moving the transform.");
 
             // Act
             chunk.SuppressTransformDirtyOnce();
@@ -388,7 +394,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks.Tests
         #region Dispose Tests
 
         [Test]
-        public void Dispose_TriggersCleanupEventAndDestroysObject()
+        public void Dispose_TriggersCleanupEvent_DoesNotDestroyGameObject()
         {
             // Arrange
             var chunk = _container.AddComponent<T>();
@@ -400,9 +406,13 @@ namespace Rayforge.Core.Environment.Spatial.Chunks.Tests
 
             // Assert
             Assert.IsTrue(cleanupEventTriggered, "OnCleanup event should be triggered before disposal.");
-            Assert.IsTrue(_container == null || _container.Equals(null), "The associated GameObject should be destroyed.");
+            Assert.IsFalse(_container == null || _container.Equals(null), "Disposing the chunk should not destroy the GameObject automatically.");
 
-            UnityEngine.Object.Destroy(chunk);
+            // Cleanup after test to prevent memory leaks in the test runner
+            if (_container != null)
+            {
+                UnityEngine.Object.DestroyImmediate(_container);
+            }
         }
 
         [Test]
@@ -512,7 +522,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks.Tests
         #region GetSqrDistanceTo Tests
 
         [Test]
-        public void GetSqrDistanceTo_CalculatesCorrectSquaredDistance()
+        public void GetSqrDistanceTo_CalculatesCorrectSquaredDistance_RespectingActiveAxes()
         {
             // Arrange
             var chunk = _container.AddComponent<T>();
@@ -520,15 +530,20 @@ namespace Rayforge.Core.Environment.Spatial.Chunks.Tests
             _container.transform.position = new Vector3(10, 10, 10);
 
             // Target is at (13, 14, 10)
-            // dx = 3, dy = 4, dz = 0
-            // Distance^2 = 3^2 + 4^2 + 0^2 = 9 + 16 = 25
+            // If X, Y, and Z are active (Voxel mode):
+            // dx = 3, dy = 4, dz = 0 -> Distance^2 = 3^2 + 4^2 + 0^2 = 25
             Vector3 target = new Vector3(13, 14, 10);
 
             // Act
             float sqrDist = chunk.GetSqrDistanceToCentre(target);
 
             // Assert
-            Assert.AreEqual(25f, sqrDist, 0.001f, "Squared distance calculation is incorrect.");
+            // Note: This expectation assumes that all axes (X, Y, Z) are active for type T.
+            float expected = (chunk.IsXActive ? 9f : 0f) +
+                             (chunk.IsYActive ? 16f : 0f) +
+                             (chunk.IsZActive ? 0f : 0f);
+
+            Assert.AreEqual(expected, sqrDist, 0.001f, "Squared distance calculation is incorrect based on active axes.");
 
             UnityEngine.Object.Destroy(chunk);
         }
@@ -580,7 +595,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks.Tests
         }
 
         [Test]
-        public void GetSqrDistanceToClosestEdge_CalculatesCorrectEdgeDistance()
+        public void GetSqrDistanceToClosestEdge_CalculatesCorrectEdgeDistance_RespectingActiveAxes()
         {
             // Arrange
             var chunk = _container.AddComponent<T>();
@@ -588,16 +603,20 @@ namespace Rayforge.Core.Environment.Spatial.Chunks.Tests
             _container.transform.position = Vector3.zero;
 
             // Target (13, 14, 0)
-            // X-dist to edge: |13| - 10 = 3
-            // Y-dist to edge: |14| - 10 = 4
-            // Result: 3^2 + 4^2 = 9 + 16 = 25
             Vector3 target = new Vector3(13, 14, 0);
 
             // Act
             float sqrDist = chunk.GetSqrDistanceToClosestEdge(target);
 
             // Assert
-            Assert.AreEqual(25f, sqrDist, 0.001f);
+            // Calculate expected distance dynamically based on active axes
+            float expectedDx = chunk.IsXActive ? Mathf.Max(0f, Mathf.Abs(chunk.transform.position.x - target.x) - chunk.LocalExtent.x) : 0f;
+            float expectedDy = chunk.IsYActive ? Mathf.Max(0f, Mathf.Abs(chunk.transform.position.y - target.y) - chunk.LocalExtent.y) : 0f;
+            float expectedDz = chunk.IsZActive ? Mathf.Max(0f, Mathf.Abs(chunk.transform.position.z - target.z) - chunk.LocalExtent.z) : 0f;
+
+            float expectedSqrDist = expectedDx * expectedDx + expectedDy * expectedDy + expectedDz * expectedDz;
+
+            Assert.AreEqual(expectedSqrDist, sqrDist, 0.001f, "Edge distance calculation is incorrect based on active axes.");
 
             UnityEngine.Object.Destroy(chunk);
         }

@@ -10,7 +10,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     /// It does not hold references to textures or material blocks, keeping the memory footprint minimal.
     /// </summary>
     [ChunkConfig(SpatialAxes.Surface)]
-    public class TextureLodChunk : LODChunk<TextureLodChunk>, ITextureMapped
+    public class TextureChunk : LODChunk<TextureChunk>, ITextureMapped
     {
         /// <summary>
         /// The view metadata (Slice, Scale, Offset) for this chunk in the global atlas.
@@ -40,7 +40,12 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
         /// </summary>
         public void ClearMapping()
         {
-            Mapping = default;
+            Mapping = new TextureMappingData()
+            {
+                SliceIndex = -1,
+                RelativeScale = 0f,
+                RelativeOffset = Vector2.zero
+            };
         }
 
         #region Debugging & Gizmos
@@ -71,12 +76,12 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
     }
 
 #if UNITY_EDITOR
-    [CustomEditor(typeof(TextureLodChunk))]
-    public class TextureLodChunkEditor : Editor
+    [CustomEditor(typeof(TextureChunk))]
+    public class TextureChunkEditor : Editor
     {
         public override void OnInspectorGUI()
         {
-            var chunk = (TextureLodChunk)target;
+            var chunk = (TextureChunk)target;
 
             EditorGUILayout.LabelField("LOD Configuration", EditorStyles.boldLabel);
             EditorGUILayout.IntField("Current LOD", chunk.CurrentLOD);
