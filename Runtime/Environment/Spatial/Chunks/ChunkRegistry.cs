@@ -117,6 +117,7 @@ namespace Rayforge.Core.Environment.Spatial.Chunks
                 throw new InvalidOperationException($"No active axes defined for chunk type {typeof(T).Name}. Check the [ChunkConfig] attribute on your chunk class.");
             }
 
+            Reset();
             base.Initialize(parent, name);
 
             m_BaseName = string.IsNullOrEmpty(name) ? "ChunkRegistry" : name;

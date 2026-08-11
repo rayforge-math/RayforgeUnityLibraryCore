@@ -1,6 +1,7 @@
 using Rayforge.Core.Collections.Abstractions;
 using Rayforge.Core.Collections.Helpers;
 using Rayforge.Core.Environment.Abstractions;
+using Rayforge.Core.Execution.Abstractions;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -29,15 +30,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         #region Public Members
 
-        /// <summary> Event triggered on registry changes. </summary>
-        public event Action<SurfaceTracker> OnRegistryChanged;
-
-        /// <summary> 
-        /// Event triggered when tracking settings (filters, scan rules) are modified. 
-        /// Useful for refreshing visualizers or forcing a re-scan.
-        /// </summary>
-        public event Action<SurfaceTracker> OnSettingsChanged;
-
         /// <summary>
         /// Provides read-only access to the underlying spatial database.
         /// This allows external systems to perform spatial queries (e.g., Raycasts, Bounds checks)
@@ -55,11 +47,6 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         public int TotalTrackedCount => _trackedSurfaces.Count;
 
-        /// <summary>
-        /// Returns a read-only view of the currently tracked surfaces managed by this tracker.
-        /// </summary>
-        public IIterator<GameObject> TrackedSurfaces => _surfaces.GetEnumerator().ToIterator();
-
         /// <summary> 
         /// True if the tracker is connected to a valid and initialized registry. 
         /// </summary>
@@ -67,37 +54,16 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         #endregion
 
-        #region Private Runtime State
+        #region Public Events
 
-        /// <summary> The shared spatial database where validated surfaces are stored. </summary>
-        private SurfaceRegistry _objectRegistry;
-
-        /// <summary> Cached root transform. </summary>
-        private Transform _root;
+        /// <summary> Event triggered on registry changes. </summary>
+        public event Action<SurfaceTracker> OnSurfacesChanged;
 
         /// <summary> 
-        /// Key: InstanceID, Value: IsManual (true if the surface is part of the persistent _surfaces list). 
+        /// Event triggered when tracking settings (filters, scan rules) are modified. 
+        /// Useful for refreshing visualizers or forcing a re-scan.
         /// </summary>
-        private readonly Dictionary<int, bool> _trackedSurfaces = new Dictionary<int, bool>();
-
-        /// <summary> 
-        /// Internal flag to track changes within a transaction. 
-        /// Only set to true when the underlying registry/spatial data actually changes.
-        /// </summary>
-        private bool _isDirty;
-
-        /// <summary>
-        /// Broadcasts changes to listeners and resets the dirty state.
-        /// This ensures that even complex batch operations only trigger a single update.
-        /// </summary>
-        private void TryNotifyOnRegistryChanged()
-        {
-            if (_isDirty)
-            {
-                _isDirty = false;
-                OnRegistryChanged?.Invoke(this);
-            }
-        }
+        public event Action<SurfaceTracker> OnSettingsChanged;
 
         #endregion
 
@@ -142,7 +108,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
 
         #endregion
 
-        #region Runtime & Init
+        #region Init
 
         /// <summary>
         /// Connects the tracker to an external spatial registry and synchronizes existing data.
@@ -161,10 +127,14 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <summary>
         /// Performs a complete rebuild of the tracker state by syncing the list and scanning hierarchy.
         /// </summary>
+        /// <exception cref="InvalidOperationException">Thrown if the tracker is not initialized.</exception>
         /// <returns>True if any surfaces are currently being tracked after the rebuild.</returns>
         public bool RebuildRegistry()
         {
-            if (!IsInitialized) return false;
+            if (!IsInitialized)
+            {
+                throw new InvalidOperationException("Tracker is not initialized. Call Initialize() first.");
+            }
 
             ClearStateInternal();
 
@@ -174,9 +144,47 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             {
                 ScanHierarchyInternal(_root);
             }
-            TryNotifyOnRegistryChanged();
+            NotifySurfacesChanged();
             return TotalTrackedCount > 0;
         }
+
+        #endregion
+
+        #region Private Runtime State
+
+        /// <summary> The shared spatial database where validated surfaces are stored. </summary>
+        private SurfaceRegistry _objectRegistry;
+
+        /// <summary> Cached root transform. </summary>
+        private Transform _root;
+
+        /// <summary> 
+        /// Key: InstanceID, Value: IsManual (true if the surface is part of the persistent _surfaces list). 
+        /// </summary>
+        private readonly Dictionary<int, bool> _trackedSurfaces = new Dictionary<int, bool>();
+
+        /// <summary> 
+        /// Internal flag to track changes within a transaction. 
+        /// Only set to true when the underlying registry/spatial data actually changes.
+        /// </summary>
+        private bool _isDirty;
+
+        /// <summary>
+        /// Broadcasts changes to listeners and resets the dirty state.
+        /// This ensures that even complex batch operations only trigger a single update.
+        /// </summary>
+        private void NotifySurfacesChanged()
+        {
+            if (_isDirty)
+            {
+                _isDirty = false;
+                OnSurfacesChanged?.Invoke(this);
+            }
+        }
+
+        #endregion
+
+        #region Runtime
 
         /// <summary>
         /// Attempts to register a GameObject as a dynamic surface.
@@ -187,8 +195,13 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <returns>True if the object passed validation and was added to the registry.</returns>
         public bool TryAddSurface(GameObject obj)
         {
+            if (!IsInitialized)
+            {
+                throw new InvalidOperationException("Tracker is not initialized. Call Initialize() first.");
+            }
+
             bool added = TryAddSurfaceInternal(obj, false);
-            TryNotifyOnRegistryChanged();
+            if (added) NotifySurfacesChanged();
             return added;
         }
 
@@ -201,8 +214,13 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <returns>True if the surface was tracked and successfully removed.</returns>
         public bool RemoveSurface(int id)
         {
+            if (!IsInitialized)
+            {
+                throw new InvalidOperationException("Tracker is not initialized. Call Initialize() first.");
+            }
+
             bool removed = RemoveSurfaceInternal(id);
-            TryNotifyOnRegistryChanged();
+            if (removed) NotifySurfacesChanged();
             return removed;
         }
 
@@ -214,7 +232,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         public void ClearState()
         {
             ClearStateInternal();
-            TryNotifyOnRegistryChanged();
+            NotifySurfacesChanged();
         }
 
         /// <summary>
@@ -225,7 +243,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         {
             ClearStateInternal();
             _surfaces?.Clear();
-            TryNotifyOnRegistryChanged();
+            NotifySurfacesChanged();
         }
 
         /// <summary>
@@ -238,7 +256,47 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
             ClearStateInternal();
             _surfaces?.Clear();
             _objectRegistry = null;
-            TryNotifyOnRegistryChanged();
+            NotifySurfacesChanged();
+        }
+
+        #endregion
+
+        #region Iteration
+
+        /// <summary>
+        /// Returns a read-only view of the currently tracked surfaces managed by this tracker.
+        /// </summary>
+        public IIterator<GameObject> GetTrackedSurfaceIterator()
+        {
+            if (!IsInitialized)
+            {
+                throw new InvalidOperationException("Tracker is not initialized. Call Initialize() first.");
+            }
+
+            return _surfaces.GetEnumerator().ToIterator();
+        }
+
+        /// <summary>
+        /// Executes the given action on each tracked surface without allocations.
+        /// </summary>
+        /// <typeparam name="TAction">The execution handler type.</typeparam>
+        /// <param name="action">The action to execute for each surface.</param>
+        public void ForEachTrackedSurface<TAction>(ref TAction action)
+            where TAction : struct, IExecutionHandler<GameObject>
+        {
+            if (!IsInitialized)
+            {
+                throw new InvalidOperationException("Tracker is not initialized. Call Initialize() first.");
+            }
+
+            for (int i = 0; i < _surfaces.Count; i++)
+            {
+                GameObject surface = _surfaces[i];
+                if (surface != null)
+                {
+                    action.Execute(surface);
+                }
+            }
         }
 
         #endregion
@@ -253,7 +311,10 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// <param name="root">The root transform to start the recursive scan from.</param>
         public bool ScanHierarchyToTable(Transform root)
         {
-            if (root == null) return false;
+            if (!IsInitialized)
+            {
+                throw new InvalidOperationException("Tracker is not initialized. Call Initialize() first.");
+            }
 
             _surfaces.Clear();
             _isDirty = true;
@@ -277,7 +338,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         public void ClearTable()
         {
-            if (_surfaces.Count > 0)
+            if (_surfaces != null && _surfaces.Count > 0)
             {
                 _surfaces.Clear();
                 _isDirty = true;
@@ -290,7 +351,7 @@ namespace Rayforge.Core.Environment.Spatial.Surfaces
         /// </summary>
         public void CleanupTableNulls()
         {
-            int removed = _surfaces.RemoveAll(s => s == null);
+            int removed = _surfaces?.RemoveAll(s => s == null) ?? 0;
             if (removed > 0) _isDirty = true;
         }
 
