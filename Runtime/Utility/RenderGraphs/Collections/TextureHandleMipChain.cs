@@ -1,7 +1,7 @@
-using Rayforge.Core.Rendering.Collections;
 using System;
 using UnityEngine;
 using UnityEngine.Rendering.RenderGraphModule;
+using Rayforge.Core.Rendering.Collections;
 
 namespace Rayforge.Core.Utility.RenderGraphs.Collections
 {
@@ -15,34 +15,25 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
     /// - Automatic mip generation via standard RenderTexture is not directly supported in RenderGraph.
     /// 
     /// This structure simplifies the process by:
-    /// - Creating all mip levels via a user-provided function.
+    /// - Creating all mip levels via a zero-allocation struct handler.
     /// - Allowing optional mip map generation between handles in a RenderGraph-friendly way.
     /// - Providing easy access to individual mip handles and read-only spans for pass binding.
     /// </summary>
     public sealed class TextureHandleMipChain : MipChain<TextureHandle>
     {
         /// <summary>
-        /// Delegate for creating a handle for a mip level.
+        /// Initializes an empty texture handle mip chain.
         /// </summary>
-        /// <param name="handle">Reference to the current handle stored internally.</param>
-        /// <param name="descriptor">Descriptor describing the texture to create.</param>
-        /// <param name="mipLevel">Index of the mip level being created.</param>
-        /// <returns>
-        /// <c>true</c> if a new handle was created or allocated; 
-        /// <c>false</c> if the existing handle was reused (e.g., when using <c>ReAllocateHandleIfNeeded</c>).
-        /// </returns>
-        public delegate bool RenderGraphReallocFunction(ref TextureHandle handle, RenderTextureDescriptor descriptor, int mipLevel, RenderGraph renderGraph);
+        public TextureHandleMipChain() : base()
+        {
+        }
 
         /// <summary>
-        /// Initializes a mip chain with a texture creation function.
+        /// Resets or clears an individual texture handle when the chain is resized or destroyed.
         /// </summary>
-        /// <param name="reallocFunc">Function to create each mip level.</param>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="reallocFunc"/> is <c>null</c>.</exception>
-        public TextureHandleMipChain(RenderGraphReallocFunction reallocFunc)
-            : base(null, null)
+        protected override void DestroyHandle(ref TextureHandle handle)
         {
-            if (reallocFunc == null)
-                throw new ArgumentNullException(nameof(reallocFunc), "Texture creation function cannot be null.");
+            handle = default;
         }
 
         /// <summary>
@@ -66,8 +57,8 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="mip"/> is negative or greater than the highest mip index.</exception>
         public bool IsValid(int mip)
         {
-            if (mip < 0 || mip >= Handles.Count)
-                throw new ArgumentOutOfRangeException(nameof(mip), $"Mip index must be between 0 and {Handles.Count - 1}.");
+            if (mip < 0 || mip >= MipCount)
+                throw new ArgumentOutOfRangeException(nameof(mip), $"Mip index must be between 0 and {MipCount - 1}.");
 
             return Handles[mip].IsValid();
         }

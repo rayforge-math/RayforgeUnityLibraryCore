@@ -1,35 +1,69 @@
-using Rayforge.Core.Rendering.Collections;
+using System;
 using UnityEngine;
 using UnityEngine.Rendering;
-using Rayforge.Core.Common;
-using System;
+using Rayforge.Core.Rendering.Collections;
 
 namespace Rayforge.Core.Utility.RenderGraphs.Collections
 {
     /// <summary>
     /// Represents a chain of <see cref="RTHandle"/>s corresponding to mip levels of a texture
-    /// specifically for use in RenderGraph passes. 
+    /// specifically for use in rendering passes and resource management. 
     /// 
-    /// Unity's standard RenderTexture MipChain can be cumbersome in RenderGraph because:
+    /// Unity's standard RenderTexture MipChain can be cumbersome because:
     /// - Each mip level needs its own <see cref="RTHandle"/> allocation.
     /// - Copying or generating mips between levels requires explicit pass setup.
-    /// - Automatic mip generation via standard RenderTexture is not directly supported in RenderGraph.
     /// 
     /// This structure simplifies the process by:
-    /// - Creating all mip levels via a user-provided function.
-    /// - Allowing optional mip map generation between handles in a RenderGraph-friendly way.
-    /// - Providing easy access to individual mip handles and read-only spans for pass binding.
+    /// - Creating all mip levels via a zero-allocation struct handler.
+    /// - Automatically handling resource release and disposal of RTHandles.
+    /// - Providing easy access to individual mip handles and read-only spans.
     /// </summary>
     public sealed class RTHandleMipChain : MipChain<RTHandle>, IDisposable
     {
         /// <summary>
-        /// Initializes a mip chain with a texture creation function.
+        /// Initializes an empty RTHandle mip chain.
         /// </summary>
-        /// <param name="createFunc">Function to create each mip level.</param>
-        /// <param name="releaseFunc">Function to release a given mip level.</param>
-        public RTHandleMipChain(CreateFunction createFunc, ReleaseFunction releaseFunc)
-            : base(createFunc, releaseFunc)
-        { }
+        public RTHandleMipChain() : base()
+        {
+        }
+
+        /// <summary>
+        /// Releases or destroys an individual RTHandle safely.
+        /// </summary>
+        protected override void DestroyHandle(ref RTHandle handle)
+        {
+            if (handle != null)
+            {
+                handle.Release();
+                handle = null;
+            }
+        }
+
+        /// <summary>
+        /// Returns true if all mip handles in the chain are valid and allocated.
+        /// </summary>
+        public bool IsValid()
+        {
+            foreach (var handle in Handles)
+            {
+                if (handle == null)
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Returns true if the specified mip handle is valid.
+        /// </summary>
+        /// <param name="mip">Index of the mip level to check.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="mip"/> is out of bounds.</exception>
+        public bool IsValid(int mip)
+        {
+            if (mip < 0 || mip >= MipCount)
+                throw new ArgumentOutOfRangeException(nameof(mip), $"Mip index must be between 0 and {MipCount - 1}.");
+
+            return Handles[mip] != null;
+        }
 
         /// <summary>
         /// Releases all allocated RTHandles and clears the internal collection.

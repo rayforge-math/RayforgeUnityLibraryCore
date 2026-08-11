@@ -1,4 +1,5 @@
-﻿using Rayforge.Core.Rendering.Abstractions;
+﻿using Rayforge.Core.Execution.Abstractions;
+using Rayforge.Core.Rendering.Abstractions;
 using Rayforge.Core.Rendering.Collections.Helpers;
 using System;
 using System.Collections.Generic;
@@ -7,35 +8,37 @@ using UnityEngine;
 namespace Rayforge.Core.Rendering.Collections
 {
     /// <summary>
+    /// Context data passed to the creation handler for a specific mip level.
+    /// </summary>
+    /// <typeparam name="THandle">Type of the handle.</typeparam>
+    public struct MipCreateContext<THandle>
+    {
+        /// <summary>Descriptor describing the texture to create for this mip level.</summary>
+        public RenderTextureDescriptor Descriptor;
+
+        /// <summary>Index of the mip level being created.</summary>
+        public int MipLevel;
+
+        internal THandle[] Handles;
+        internal int Index;
+
+        /// <summary>
+        /// Reference to the actual handle slot stored internally in the mip chain.
+        /// </summary>
+        public ref THandle Handle => ref Handles[Index];
+    }
+
+    /// <summary>
     /// Represents a chain of handles corresponding to mip levels of a texture.
-    /// Provides creation, resizing, copying, and optional generation of successive mip levels.
+    /// Provides creation, resizing, copying, and optional generation of successive mip levels
+    /// using zero-allocation struct function handlers for creation and an abstract method for handle destruction.
     /// </summary>
     /// <typeparam name="THandle">Type of the handle (e.g., TextureHandle, RenderTexture, etc.).</typeparam>
-    public class MipChain<THandle> : IRenderingCollection<THandle>
+    public abstract class MipChain<THandle> : IRenderingCollection<THandle>
     {
-        /// <summary>
-        /// Delegate for creating a handle for a mip level.
-        /// </summary>
-        /// <param name="handle">Reference to the current handle stored internally.</param>
-        /// <param name="descriptor">Descriptor describing the texture to create.</param>
-        /// <param name="mipLevel">Index of the mip level being created.</param>
-        /// <returns>
-        /// <c>true</c> if a new handle was created or allocated; 
-        /// <c>false</c> if the existing handle was reused (e.g., when using <c>ReAllocateHandleIfNeeded</c>).
-        /// </returns>
-        public delegate bool CreateFunction(ref THandle handle, RenderTextureDescriptor descriptor, int mipLevel);
-
-        /// <summary>
-        /// Delegate for releasing a handle when it's removed from the chain.
-        /// </summary>
-        /// <param name="handle">The handle to be released.</param>
-        public delegate void ReleaseFunction(ref THandle handle);
-
         protected THandle[] m_Handles;
-        protected CreateFunction m_CreateFunc;
-        protected readonly ReleaseFunction m_ReleaseFunc;
 
-        private Vector2Int m_BaseResolution = new Vector2Int(-1 , -1);
+        private Vector2Int m_BaseResolution = new Vector2Int(-1, -1);
         private static readonly Func<int, Vector2Int, Vector2Int> m_CalculateMipResFunc = MipChainHelpers.DefaultMipResolution;
 
         /// <summary>Read-only access to the handles.</summary>
@@ -49,19 +52,19 @@ namespace Rayforge.Core.Rendering.Collections
         public int MipCount => m_Handles?.Length ?? 0;
 
         /// <summary>
-        /// Initializes the mip chain with a handle creation function.
+        /// Initializes an empty mip chain.
         /// </summary>
-        /// <param name="createFunc">Function to create each mip level.</param>
-        /// <param name="releaseFunc">Function to release a given mip level.</param>
-        /// <exception cref="ArgumentNullException">
-        /// Thrown if <paramref name="createFunc"/> is <c>null</c>.
-        /// </exception>
-        public MipChain(CreateFunction createFunc, ReleaseFunction releaseFunc)
+        public MipChain()
         {
-            m_CreateFunc = createFunc ?? throw new ArgumentNullException(nameof(createFunc));
-            m_ReleaseFunc = releaseFunc;
             m_Handles = Array.Empty<THandle>();
         }
+
+        /// <summary>
+        /// Destroys or releases an individual handle to prevent memory or resource leaks.
+        /// Must be implemented by derived classes depending on the handle type semantics.
+        /// </summary>
+        /// <param name="handle">Reference to the handle being destroyed.</param>
+        protected abstract void DestroyHandle(ref THandle handle);
 
         /// <summary>
         /// Computes the theoretical resolution of the specified mip level, based on the base resolution.
@@ -77,17 +80,20 @@ namespace Rayforge.Core.Rendering.Collections
             => m_CalculateMipResFunc(mipLevel, m_BaseResolution);
 
         /// <summary>
-        /// Creates all mip levels from the specified <see cref="DescriptorMipChain"/>.
+        /// Creates all mip levels from the specified <see cref="DescriptorMipChain"/> using a struct-based function handler.
         /// Handles are stored at indices starting from 0 in the handle array.
         /// The handle array is resized to exactly match the number of mip levels in the chain.
         /// </summary>
+        /// <typeparam name="THandler">Type of the creation function handler.</typeparam>
         /// <param name="descriptorChain">The descriptor chain providing descriptors for each mip level.</param>
+        /// <param name="handler">Reference to the creation handler struct.</param>
         /// <returns><c>true</c> if at least one new handle was created; <c>false</c> if all handles were reused.</returns>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="descriptorChain"/> is null.</exception>
-        public bool Create(DescriptorMipChain descriptorChain)
+        public bool Create<THandler>(DescriptorMipChain descriptorChain, ref THandler handler)
+            where THandler : IFunctionHandler<MipCreateContext<THandle>, bool>
         {
             if (descriptorChain == null)
-                throw new ArgumentNullException("DescriptorMipChain must not be null.", nameof(descriptorChain));
+                throw new ArgumentNullException(nameof(descriptorChain), "DescriptorMipChain must not be null.");
 
             var descriptors = descriptorChain.Descriptors;
             var count = descriptors == null ? 0 : descriptors.Count;
@@ -101,23 +107,24 @@ namespace Rayforge.Core.Rendering.Collections
 
             bool anyCreated = false;
             for (int i = 0; i < count; i++)
-                anyCreated |= Create(i, descriptors[i]);
+                anyCreated |= CreateInternal(i, descriptors[i], ref handler);
 
             return anyCreated;
         }
 
         /// <summary>
         /// Creates all mip levels based on a single <see cref="RenderTextureDescriptor"/> as the base descriptor.
-        /// Handles are stored at indices starting from 0 in the handle array.
-        /// The handle array is resized to exactly match the number of mip levels being created. 
-        /// If it was previously larger or smaller, it will be resized to <paramref name="mipCount"/>.
         /// </summary>
-        /// <param name="descriptor">Base descriptor for mip creation; will be resized for each mip level.</param>
-        /// <param name="mipCount">Total number of mip levels to create.</param>
-        /// <returns><c>true</c> if at least one new handle was created; <c>false</c> if all handles were reused.</returns>
-        /// <exception cref="ArgumentException">Thrown if the descriptor width or height is not positive.</exception>
-        public bool Create(RenderTextureDescriptor descriptor, int mipCount = 1)
-            => Create(descriptor.width, descriptor.height, descriptor, mipCount);
+        public bool Create<THandler>(RenderTextureDescriptor descriptor, ref THandler handler)
+            where THandler : IFunctionHandler<MipCreateContext<THandle>, bool>
+            => Create(descriptor.width, descriptor.height, descriptor, 1, ref handler);
+
+        /// <summary>
+        /// Creates all mip levels based on a single <see cref="RenderTextureDescriptor"/> as the base descriptor.
+        /// </summary>
+        public bool Create<THandler>(RenderTextureDescriptor descriptor, int mipCount, ref THandler handler)
+            where THandler : IFunctionHandler<MipCreateContext<THandle>, bool>
+            => Create(descriptor.width, descriptor.height, descriptor, mipCount, ref handler);
 
         /// <summary>
         /// Creates all mip levels based on a single <see cref="RenderTextureDescriptor"/> as the base descriptor.
@@ -129,9 +136,11 @@ namespace Rayforge.Core.Rendering.Collections
         /// <param name="height">Height of the base mip level.</param>
         /// <param name="descriptor">Base descriptor for mip creation; will be resized for each mip level.</param>
         /// <param name="mipCount">Total number of mip levels to create.</param>
+        /// <param name="handler">Reference to the creation handler struct.</param>
         /// <returns><c>true</c> if at least one new handle was created; <c>false</c> if all handles were reused.</returns>
         /// <exception cref="ArgumentException">Thrown if the descriptor width or height is not positive.</exception>
-        public bool Create(int width, int height, RenderTextureDescriptor descriptor, int mipCount = 1)
+        public bool Create<THandler>(int width, int height, RenderTextureDescriptor descriptor, int mipCount, ref THandler handler)
+            where THandler : IFunctionHandler<MipCreateContext<THandle>, bool>
         {
             if (width <= 0 || height <= 0)
                 throw new ArgumentException("Base width and height must be greater than zero.");
@@ -145,36 +154,44 @@ namespace Rayforge.Core.Rendering.Collections
                 var mipRes = GetDefaultMipResolution(i);
                 descriptor.width = mipRes.x;
                 descriptor.height = mipRes.y;
-                anyCreated |= Create(i, descriptor);
+                anyCreated |= CreateInternal(i, descriptor, ref handler);
             }
 
             return anyCreated;
         }
 
         /// <summary>
-        /// Internal method that invokes the creation delegate for a single mip level.
+        /// Internal method that invokes the handler for a single mip level.
         /// </summary>
-        /// <param name="index">Zero-based index of the mip level to create.</param>
-        /// <param name="descriptor">Descriptor to use for this mip level.</param>
-        /// <returns>The result returned by the creation delegate (typically <c>true</c> if a new handle was created, <c>false</c> if reused).</returns>
-        protected virtual bool Create(int index, RenderTextureDescriptor descriptor)
-            => m_CreateFunc.Invoke(ref m_Handles[index], descriptor, index);
+        protected virtual bool CreateInternal<THandler>(int index, RenderTextureDescriptor descriptor, ref THandler handler)
+            where THandler : IFunctionHandler<MipCreateContext<THandle>, bool>
+        {
+            var context = new MipCreateContext<THandle>
+            {
+                Descriptor = descriptor,
+                MipLevel = index,
+                Handles = m_Handles,
+                Index = index
+            };
 
+            return handler.Execute(context);
+        }
 
         /// <summary>
         /// Resizes the internal array to <paramref name="newLength"/>.
+        /// Unpreserved handles are destroyed using <see cref="DestroyHandle(ref THandle)"/>.
         /// </summary>
         /// <param name="newLength">New array length.</param>
-        public void Resize(int newLength)
+        public virtual void Resize(int newLength)
             => Resize(newLength, 0, MipCount);
 
         /// <summary>
-        /// Resizes the array and optionally preserves a subset of existing elements.
+        /// Resizes the array and optionally preserves a subset of existing elements, destroying unpreserved ones using <see cref="DestroyHandle(ref THandle)"/>.
         /// </summary>
         /// <param name="newLength">New array length.</param>
         /// <param name="preserveIndex">Start index in the old array to preserve.</param>
         /// <param name="preserveCount">Number of elements to preserve.</param>
-        public void Resize(int newLength, int preserveIndex, int preserveCount)
+        public virtual void Resize(int newLength, int preserveIndex, int preserveCount)
         {
             if (newLength < 0) newLength = 0;
             if (MipCount == newLength) return;
@@ -191,8 +208,7 @@ namespace Rayforge.Core.Rendering.Collections
 
                     if (!isPreserved && m_Handles[i] != null)
                     {
-                        m_ReleaseFunc?.Invoke(ref m_Handles[i]);
-                        m_Handles[i] = default;
+                        DestroyHandle(ref m_Handles[i]);
                     }
                 }
             }

@@ -1,8 +1,7 @@
-using Rayforge.Core.Common;
-using Rayforge.Core.Rendering.Collections;
 using System;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Rayforge.Core.Rendering.Collections;
 
 namespace Rayforge.Core.Utility.RenderGraphs.Collections
 {
@@ -20,18 +19,77 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
     /// <see cref="RTHandleMipChain"/> which provides the same basic functionality 
     /// without exposing unsafe operations.
     ///
-    /// Redundant `IsValid` methods are provided for API consistency with the safe variant.
+    /// Redundant <see cref="IsValid()"/> methods are provided for API consistency with the safe variant.
     /// </summary>
     public sealed class UnsafeRTHandleMipChain : UnsafeMipChain<RTHandle>, IDisposable
     {
         /// <summary>
-        /// Initializes a mip chain with a texture creation function.
+        /// Initializes a new instance of <see cref="UnsafeRTHandleMipChain"/>.
         /// </summary>
-        /// <param name="createFunc">Function to create each mip level.</param>
-        /// <param name="releaseFunc">Function to release a given mip level.</param>
-        public UnsafeRTHandleMipChain(CreateFunction createFunc, ReleaseFunction releaseFunc)
-            : base(createFunc, releaseFunc)
-        { }
+        public UnsafeRTHandleMipChain() : base()
+        {
+        }
+
+        /// <summary>
+        /// Releases or destroys an individual RTHandle safely.
+        /// </summary>
+        protected override void DestroyHandle(ref RTHandle handle)
+        {
+            if (handle != null)
+            {
+                handle.Release();
+                handle = null;
+            }
+        }
+
+        /// <summary>
+        /// Checks whether all mip handles in the chain are valid.
+        /// </summary>
+        /// <returns><c>true</c> if all mip handles are valid; otherwise, <c>false</c>.</returns>
+        public bool IsValid()
+        {
+            foreach (var handle in Handles)
+            {
+                if (handle == null)
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Checks whether the mip handle at the specified index is valid.
+        /// </summary>
+        /// <param name="mip">Zero-based index of the mip level to check.</param>
+        /// <returns><c>true</c> if the mip handle is valid; otherwise, <c>false</c>.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="mip"/> is out of range.</exception>
+        public bool IsValid(int mip)
+        {
+            if (mip < 0 || mip >= MipCount)
+                throw new ArgumentOutOfRangeException(nameof(mip), $"Mip index must be between 0 and {MipCount - 1}.");
+            return Handles[mip] != null;
+        }
+
+        /// <summary>
+        /// Checks whether all mip handles in the specified range are valid.
+        /// </summary>
+        /// <param name="startMip">Zero-based index of the first mip level to check.</param>
+        /// <param name="count">Number of consecutive mip levels to check starting from <paramref name="startMip"/>.</param>
+        /// <returns><c>true</c> if all mip handles in the range are valid; otherwise, <c>false</c>.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if the specified range is out of bounds.</exception>
+        public bool IsValid(int startMip, int count)
+        {
+            if (startMip < 0 || startMip >= MipCount)
+                throw new ArgumentOutOfRangeException(nameof(startMip), $"Start mip index must be between 0 and {MipCount - 1}.");
+            if (count <= 0 || startMip + count > MipCount)
+                throw new ArgumentOutOfRangeException(nameof(count), $"Count must be positive and within the range of available handles.");
+
+            for (int i = startMip; i < startMip + count; i++)
+            {
+                if (!IsValid(i))
+                    return false;
+            }
+            return true;
+        }
 
         /// <summary>
         /// Releases all allocated RTHandles and clears the internal collection.
@@ -39,16 +97,6 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// </summary>
         public void Dispose()
         {
-            if (m_Handles == null) return;
-
-            foreach (var handle in m_Handles)
-            {
-                if (handle != null)
-                {
-                    handle.Release();
-                }
-            }
-
             Resize(0);
         }
     }

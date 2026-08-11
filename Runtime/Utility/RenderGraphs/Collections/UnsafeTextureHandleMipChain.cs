@@ -1,6 +1,5 @@
 using System;
 using UnityEngine.Rendering.RenderGraphModule;
-using Rayforge.Core.Common;
 using Rayforge.Core.Rendering.Collections;
 
 namespace Rayforge.Core.Utility.RenderGraphs.Collections
@@ -24,12 +23,19 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
     public sealed class UnsafeTextureHandleMipChain : UnsafeMipChain<TextureHandle>
     {
         /// <summary>
-        /// Initializes a new instance of <see cref="UnsafeTextureHandleMipChain"/> with a texture creation function.
+        /// Initializes a new instance of <see cref="UnsafeTextureHandleMipChain"/>.
         /// </summary>
-        /// <param name="createFunc">Function invoked to create each mip level.</param>
-        public UnsafeTextureHandleMipChain(CreateFunction createFunc)
-            : base(createFunc, null)
-        { }
+        public UnsafeTextureHandleMipChain() : base()
+        {
+        }
+
+        /// <summary>
+        /// Resets or clears an individual texture handle when the chain is resized or destroyed.
+        /// </summary>
+        protected override void DestroyHandle(ref TextureHandle handle)
+        {
+            handle = default;
+        }
 
         /// <summary>
         /// Checks whether all mip handles in the chain are valid.
@@ -50,11 +56,11 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// </summary>
         /// <param name="mip">Zero-based index of the mip level to check.</param>
         /// <returns><c>true</c> if the mip handle is valid; otherwise, <c>false</c>.</returns>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="mip"/> is out of range [0-<see cref="UnsafeMipChain{THandle}.Handles"/>.Count).</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="mip"/> is out of range.</exception>
         public bool IsValid(int mip)
         {
-            if (mip < 0 || mip >= Handles.Count)
-                throw new ArgumentOutOfRangeException(nameof(mip), $"Mip index must be between 0 and {Handles.Count - 1}.");
+            if (mip < 0 || mip >= MipCount)
+                throw new ArgumentOutOfRangeException(nameof(mip), $"Mip index must be between 0 and {MipCount - 1}.");
             return Handles[mip].IsValid();
         }
 
@@ -67,9 +73,9 @@ namespace Rayforge.Core.Utility.RenderGraphs.Collections
         /// <exception cref="ArgumentOutOfRangeException">Thrown if the specified range is out of bounds.</exception>
         public bool IsValid(int startMip, int count)
         {
-            if (startMip < 0 || startMip >= Handles.Count)
-                throw new ArgumentOutOfRangeException(nameof(startMip), $"Start mip index must be between 0 and {Handles.Count - 1}.");
-            if (count <= 0 || startMip + count > Handles.Count)
+            if (startMip < 0 || startMip >= MipCount)
+                throw new ArgumentOutOfRangeException(nameof(startMip), $"Start mip index must be between 0 and {MipCount - 1}.");
+            if (count <= 0 || startMip + count > MipCount)
                 throw new ArgumentOutOfRangeException(nameof(count), $"Count must be positive and within the range of available handles.");
 
             for (int i = startMip; i < startMip + count; i++)
