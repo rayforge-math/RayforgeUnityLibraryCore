@@ -143,6 +143,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 LogDebug("LOD Reference: Auto-assigned Main Camera.");
             }
 
+
         }
 
         private bool CheckMovementThreshold()
@@ -259,14 +260,14 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
                 else
                 {
                     LogDebug("Cleaning up SurfaceTracker state.");
-                    surfaceTracker.OnRegistryChanged -= HandleSurfacesChanged;
+                    surfaceTracker.OnSurfacesChanged -= HandleSurfacesChanged;
                     surfaceTracker.ClearState();
                 }
 
                 surfaceTracker.Initialize(registry, transform);
                 RebuildSurfaceRegistry();
 
-                surfaceTracker.OnRegistryChanged += HandleSurfacesChanged;
+                surfaceTracker.OnSurfacesChanged += HandleSurfacesChanged;
                 LogDebug($"<color=green>SurfaceTracker initialized and synced.</color>");
 
                 HandleSurfacesChanged(surfaceTracker);
@@ -584,7 +585,7 @@ namespace Rayforge.Core.Environment.Spatial.Rendering
             if (surfaceTracker != null)
             {
                 LogDebug("Cleaning up SurfaceTracker...");
-                surfaceTracker.OnRegistryChanged -= HandleSurfacesChanged;
+                surfaceTracker.OnSurfacesChanged -= HandleSurfacesChanged;
                 surfaceTracker.ClearState();
             }
         }
