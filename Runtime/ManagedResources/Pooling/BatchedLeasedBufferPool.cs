@@ -13,7 +13,7 @@ namespace Rayforge.Core.ManagedResources.Pooling
     /// <typeparam name="TBuffer">Type of the managed buffer (e.g., ManagedComputeBuffer). Must implement <see cref="IPooledBuffer{TDesc}"/>.</typeparam>
     public partial class BatchedLeasedBufferPool<TDesc, TBuffer> : LeasedBufferPoolBase<TDesc, TBuffer, BatchedLeasedBuffer<TBuffer>>
         where TBuffer : IPooledBuffer<TDesc>
-        where TDesc : unmanaged, IEquatable<TDesc>, IBatchingDescriptor
+        where TDesc : unmanaged, IEquatable<TDesc>, IArrayDescriptor
     {
         /// <summary>
         /// Minimum allocation size to ensure a base buffer size.
@@ -34,8 +34,8 @@ namespace Rayforge.Core.ManagedResources.Pooling
         /// <param name="batchSize">Batch size for rounding allocations.</param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="baseSize"/> is less than 1 or <paramref name="batchSize"/> is negative.</exception>
         public BatchedLeasedBufferPool(
-            BufferCreateFunc createFunc,
-            BufferReleaseFunc releaseFunc,
+            BufferCreateFunc<TDesc, TBuffer> createFunc,
+            BufferReleaseFunc<TBuffer> releaseFunc,
             int baseSize = 1,
             int batchSize = 0)
             : base(createFunc, releaseFunc)

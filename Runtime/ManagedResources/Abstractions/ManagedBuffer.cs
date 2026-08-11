@@ -2,6 +2,7 @@ using Rayforge.Core.ManagedResources.NativeMemory;
 using Rayforge.Core.ManagedResources.Pooling;
 
 using System;
+using UnityEngine.LightTransport;
 
 namespace Rayforge.Core.ManagedResources.Abstractions
 {
@@ -35,6 +36,12 @@ namespace Rayforge.Core.ManagedResources.Abstractions
         public TDesc Descriptor => m_Descriptor;
 
         /// <summary>
+        /// Abstract check to determine if the internal resource is allocated and valid.
+        /// Each derived class implements its own native check.
+        /// </summary>
+        public abstract bool IsCreated { get; }
+
+        /// <summary>
         /// Tracks whether Dispose has been called to avoid double release.
         /// </summary>
         private bool m_Disposed = false;
@@ -42,15 +49,11 @@ namespace Rayforge.Core.ManagedResources.Abstractions
         /// <summary>
         /// Initializes the managed buffer with a resource and descriptor.
         /// </summary>
-        /// <param name="buffer">The internal resource to manage.</param>
         /// <param name="descriptor">Descriptor describing the resource properties.</param>
-        /// <exception cref="ArgumentNullException">
-        /// Thrown if <paramref name="buffer"/> represents an invalid or null internal resource.
-        /// </exception>
-        public ManagedBuffer(TInternal buffer, TDesc descriptor)
+        public ManagedBuffer(TDesc descriptor)
         {
-            m_Buffer = buffer;
             m_Descriptor = descriptor;
+            m_Buffer = default;
         }
 
         /// <summary>
@@ -82,6 +85,22 @@ namespace Rayforge.Core.ManagedResources.Abstractions
                 m_Disposed = true;
             }
         }
+
+        /// <summary>
+        /// Allocates the internal GPU resource using the current descriptor.
+        /// If a resource already exists, it is released before the new one is created.
+        /// </summary>
+        public virtual void Create()
+        {
+            Release();
+            m_Buffer = Allocate();
+        }
+
+        /// <summary>
+        /// When implemented in a derived class, performs the actual allocation of the GPU resource.
+        /// </summary>
+        /// <returns>The newly created internal resource.</returns>
+        protected abstract TInternal Allocate();
 
         /// <summary>
         /// Default hash code implementation based on the internal buffer.

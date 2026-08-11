@@ -1,5 +1,7 @@
 using Rayforge.Core.Diagnostics;
+using Rayforge.Core.ManagedResources.Abstractions;
 using System;
+using UnityEngine;
 
 namespace Rayforge.Core.ManagedResources.NativeMemory
 {
@@ -7,7 +9,7 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
     /// Descriptor for a 2D texture array, including the base texture descriptor
     /// and the number of array slices. Acts as a hashing key for texture array pooling.
     /// </summary>
-    public struct Texture2dArrayDescriptor : IEquatable<Texture2dArrayDescriptor>
+    public struct Texture2dArrayDescriptor : IEquatable<Texture2dArrayDescriptor>, IArrayDescriptor, ITextureDescriptor
     {
         private Texture2dDescriptor descriptor;
         private int count;
@@ -16,10 +18,14 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
         /// Descriptor that defines width, height, format and sampling settings
         /// for each texture in the array.
         /// </summary>
-        public Texture2dDescriptor Descriptor
+        public Texture2dDescriptor SliceDescriptor
         {
             get => descriptor;
-            set => descriptor.CopyFrom(value);
+            set
+            {
+                descriptor = value;
+                descriptor.Validate();
+            }
         }
 
         /// <summary>
@@ -35,13 +41,44 @@ namespace Rayforge.Core.ManagedResources.NativeMemory
             }
         }
 
+        /// <summary>The width of the render texture. Must be > 0.</summary>
+        public int Width
+        {
+            get => descriptor.Width;
+            set
+            {
+                if (value <= 0) throw new ArgumentOutOfRangeException(nameof(value), "Width must be > 0.");
+                descriptor.Width = value;
+            }
+        }
+
+        /// <summary>The height of the render texture. Must be > 0.</summary>
+        public int Height
+        {
+            get => descriptor.Height;
+            set
+            {
+                if (value <= 0) throw new ArgumentOutOfRangeException(nameof(value), "Height must be > 0.");
+                descriptor.Height = value;
+            }
+        }
+
+        /// <summary>
+        /// Provides a standard TextureFormat view.
+        /// </summary>
+        public TextureFormat Format
+        {
+            get => descriptor.Format;
+            set => descriptor.Format = value;
+        }
+
         /// <summary>
         /// Copies all fields from another descriptor, applying assertions.
         /// </summary>
         public void CopyFrom(Texture2dArrayDescriptor other)
         {
-            Descriptor = other.Descriptor; // Assertion triggers if invalid
-            Count = other.Count;           // Assertion triggers if <= 0
+            SliceDescriptor = other.SliceDescriptor;
+            Count = other.Count;
         }
 
         /// <summary>

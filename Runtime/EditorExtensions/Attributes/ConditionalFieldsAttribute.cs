@@ -1,4 +1,4 @@
-using Rayforge.Core.EditorExtensions.Attributes.Abstractions;
+using Rayforge.Core.EditorExtensions.Abstractions;
 using Rayforge.Core.EditorExtensions.Attributes.Helpers;
 using System.Collections.Generic;
 using UnityEngine;

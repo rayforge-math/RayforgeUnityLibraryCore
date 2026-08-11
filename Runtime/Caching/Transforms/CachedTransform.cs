@@ -16,29 +16,31 @@ namespace Rayforge.Core.Caching.Transforms
     /// </summary>
     public class CachedTransform : ICachedTransform
     {
-        private readonly GameObject m_GameObject;
-        private ICachedTransform m_Parent;
+        private const string Tag = "CachedTransform";
 
-        private Vector3 m_CachedPosition;
-        private Quaternion m_CachedRotation;
-        private Vector3 m_CachedScale;
+        private GameObject m_GameObject;
+        protected ICachedTransform m_Parent;
+
+        protected Vector3 m_CachedPosition;
+        protected Quaternion m_CachedRotation;
+        protected Vector3 m_CachedScale;
 
         /// <summary>
         /// Gets the underlying Unity <see cref="Transform"/> instance associated with this cached transform.
         /// Use this property only when direct Unity API access is required.
         /// </summary>
-        public virtual Transform Self => m_GameObject.transform;
+        public Transform Self => m_GameObject != null ? m_GameObject.transform : null;
 
         /// <summary>
         /// Initializes a new <see cref="CachedTransform"/> that wraps the specified <see cref="GameObject"/>.
         /// </summary>
         /// <param name="gameObject">The GameObject to wrap and cache transform data from.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the provided <paramref name="gameObject"/> is null.</exception>
         public CachedTransform(GameObject gameObject)
         {
             if (gameObject == null)
             {
-                Debug.LogError("CachedTransform: GameObject is null.");
-                return;
+                throw new ArgumentNullException(nameof(gameObject), $"{Tag}: GameObject cannot be null.");
             }
 
             m_GameObject = gameObject;
@@ -68,21 +70,29 @@ namespace Rayforge.Core.Caching.Transforms
         }
 
         /// <summary>
-        /// Creates a new <see cref="CachedTransform"/> with a new <see cref="GameObject"/> that is immediately parented.
+        /// Creates a new <see cref="CachedTransform"/> by instantiating a new <see cref="GameObject"/> 
+        /// and linking it to a parent <see cref="ICachedTransform"/>.
         /// </summary>
+        /// <typeparam name="TParent">The type of the parent, which must implement <see cref="ICachedTransform"/>.</typeparam>
         /// <param name="name">The name of the new GameObject.</param>
-        /// <param name="parent">The parent transform to attach to.</param>
-        /// <returns>A new <see cref="CachedTransform"/> instance.</returns>
-        public static CachedTransform Create(string name, ICachedTransform parent)
+        /// <param name="parent">The parent instance to attach to. If not null, the GameObject's transform is parented in Unity.</param>
+        /// <returns>A new <see cref="CachedTransform"/> instance with the specified parent.</returns>
+        public static CachedTransform Create<TParent>(string name, TParent parent)
+            where TParent : ICachedTransform
         {
             var gameObject = new GameObject(name);
             var t = gameObject.transform;
+
             if (parent != null)
+            {
                 t.SetParent(parent.Self);
+            }
+
             return new CachedTransform(gameObject) { m_Parent = parent };
         }
 
         /// <inheritdoc/>
+        /// <remarks>Set can only be called from Main Thread.</remarks>
         public virtual Vector3 Position
         {
             get => m_CachedPosition;
@@ -97,6 +107,7 @@ namespace Rayforge.Core.Caching.Transforms
         }
 
         /// <inheritdoc/>
+        /// <remarks>Set can only be called from Main Thread.</remarks>
         public virtual Quaternion Rotation
         {
             get => m_CachedRotation;
@@ -111,6 +122,7 @@ namespace Rayforge.Core.Caching.Transforms
         }
 
         /// <inheritdoc/>
+        /// <remarks>Set can only be called from Main Thread.</remarks>
         public virtual Vector3 Scale
         {
             get => m_CachedScale;
@@ -125,31 +137,29 @@ namespace Rayforge.Core.Caching.Transforms
         }
 
         /// <inheritdoc/>
-        public virtual ICachedTransform Parent
+        /// <remarks>Set can only be called from Main Thread.</remarks>
+        public ICachedTransform Parent
         {
             get => m_Parent;
             set
             {
-                // Allow unparenting
-                Self.SetParent(value?.Self);
-                m_Parent = value;
+                SetParent(value);
             }
         }
 
         /// <inheritdoc/>
-        public virtual void SetParent(ICachedTransform parent, bool worldPositionStays = false)
+        /// <remarks>Only call from Main Thread.</remarks>
+        public void SetParent(ICachedTransform parent, bool worldPositionStays = false)
         {
             Self.SetParent(parent?.Self, worldPositionStays);
             m_Parent = parent;
+            Refresh();
         }
-
-        /// <inheritdoc/>
-        public Tcomp AddComponent<Tcomp>() where Tcomp : Component
-            => m_GameObject.AddComponent<Tcomp>();
 
         /// <summary>
         /// Updates the cached position, rotation, and scale from the underlying Unity transform.
         /// Call this if the transform was externally modified.
+        /// Only call from Main Thread.
         /// </summary>
         public virtual void Refresh()
         {
@@ -159,14 +169,21 @@ namespace Rayforge.Core.Caching.Transforms
             m_CachedScale = t.localScale;
         }
 
+        /// <inheritdoc/>
+        /// <remarks>Only call from Main Thread.</remarks>
+        public Tcomp AddComponent<Tcomp>() where Tcomp : Component
+            => m_GameObject.AddComponent<Tcomp>();
+
         /// <summary>
         /// Destroys the underlying GameObject and releases references.
+        /// Only call from Main Thread.
         /// </summary>
-        public virtual void Dispose()
+        public void Dispose()
         {
             if (m_GameObject != null)
             {
-                UnityEngine.Object.Destroy(m_GameObject);
+                UnityEngine.Object.DestroyImmediate(m_GameObject);
+                m_GameObject = null;
                 GC.SuppressFinalize(this);
             }
         }

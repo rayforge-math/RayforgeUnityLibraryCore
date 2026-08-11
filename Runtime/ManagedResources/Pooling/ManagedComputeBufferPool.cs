@@ -31,8 +31,8 @@ namespace Rayforge.Core.ManagedResources.Pooling
         /// <param name="baseSize">Minimum allocation size for batching.</param>
         /// <param name="batchSize">Batch size for rounding allocations.</param>
         public ManagedComputeBufferPool(
-            BufferCreateFunc createFunc,
-            BufferReleaseFunc releaseFunc,
+            BufferCreateFunc<ComputeBufferDescriptor, ManagedComputeBuffer> createFunc,
+            BufferReleaseFunc<ManagedComputeBuffer> releaseFunc,
             int baseSize = 1,
             int batchSize = 0)
             : base(createFunc, releaseFunc, baseSize, batchSize)

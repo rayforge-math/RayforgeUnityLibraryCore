@@ -42,6 +42,14 @@ namespace Rayforge.Core.Caching.Abstractions
         Transform Self { get; }
 
         /// <summary>
+        /// Synchronizes the internal cache with the current values of the underlying Unity <see cref="Transform"/>.
+        /// 
+        /// This is necessary if the Transform is modified externally (e.g., via Physics, 
+        /// Animations, or other scripts direct access to the Transform component).
+        /// </summary>
+        void Refresh();
+
+        /// <summary>
         /// Sets the parent transform, optionally preserving the current world position.
         /// </summary>
         /// <param name="parent">The new parent transform, or <see langword="null"/> to unparent.</param>

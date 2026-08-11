@@ -1,0 +1,272 @@
+using NUnit.Framework;
+using Rayforge.Core.Collections.Abstractions.Tests;
+using System;
+using Rayforge.Core.TestEnv;
+
+namespace Rayforge.Core.Collections.Iterator.Tests
+{
+    [TestFixture(typeof(int))]
+    [TestFixture(typeof(float))]
+    [TestFixture(typeof(string))]
+    public class ArrayIteratorStateTests<T> : IIterationLogicTests<T, ArrayIteratorState<T>>
+    {
+        #region IIterationLogic Impl
+
+        protected override IterationTestData<T, ArrayIteratorState<T>> CreateLogic(int count)
+        {
+            T[] items = TestUtility.CreateSampleItems<T>(count);
+            var logic = new ArrayIteratorState<T>(items, 0, items.Length);
+            return new IterationTestData<T, ArrayIteratorState<T>>
+            {
+                logic = logic,
+                expected = items
+            };
+        }
+
+        #endregion
+
+        #region Constructor Tests
+
+        [Test]
+        public void Constructor_NullArray_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() =>
+            {
+                var state = new ArrayIteratorState<T>(null, 0, 10);
+            }, "Passing a null array must throw ArgumentNullException.");
+        }
+
+        [Test]
+        public void Constructor_EmptyArray_ValidatesBounds()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                var state = new ArrayIteratorState<T>(Array.Empty<T>(), 0, 10);
+            }, "Requesting elements from an empty array must throw ArgumentOutOfRangeException.");
+        }
+
+        [Test]
+        [TestCase(0, -5, Description = "Count < 0 must throw")]
+        [TestCase(0, 11, Description = "Count too large must throw")]
+        public void Constructor_InvalidCount_ThrowsArgumentOutOfRangeException(int start, int count)
+        {
+            T[] array = new T[10];
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                var state = new ArrayIteratorState<T>(array, start, count);
+            }, "Constructor should throw when count is out of bounds or negative.");
+        }
+
+        [Test]
+        [TestCase(-1, 5, Description = "Start < 0 must throw")]
+        [TestCase(10, 1, Description = "Start exactly at length must throw")]
+        [TestCase(11, 0, Description = "Start > length must throw")]
+        public void Constructor_InvalidStart_ThrowsArgumentOutOfRangeException(int start, int count)
+        {
+            T[] array = new T[10];
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                var state = new ArrayIteratorState<T>(array, start, count);
+            }, "Constructor should throw when start index is invalid.");
+        }
+
+        [Test]
+        [TestCase(-50, -50, Description = "Negative start and count must throw")]
+        [TestCase(100, 100, Description = "Extreme positive overflow must throw")]
+        [TestCase(int.MinValue, int.MaxValue, Description = "Extreme integer overflow must throw")]
+        public void Constructor_NonsensicalCombinations_ThrowsArgumentOutOfRangeException(int start, int count)
+        {
+            T[] array = new T[10];
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                var state = new ArrayIteratorState<T>(array, start, count);
+            }, "Constructor should throw on nonsensical or overflow-prone combinations.");
+        }
+
+        #endregion
+
+        #region MoveNext Tests
+
+        [Test]
+        public void MoveNext_Exhaustion_ReturnsFalseAndDefault()
+        {
+            // Arrange: Single element array
+            T[] items = TestUtility.CreateSampleItems<T>(1);
+            var state = new ArrayIteratorState<T>(items, 0, 1);
+
+            // Act: Consume the single element
+            state.MoveNext(ref state, out _);
+
+            // Attempt to move past the range
+            bool hasMore = state.MoveNext(ref state, out T result);
+
+            // Assert: Verify standard exhaustion contract
+            Assert.IsFalse(hasMore, "MoveNext must return false when moving past the range.");
+            Assert.AreEqual(default(T), result, "Result must be default(T) on failure.");
+
+            // Verify consistency: The iterator must remain exhausted even after repeated calls
+            bool stillExhausted = state.MoveNext(ref state, out T subsequentResult);
+            Assert.IsFalse(stillExhausted, "MoveNext must remain false after full exhaustion.");
+            Assert.AreEqual(default(T), subsequentResult, "Result must remain default(T) after full exhaustion.");
+        }
+
+        [Test]
+        public void MoveNext_RespectsClampedRange_NotArrayEnd()
+        {
+            // Arrange: Array of 5, but we only want a range of 2 starting at index 1
+            T[] items = TestUtility.CreateSampleItems<T>(5);
+            var state = new ArrayIteratorState<T>(items, 1, 2); // Expected Elements: items[1], items[2]
+
+            // Act
+            state.MoveNext(ref state, out T v1);
+            state.MoveNext(ref state, out T v2);
+            bool hasMore = state.MoveNext(ref state, out T v3);
+
+            // Assert
+            Assert.AreEqual(items[1], v1);
+            Assert.AreEqual(items[2], v2);
+            Assert.IsFalse(hasMore, "Should stop at clamped range end, not array end.");
+        }
+
+        #endregion
+
+        #region TryPeekNext Tests
+
+        [Test]
+        public void TryPeekNext_RetrievesValue_WithoutAdvancing()
+        {
+            // Arrange
+            var array = new[] { 100, 200, 300 };
+            var state = new ArrayIteratorState<int>(array, 0, 3);
+
+            // Act
+            bool peekSuccess = state.TryPeekNext(ref state, out int peekedValue);
+
+            // Assert
+            Assert.IsTrue(peekSuccess);
+            Assert.AreEqual(100, peekedValue, "Peek should return the first element.");
+
+            // Verify State: MoveNext must still return the same element
+            state.MoveNext(ref state, out int movedValue);
+            Assert.AreEqual(100, movedValue, "MoveNext should return the same value that was just peeked.");
+        }
+
+        [Test]
+        public void TryPeekNext_ReturnsFalse_AndDefault_AtEnd()
+        {
+            // Arrange: Only one element in range
+            var array = new[] { 42 };
+            var state = new ArrayIteratorState<int>(array, 0, 1);
+            state.MoveNext(ref state, out _); // Index is now 0 (the end of our range)
+
+            // Act
+            bool peekSuccess = state.TryPeekNext(ref state, out int result);
+
+            // Assert
+            Assert.IsFalse(peekSuccess, "Should not be able to peek beyond the range.");
+            Assert.AreEqual(0, result, "Result should be default(T) when peek fails.");
+        }
+
+        [Test]
+        public void TryPeekNext_Consistency_AcrossMultipleCalls()
+        {
+            // Arrange
+            var array = new[] { "A", "B", "C" };
+            var state = new ArrayIteratorState<string>(array, 1, 2); // Starts at "B"
+
+            // Act & Assert
+            state.TryPeekNext(ref state, out string p1);
+            state.TryPeekNext(ref state, out string p2);
+
+            Assert.AreEqual("B", p1);
+            Assert.AreEqual("B", p2, "Repeated peeks must return the same value if no MoveNext occurred.");
+        }
+
+        [Test]
+        public void TryPeekNext_WorksAfterPartialIteration()
+        {
+            // Arrange
+            var array = new[] { 1, 2, 3, 4 };
+            var state = new ArrayIteratorState<int>(array, 0, 4);
+
+            // Act
+            state.MoveNext(ref state, out _); // At 1
+            state.MoveNext(ref state, out _); // At 2
+
+            bool canPeek = state.TryPeekNext(ref state, out int peeked);
+
+            // Assert
+            Assert.IsTrue(canPeek);
+            Assert.AreEqual(3, peeked, "Should peek at the third element after moving twice.");
+        }
+
+        #endregion
+
+        #region HasNext Tests
+
+        [Test]
+        public void HasNext_EmptyRange_ReturnsFalse()
+        {
+            // Arrange: Start 0, Count 0
+            var items = TestUtility.CreateSampleItems<T>(10);
+            var state = new ArrayIteratorState<T>(items, 0, 0);
+
+            Assert.IsFalse(state.HasNext(ref state), "Should be false for empty range.");
+        }
+
+        [Test]
+        public void HasNext_FullRange_ReturnsTrueUntilEnd()
+        {
+            // Arrange: 3 elements (0, 1, 2)
+            var items = TestUtility.CreateSampleItems<T>(3);
+            var state = new ArrayIteratorState<T>(items, 0, 3);
+
+            // Act & Assert
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Index 0
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Index 1
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Index 2
+            Assert.IsFalse(state.HasNext(ref state), "Should be false after last element.");
+        }
+
+        [Test]
+        public void HasNext_OffsetRange_ReturnsTrueOnlyWithinBounds()
+        {
+            // Arrange: Range [5, 6] (Count 2)
+            var items = TestUtility.CreateSampleItems<T>(10);
+            var state = new ArrayIteratorState<T>(items, 5, 2);
+
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Index 5
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _); // Index 6
+            Assert.IsFalse(state.HasNext(ref state), "Should be false after offset 6.");
+        }
+
+        [Test]
+        public void HasNext_SingleElementRange_ReturnsTrueOnlyOnce()
+        {
+            // Arrange: Range [2, 2] (Count 1)
+            var items = TestUtility.CreateSampleItems<T>(10);
+            var state = new ArrayIteratorState<T>(items, 2, 1);
+
+            Assert.IsTrue(state.HasNext(ref state));
+            state.MoveNext(ref state, out _);
+            Assert.IsFalse(state.HasNext(ref state), "Should be false after consuming single element.");
+        }
+
+        [Test]
+        public void HasNext_EmptyArray_ReturnsFalse()
+        {
+            // Arrange: Array length 0, Request 0 elements
+            var items = new T[0];
+            var state = new ArrayIteratorState<T>(items, 0, 0);
+
+            Assert.IsFalse(state.HasNext(ref state), "Empty array must return false.");
+        }
+
+        #endregion
+    }
+}

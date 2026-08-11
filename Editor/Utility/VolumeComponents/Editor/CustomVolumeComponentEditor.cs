@@ -1,5 +1,5 @@
 using Rayforge.Core.EditorExtensions.Attributes;
-using Rayforge.Core.EditorExtensions.Attributes.Abstractions;
+using Rayforge.Core.EditorExtensions.Abstractions;
 using System;
 using System.Collections.Generic;
 using System.Linq;

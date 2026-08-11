@@ -6,101 +6,95 @@ using Rayforge.Core.Rendering.Abstractions;
 namespace Rayforge.Core.Rendering.Collections
 {
     /// <summary>
-    /// Generic ping-pong buffer that manages two handles of type <typeparamref name="THandle"/>.
-    /// Provides a minimal mechanism to alternate between two slots, and allows replacing the slots if needed.
-    /// The roles of "first" and "second" are determined by the current internal index, 
-    /// which changes each time <see cref="Swap"/> is called.
+    /// Generic ping-pong buffer that manages two slots of type <typeparamref name="TResource"/>.
+    /// Provides a minimal mechanism to alternate between two logical roles (First/Second), 
+    /// allowing for temporal reprojection or double-buffering.
+    /// The roles are swapped each time <see cref="Swap"/> is called.
     /// </summary>
-    /// <typeparam name="THandle">The type of handle stored in the buffer (usually a value type).</typeparam>
-    public class PingPongBuffer<THandle> : IRenderingCollection<THandle>
+    /// <typeparam name="TResource">The type of resource managed (e.g., MipChains, RTHandles, or Buffers).</typeparam>
+    public class PingPongBuffer<TResource> : IRenderingCollection<TResource>
     {
-        protected readonly THandle[] m_Handles;
+        protected readonly TResource[] m_Resources;
         private int m_CurrentIndex;
 
         /// <summary>
-        /// The index currently acting as the "First" slot.
+        /// The internal index currently acting as the "First" slot.
         /// </summary>
         public int FirstIndex => m_CurrentIndex;
 
         /// <summary>
-        /// The index currently acting as the "Second" slot.
+        /// The internal index currently acting as the "Second" slot.
         /// </summary>
         public int SecondIndex => NextIndex(m_CurrentIndex);
 
         /// <summary>
-        /// Gets the handle currently considered the "first" slot.
-        /// This is the slot returned as "current" until <see cref="Swap"/> is called.
-        /// After swapping, this getter will return the other slot.
+        /// Gets the resource currently considered the "first" slot (e.g., Current Frame).
+        /// After calling <see cref="Swap"/>, this will return the alternate resource.
         /// </summary>
-        public THandle First => m_CurrentIndex == 0 ? m_Handles[0] : m_Handles[1];
+        public TResource First => m_Resources[m_CurrentIndex];
 
         /// <summary>
-        /// Gets the handle currently considered the "second" slot.
-        /// This is the slot returned as the "alternate" or "previous" handle.
-        /// After <see cref="Swap"/> is called, this getter will switch to the other slot.
+        /// Gets the resource currently considered the "second" slot (e.g., History/Previous Frame).
+        /// After calling <see cref="Swap"/>, this will return the alternate resource.
         /// </summary>
-        public THandle Second => m_CurrentIndex == 0 ? m_Handles[1] : m_Handles[0];
-
-        public IReadOnlyList<THandle> Handles => m_Handles;
+        public TResource Second => m_Resources[NextIndex(m_CurrentIndex)];
 
         /// <summary>
-        /// Replaces the handle currently considered the "first" slot.
+        /// Returns a read-only list of the managed resources.
         /// </summary>
-        /// <param name="handle">New handle to set as the first slot.</param>
-        public void SetFirst(THandle handle)
+        public IReadOnlyList<TResource> Handles => m_Resources;
+
+        /// <summary>
+        /// Initializes the <see cref="PingPongBuffer{TResource}"/> with two external resources.
+        /// </summary>
+        /// <param name="resource0">Initial resource for slot 0.</param>
+        /// <param name="resource1">Initial resource for slot 1.</param>
+        public PingPongBuffer(TResource resource0, TResource resource1)
         {
-            if (m_CurrentIndex == 0) m_Handles[0] = handle;
-            else m_Handles[1] = handle;
-        }
-
-        /// <summary>
-        /// Replaces the handle currently considered the "second" slot.
-        /// </summary>
-        /// <param name="handle">New handle to set as the second slot.</param>
-        public void SetSecond(THandle handle)
-        {
-            if (m_CurrentIndex == 0) m_Handles[1] = handle;
-            else m_Handles[0] = handle;
-        }
-
-        /// <summary>
-        /// Swaps the roles of the two slots.
-        /// The slot previously returned by <see cref="First"/> becomes the new <see cref="Second"/>,
-        /// and vice versa.
-        /// </summary>
-        public void Swap() => m_CurrentIndex = NextIndex(m_CurrentIndex);
-
-        /// <summary>
-        /// Constructs the <see cref="PingPongBuffer{THandle}"/> with two initial handles.
-        /// The first handle is initially considered the "first" slot.
-        /// </summary>
-        /// <param name="handle0">Initial first handle (slot 0).</param>
-        /// <param name="handle1">Initial second handle (slot 1).</param>
-        public PingPongBuffer(THandle handle0, THandle handle1)
-        {
-            m_Handles = new THandle[2];
-
-            m_Handles[0] = handle0;
-            m_Handles[1] = handle1;
+            m_Resources = new TResource[2];
+            m_Resources[0] = resource0;
+            m_Resources[1] = resource1;
             m_CurrentIndex = 0;
         }
 
         /// <summary>
-        /// Computes the index of the alternate slot in the ping-pong pair.
+        /// Replaces the resource currently considered the "first" slot.
         /// </summary>
-        /// <param name="index">Current index.</param>
-        /// <returns>Index of the alternate slot (0 or 1).</returns>
+        /// <param name="resource">New resource to set.</param>
+        public void SetFirst(TResource resource) => m_Resources[m_CurrentIndex] = resource;
+
+        /// <summary>
+        /// Replaces the resource currently considered the "second" slot.
+        /// </summary>
+        /// <param name="resource">New resource to set.</param>
+        public void SetSecond(TResource resource) => m_Resources[NextIndex(m_CurrentIndex)] = resource;
+
+        /// <summary>
+        /// Swaps the logical roles of the two slots.
+        /// The resource previously returned by <see cref="First"/> becomes <see cref="Second"/>, and vice versa.
+        /// </summary>
+        public void Swap() => m_CurrentIndex = NextIndex(m_CurrentIndex);
+
+        /// <summary>
+        /// Calculates the alternating index for a two-slot buffer using XOR.
+        /// </summary>
         private static int NextIndex(int index) => index ^ 1;
 
-        public ReadOnlySpan<THandle> AsSpan()
-            => m_Handles.AsSpan();
+        /// <summary>
+        /// Returns the resources as a span for high-performance access.
+        /// </summary>
+        public ReadOnlySpan<TResource> AsSpan() => m_Resources.AsSpan();
 
-        public ReadOnlySpan<THandle> AsSpan(int index, int count)
+        /// <summary>
+        /// Returns a specific range of the managed resources as a span.
+        /// </summary>
+        /// <param name="index">Starting index (clamped to buffer range).</param>
+        /// <param name="count">Number of elements (clamped to buffer range).</param>
+        public ReadOnlySpan<TResource> AsSpan(int index, int count)
         {
             index = Math.Clamp(index, 0, 1);
             count = Math.Clamp(count, 1, 2 - index);
-
-            return m_Handles.AsSpan(index, count);
+            return m_Resources.AsSpan(index, count);
         }
     }
 }

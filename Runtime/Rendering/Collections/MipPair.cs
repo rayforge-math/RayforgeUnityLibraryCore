@@ -1,5 +1,5 @@
 namespace Rayforge.Core.Rendering.Collections
-{
+{ 
     /// <summary>
     /// Represents a source–destination pair of handles for a single mip level transition
     /// within a mip chain.

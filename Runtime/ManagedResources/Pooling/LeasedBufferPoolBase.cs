@@ -1,9 +1,22 @@
+using NUnit.Framework.Internal;
 using Rayforge.Core.Diagnostics;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Rayforge.Core.ManagedResources.Pooling
 {
+    /// <summary>
+    /// Factory to create a new buffer from a descriptor.
+    /// </summary>
+    public delegate TBuffer BufferCreateFunc<in TDesc, out TBuffer>(TDesc desc);
+
+    /// <summary>
+    /// Callback invoked when a buffer is permanently released from the pool.
+    /// </summary>
+    public delegate void BufferReleaseFunc<in TBuffer>(TBuffer buffer);
+
     /// <summary>
     /// Base class for buffer pools that manage reusable buffer objects and hand them out as lease wrappers.
     /// This pool is *not* thread-safe; derived classes must implement any required thread-safety, eviction policy, 
@@ -23,14 +36,19 @@ namespace Rayforge.Core.ManagedResources.Pooling
         where TLease : LeasedBuffer<TBuffer>
     {
         /// <summary>
+        /// If true, the pool will log rent/return operations to the console.
+        /// </summary>
+        public bool showDebugLogs { get; set; } = false;
+
+        /// <summary>
         /// Factory used to create new buffers on demand.
         /// </summary>
-        protected readonly BufferCreateFunc m_CreateFunc;
+        protected readonly BufferCreateFunc<TDesc, TBuffer> m_CreateFunc;
 
         /// <summary>
         /// Factory used to permanently release a buffer.
         /// </summary>
-        protected readonly BufferReleaseFunc m_ReleaseFunc;
+        protected readonly BufferReleaseFunc<TBuffer> m_ReleaseFunc;
 
         /// <summary>
         /// Free buffers grouped by descriptor for quick reuse.
@@ -43,14 +61,41 @@ namespace Rayforge.Core.ManagedResources.Pooling
         protected readonly HashSet<TBuffer> m_Reserved = new();
 
         /// <summary>
-        /// Factory to create a new buffer from a descriptor.
+        /// Gets the number of buffers currently leased out to consumers.
         /// </summary>
-        public delegate TBuffer BufferCreateFunc(TDesc desc);
+        public int RentedCount => m_Reserved.Count;
 
         /// <summary>
-        /// Callback invoked when a buffer is permanently released from the pool.
+        /// Gets the total number of buffers currently sitting idle in the pool, 
+        /// ready for reuse across all descriptor types.
         /// </summary>
-        public delegate void BufferReleaseFunc(TBuffer buffer);
+        public int FreeCount
+        {
+            get
+            {
+                int count = 0;
+                foreach (var stack in m_FreeDict.Values)
+                {
+                    count += stack.Count;
+                }
+                return count;
+            }
+        }
+
+        /// <summary>
+        /// Gets the number of idle buffers available for a specific descriptor.
+        /// </summary>
+        /// <param name="desc">The descriptor to check for available buffers.</param>
+        /// <returns>The number of free buffers matching the descriptor, or 0 if none exist.</returns>
+        public int GetFreeCountFor(TDesc desc)
+        {
+            if (m_FreeDict.TryGetValue(desc, out var stack))
+            {
+                return stack.Count;
+            }
+
+            return 0;
+        }
 
         /// <summary>
         /// Constructs a new base buffer pool with the provided create and release functions.
@@ -60,7 +105,7 @@ namespace Rayforge.Core.ManagedResources.Pooling
         /// <exception cref="ArgumentNullException">
         /// Thrown if <paramref name="createFunc"/> or <paramref name="releaseFunc"/> is null.
         /// </exception>
-        protected LeasedBufferPoolBase(BufferCreateFunc createFunc, BufferReleaseFunc releaseFunc)
+        protected LeasedBufferPoolBase(BufferCreateFunc<TDesc, TBuffer> createFunc, BufferReleaseFunc<TBuffer> releaseFunc)
         {
             m_CreateFunc = createFunc ?? 
                 throw new ArgumentNullException(nameof(createFunc));
@@ -85,15 +130,19 @@ namespace Rayforge.Core.ManagedResources.Pooling
         protected virtual TBuffer RentInternal(TDesc desc)
         {
             TBuffer buffer;
+            bool wasRecycled = false;
 
             if (m_FreeDict.TryGetValue(desc, out var stack) && stack.Count > 0)
             {
                 buffer = stack.Pop();
+                wasRecycled = true;
             }
             else
             {
                 buffer = m_CreateFunc.Invoke(desc);
             }
+
+            LogDebug(wasRecycled ? $"Recycled buffer" : $"Created new buffer");
 
             m_Reserved.Add(buffer);
             return buffer;
@@ -119,6 +168,8 @@ namespace Rayforge.Core.ManagedResources.Pooling
         protected virtual void Return(TBuffer buffer)
         {
             var leased = m_Reserved.Remove(buffer);
+            LogDebug(leased ? $"Buffer returned" : $"Tried to return buffer with no valid lease.");
+
             Assertions.IsTrue(leased, $"Attempted to return a buffer that is not currently reserved: {buffer}");
 
             if (!leased)
@@ -162,5 +213,13 @@ namespace Rayforge.Core.ManagedResources.Pooling
 
             m_FreeDict.Clear();
         }
+
+        #region Debug Helper
+        [Conditional("UNITY_EDITOR")]
+        private void LogDebug(string msg, [CallerLineNumber] int line = 0) 
+        { 
+            DebugOutput.Log(msg, showDebugLogs, lineNumber: line); 
+        }
+        #endregion
     }
 }
