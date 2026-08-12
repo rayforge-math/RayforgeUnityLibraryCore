@@ -1,6 +1,5 @@
 using System;
 using UnityEngine;
-
 using Rayforge.Core.Rendering.Collections.Helpers;
 
 namespace Rayforge.Core.Rendering.Collections
@@ -11,6 +10,8 @@ namespace Rayforge.Core.Rendering.Collections
     /// </summary>
     public readonly struct MipChainLayout
     {
+        #region Delegates
+
         /// <summary>
         /// Delegate to calculate the resolution of a given mip level from the base resolution.
         /// </summary>
@@ -18,6 +19,10 @@ namespace Rayforge.Core.Rendering.Collections
         /// <param name="baseRes">Base resolution (mip 0).</param>
         /// <returns>Resolution for the mip level.</returns>
         public delegate Vector2Int MipCreateFunc(int mipLevel, Vector2Int baseRes);
+
+        #endregion
+
+        #region Fields and Properties
 
         private readonly MipCreateFunc m_MipFunc;
         private readonly int m_MipCount;
@@ -31,6 +36,10 @@ namespace Rayforge.Core.Rendering.Collections
 
         /// <summary>Base resolution (mip 0).</summary>
         public Vector2Int BaseResolution => m_BaseResolution;
+
+        #endregion
+
+        #region Constructors
 
         /// <summary>
         /// Creates a generic mip chain layout.
@@ -55,6 +64,10 @@ namespace Rayforge.Core.Rendering.Collections
             m_MipFunc = mipFunc ?? MipChainHelpers.DefaultMipResolution;
         }
 
+        #endregion
+
+        #region Methods
+
         /// <summary>
         /// Returns the resolution for a given mip level.
         /// </summary>
@@ -70,5 +83,7 @@ namespace Rayforge.Core.Rendering.Collections
 
             return m_MipFunc(mipLevel, m_BaseResolution);
         }
+
+        #endregion
     }
 }

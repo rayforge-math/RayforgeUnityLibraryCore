@@ -1,8 +1,7 @@
+using Rayforge.Core.Rendering.Collections.Helpers;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-
-using Rayforge.Core.Rendering.Collections.Helpers;
 
 namespace Rayforge.Core.Rendering.Collections
 {
@@ -13,6 +12,8 @@ namespace Rayforge.Core.Rendering.Collections
     /// </summary>
     public sealed class DescriptorMipChain
     {
+        #region Fields and Properties
+
         private MipChainLayout m_Layout;
         private RenderTextureDescriptor[] m_Descriptors;
         private RenderTextureFormat m_Format;
@@ -60,6 +61,10 @@ namespace Rayforge.Core.Rendering.Collections
             set => UpdateFormat(value);
         }
 
+        #endregion
+
+        #region Constructors
+
         /// <summary>
         /// Creates a new mip chain with the given base resolution, mip count, optional custom mip resolution function, and format.
         /// </summary>
@@ -95,6 +100,10 @@ namespace Rayforge.Core.Rendering.Collections
             m_Descriptors = new RenderTextureDescriptor[m_Layout.MipCount];
             InitDescriptors();
         }
+
+        #endregion
+
+        #region Initialization & Management
 
         /// <summary>
         /// Initializes or refreshes all mip level descriptors based on the current layout and format.
@@ -149,6 +158,10 @@ namespace Rayforge.Core.Rendering.Collections
             }
         }
 
+        #endregion
+
+        #region Span Utilities
+
         /// <summary>
         /// Returns a read-only span of descriptors.
         /// </summary>
@@ -166,5 +179,7 @@ namespace Rayforge.Core.Rendering.Collections
             length = Math.Clamp(length, 0, MipCount - start);
             return m_Descriptors.AsSpan(start, length);
         }
+
+        #endregion
     }
 }

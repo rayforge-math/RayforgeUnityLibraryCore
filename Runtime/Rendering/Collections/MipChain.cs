@@ -1,9 +1,12 @@
-﻿using Rayforge.Core.Execution.Abstractions;
+﻿using Rayforge.Core.Collections.Abstractions;
+using Rayforge.Core.Execution.Abstractions;
 using Rayforge.Core.Rendering.Abstractions;
 using Rayforge.Core.Rendering.Collections.Helpers;
+using Rayforge.Core.Collections.Helpers;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Rayforge.Core.Collections.Iterator;
 
 namespace Rayforge.Core.Rendering.Collections
 {
@@ -34,22 +37,36 @@ namespace Rayforge.Core.Rendering.Collections
     /// using zero-allocation struct function handlers for creation and an abstract method for handle destruction.
     /// </summary>
     /// <typeparam name="THandle">Type of the handle (e.g., TextureHandle, RenderTexture, etc.).</typeparam>
-    public abstract class MipChain<THandle> : IRenderingCollection<THandle>
+    public abstract class MipChain<THandle> : IRenderingCollection<THandle>, IIterable<THandle>
     {
+        #region Fields and Properties
+
         protected THandle[] m_Handles;
 
         private Vector2Int m_BaseResolution = new Vector2Int(-1, -1);
-        private static readonly Func<int, Vector2Int, Vector2Int> m_CalculateMipResFunc = MipChainHelpers.DefaultMipResolution;
+
+        /// <summary>Total number of mip levels.</summary>
+        public int MipCount => m_Handles?.Length ?? 0;
 
         /// <summary>Read-only access to the handles.</summary>
         public IReadOnlyList<THandle> Handles => m_Handles ?? Array.Empty<THandle>();
 
         /// <summary>Access a specific mip level handle by index.</summary>
         /// <param name="index">The mip level index.</param>
-        public THandle this[int index] => m_Handles[index];
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if the index is out of bounds.</exception>
+        public THandle this[int index]
+        {
+            get
+            {
+                if (index < 0 || index >= MipCount)
+                    throw new ArgumentOutOfRangeException(nameof(index), "Mip index is out of range.");
+                return m_Handles[index];
+            }
+        }
 
-        /// <summary>Total number of mip levels.</summary>
-        public int MipCount => m_Handles?.Length ?? 0;
+        #endregion
+
+        #region Constructors
 
         /// <summary>
         /// Initializes an empty mip chain.
@@ -59,6 +76,10 @@ namespace Rayforge.Core.Rendering.Collections
             m_Handles = Array.Empty<THandle>();
         }
 
+        #endregion
+
+        #region Abstract Methods
+
         /// <summary>
         /// Destroys or releases an individual handle to prevent memory or resource leaks.
         /// Must be implemented by derived classes depending on the handle type semantics.
@@ -66,18 +87,9 @@ namespace Rayforge.Core.Rendering.Collections
         /// <param name="handle">Reference to the handle being destroyed.</param>
         protected abstract void DestroyHandle(ref THandle handle);
 
-        /// <summary>
-        /// Computes the theoretical resolution of the specified mip level, based on the base resolution.
-        /// </summary>
-        /// <param name="mipLevel">
-        /// Index of the mip level to compute (0 = base level, 1 = first mip, etc.).
-        /// </param>
-        /// <returns>
-        /// A <see cref="Vector2Int"/> representing the width and height of the mip level
-        /// as defined by the configured mip resolution calculation function (default / theoretical).
-        /// </returns>
-        public Vector2Int GetDefaultMipResolution(int mipLevel)
-            => m_CalculateMipResFunc(mipLevel, m_BaseResolution);
+        #endregion
+
+        #region Creation
 
         /// <summary>
         /// Creates all mip levels from the specified <see cref="DescriptorMipChain"/> using a struct-based function handler.
@@ -89,21 +101,23 @@ namespace Rayforge.Core.Rendering.Collections
         /// <param name="handler">Reference to the creation handler struct.</param>
         /// <returns><c>true</c> if at least one new handle was created; <c>false</c> if all handles were reused.</returns>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="descriptorChain"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="descriptorChain"/> contains no descriptors.</exception>
         public bool Create<THandler>(DescriptorMipChain descriptorChain, ref THandler handler)
             where THandler : IFunctionHandler<MipCreateContext<THandle>, bool>
         {
             if (descriptorChain == null)
                 throw new ArgumentNullException(nameof(descriptorChain), "DescriptorMipChain must not be null.");
 
-            var descriptors = descriptorChain.Descriptors;
-            var count = descriptors == null ? 0 : descriptors.Count;
+            var descriptors = descriptorChain.AsSpan();
+            var count = descriptors.Length;
+
+            if (count == 0)
+                throw new ArgumentException("DescriptorMipChain must contain at least one descriptor.", nameof(descriptorChain));
+
             Resize(count);
 
-            if (count > 0)
-            {
-                var first = descriptors[0];
-                m_BaseResolution = new Vector2Int(first.width, first.height);
-            }
+            var first = descriptors[0];
+            m_BaseResolution = new Vector2Int(first.width, first.height);
 
             bool anyCreated = false;
             for (int i = 0; i < count; i++)
@@ -177,6 +191,10 @@ namespace Rayforge.Core.Rendering.Collections
             return handler.Execute(context);
         }
 
+        #endregion
+
+        #region Resizing & Management
+
         /// <summary>
         /// Resizes the internal array to <paramref name="newLength"/>.
         /// Unpreserved handles are destroyed using <see cref="DestroyHandle(ref THandle)"/>.
@@ -199,6 +217,7 @@ namespace Rayforge.Core.Rendering.Collections
             if (m_Handles != null && m_Handles.Length > 0)
             {
                 preserveIndex = Math.Clamp(preserveIndex, 0, m_Handles.Length - 1);
+                preserveCount = Math.Max(0, preserveCount);
                 preserveCount = Math.Min(preserveCount, m_Handles.Length - preserveIndex);
                 preserveCount = Math.Min(preserveCount, newLength);
 
@@ -206,7 +225,7 @@ namespace Rayforge.Core.Rendering.Collections
                 {
                     bool isPreserved = i >= preserveIndex && i < (preserveIndex + preserveCount);
 
-                    if (!isPreserved && m_Handles[i] != null)
+                    if (!isPreserved && !EqualityComparer<THandle>.Default.Equals(m_Handles[i], default))
                     {
                         DestroyHandle(ref m_Handles[i]);
                     }
@@ -233,6 +252,10 @@ namespace Rayforge.Core.Rendering.Collections
             m_Handles = newHandles;
         }
 
+        #endregion
+
+        #region Span Utilities
+
         /// <summary>
         /// Returns a read-only span of handles.
         /// </summary>
@@ -255,6 +278,10 @@ namespace Rayforge.Core.Rendering.Collections
             length = Math.Clamp(length, 0, MipCount - start);
             return m_Handles.AsSpan(start, length);
         }
+
+        #endregion
+
+        #region Copy Operations
 
         /// <summary>
         /// Copies all handles from another mip chain.
@@ -300,30 +327,70 @@ namespace Rayforge.Core.Rendering.Collections
             m_Handles[0] = handle;
         }
 
+        #endregion
+
+        #region Enumeration & Iteration
+
         /// <summary>
-        /// Enumerates all consecutive mip transitions in the chain.
-        /// Each iteration yields a pair where the source mip (i-1) is used
-        /// to generate the destination mip (i).
+        /// Provides an iterator over the handle elements of the mip chain.
         /// </summary>
-        /// <remarks>
-        /// The first yielded element always represents the transition
-        /// from mip level 0 (source) to mip level 1 (destination).
-        /// </remarks>
-        /// <returns>
-        /// An enumerable sequence of <see cref="MipPair{THandle}"/> describing
-        /// all mip generation steps in ascending order.
-        /// </returns>
-        public IEnumerable<MipPair<THandle>> EnumerateMipPairs()
+        public IIterator<THandle> GetIterator() => m_Handles.ToIterator();
+
+        /// <summary>
+        /// Executes a specialized action for every handle element in the collection.
+        /// </summary>
+        public void ForEach<TAction>(ref TAction action) 
+            where TAction : struct, IExecutionHandler<THandle>
         {
-            // Mip 0 has no source; generation starts at mip 1
-            for (int mip = 1; mip < MipCount; ++mip)
+            var iter = m_Handles.ToIterator();
+
+            foreach (var handle in iter)
             {
-                yield return new MipPair<THandle>(
-                    m_Handles[mip - 1],
-                    m_Handles[mip],
-                    mip
-                );
+                action.Execute(handle);
             }
         }
+
+        /// <summary>
+        /// Provides an iterator over the consecutive mip pairs of the mip chain.
+        /// </summary>
+        public IIterator<MipPair<THandle>> GetMipPairIterator()
+        {
+            var state = new MipPairState<THandle>(m_Handles);
+            return new Iterator<MipPair<THandle>, MipPairState<THandle>>(state);
+        }
+
+        /// <summary>
+        /// Executes a specialized action for every consecutive mip pair transition in the chain.
+        /// </summary>
+        public void ForEachMipPair<TAction>(ref TAction action) 
+            where TAction : struct, IExecutionHandler<MipPair<THandle>>
+        {
+            var state = new MipPairState<THandle>(m_Handles);
+            var iter = new Iterator<MipPair<THandle>, MipPairState<THandle>>(state);
+
+            foreach (var mipPair in iter)
+            {
+                action.Execute(mipPair);
+            }
+        }
+
+        #endregion
+
+        #region Internal Utilities
+
+        /// <summary>
+        /// Computes the theoretical resolution of the specified mip level, based on the base resolution.
+        /// </summary>
+        /// <param name="mipLevel">
+        /// Index of the mip level to compute (0 = base level, 1 = first mip, etc.).
+        /// </param>
+        /// <returns>
+        /// A <see cref="Vector2Int"/> representing the width and height of the mip level
+        /// as defined by the configured mip resolution calculation function (default / theoretical).
+        /// </returns>
+        protected Vector2Int GetDefaultMipResolution(int mipLevel)
+            => MipChainHelpers.DefaultMipResolution(mipLevel, m_BaseResolution);
+
+        #endregion
     }
 }
