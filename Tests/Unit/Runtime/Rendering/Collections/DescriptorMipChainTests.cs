@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
-namespace Rayforge.Core
+namespace Rayforge.Core.Rendering.Collections.Tests
 {
     [TestFixture]
     public class DescriptorMipChainTests

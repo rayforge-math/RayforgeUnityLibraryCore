@@ -45,6 +45,9 @@ namespace Rayforge.Core.Rendering.Collections
 
         private Vector2Int m_BaseResolution = new Vector2Int(-1, -1);
 
+        /// <summary>Gets the base resolution (mip 0) of the mip chain.</summary>
+        public Vector2Int BaseResolution => m_BaseResolution;
+
         /// <summary>Total number of mip levels.</summary>
         public int MipCount => m_Handles?.Length ?? 0;
 
@@ -260,22 +263,29 @@ namespace Rayforge.Core.Rendering.Collections
         /// Returns a read-only span of handles.
         /// </summary>
         public ReadOnlySpan<THandle> AsSpan()
-            => m_Handles == null
-            ? ReadOnlySpan<THandle>.Empty
-            : m_Handles.AsSpan(0, MipCount);
+            => m_Handles == null ? ReadOnlySpan<THandle>.Empty : new ReadOnlySpan<THandle>(m_Handles);
 
         /// <summary>
         /// Returns a read-only span of handles.
         /// </summary>
         /// <param name="start">Start index of the span.</param>
         /// <param name="length">Number of elements in the span.</param>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// Thrown if <paramref name="start"/> or <paramref name="length"/> is out of range.
+        /// </exception>
         public ReadOnlySpan<THandle> AsSpan(int start, int length)
         {
+            int count = MipCount;
+
+            if (start < 0 || start > count)
+                throw new ArgumentOutOfRangeException(nameof(start), "Start index is out of range.");
+
+            if (length < 0 || start + length > count)
+                throw new ArgumentOutOfRangeException(nameof(length), "Length is out of range.");
+
             if (m_Handles == null)
                 return ReadOnlySpan<THandle>.Empty;
 
-            start = Math.Clamp(start, 0, MipCount);
-            length = Math.Clamp(length, 0, MipCount - start);
             return m_Handles.AsSpan(start, length);
         }
 
@@ -289,7 +299,12 @@ namespace Rayforge.Core.Rendering.Collections
         /// <param name="other">Source mip chain.</param>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="other"/> is null.</exception>
         public void CopyFrom(MipChain<THandle> other)
-            => CopyFrom(other, 0, other.MipCount);
+        {
+            if (other == null)
+                throw new ArgumentNullException(nameof(other));
+
+            CopyFrom(other, 0, other.MipCount);
+        }
 
         /// <summary>
         /// Copies a range of handles from another mip chain.
@@ -303,13 +318,21 @@ namespace Rayforge.Core.Rendering.Collections
         /// <param name="start">Start index in the source chain.</param>
         /// <param name="count">Number of handles to copy.</param>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="other"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// Thrown if <paramref name="start"/> or <paramref name="count"/> is out of range.
+        /// </exception>
         public void CopyFrom(MipChain<THandle> other, int start, int count)
         {
             if (other == null)
                 throw new ArgumentNullException(nameof(other));
 
-            start = Math.Clamp(start, 0, other.MipCount);
-            count = Math.Clamp(count, 0, other.MipCount - start);
+            int otherCount = other.MipCount;
+
+            if (start < 0 || start > otherCount)
+                throw new ArgumentOutOfRangeException(nameof(start), "Start index is out of range.");
+
+            if (count < 0 || start + count > otherCount)
+                throw new ArgumentOutOfRangeException(nameof(count), "Count is out of range.");
 
             Resize(count);
             for (int i = 0; i < count; i++)

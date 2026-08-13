@@ -1,4 +1,5 @@
 using Rayforge.Core.Collections.Abstractions;
+using System;
 using UnityEngine;
 
 namespace Rayforge.Core.Rendering.Collections
@@ -16,8 +17,12 @@ namespace Rayforge.Core.Rendering.Collections
         /// Initializes the mip pair iteration state.
         /// </summary>
         /// <param name="handles">The array of handles to iterate over.</param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="handles"/> is null.</exception>
         public MipPairState(THandle[] handles)
         {
+            if (handles == null)
+                throw new ArgumentNullException(nameof(handles), "Handles array cannot be null.");
+
             _handles = handles;
             _destinationMip = 0;
         }
