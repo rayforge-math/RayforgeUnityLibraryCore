@@ -24,7 +24,16 @@ namespace Rayforge.Core.Rendering.Collections
         /// <summary>Access a specific mip level descriptor by index.</summary>
         /// <param name="index">The mip level index.</param>
         /// <returns>The <see cref="RenderTextureDescriptor"/> for the given mip level.</returns>
-        public RenderTextureDescriptor this[int index] => m_Descriptors[index];
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if the index is out of range.</exception>
+        public RenderTextureDescriptor this[int index]
+        {
+            get
+            {
+                if (index < 0 || index >= m_Descriptors.Length)
+                    throw new ArgumentOutOfRangeException(nameof(index), "Mip index is out of range.");
+                return m_Descriptors[index];
+            }
+        }
 
         /// <summary>The number of mip levels in this chain.</summary>
         public int MipCount
@@ -73,8 +82,8 @@ namespace Rayforge.Core.Rendering.Collections
         /// <param name="mipCount">Number of mip levels.</param>
         /// <param name="mipFunc">Optional custom mip resolution function.</param>
         /// <param name="format">Render texture format to use for all descriptors.</param>
-        public DescriptorMipChain(int width, int height, int mipCount = 1, MipChainLayout.MipCreateFunc mipFunc = null, RenderTextureFormat format = RenderTextureFormat.Default)
-            : this(new MipChainLayout(new Vector2Int(width, height), mipCount, mipFunc ?? MipChainHelpers.DefaultMipResolution))
+        public DescriptorMipChain(int width, int height, int mipCount = 1, MipCreateFunc mipFunc = null, RenderTextureFormat format = RenderTextureFormat.Default)
+            : this(new MipChainLayout(new Vector2Int(width, height), mipCount, mipFunc ?? MipChainHelpers.DefaultMipResolution), format)
         { }
 
         /// <summary>
@@ -84,8 +93,8 @@ namespace Rayforge.Core.Rendering.Collections
         /// <param name="mipCount">Number of mip levels.</param>
         /// <param name="mipFunc">Optional custom mip resolution function.</param>
         /// <param name="format">Render texture format to use for all descriptors.</param>
-        public DescriptorMipChain(Vector2Int baseResolution, int mipCount = 1, MipChainLayout.MipCreateFunc mipFunc = null, RenderTextureFormat format = RenderTextureFormat.Default)
-            : this(new MipChainLayout(baseResolution, mipCount, mipFunc ?? MipChainHelpers.DefaultMipResolution))
+        public DescriptorMipChain(Vector2Int baseResolution, int mipCount = 1, MipCreateFunc mipFunc = null, RenderTextureFormat format = RenderTextureFormat.Default)
+            : this(new MipChainLayout(baseResolution, mipCount, mipFunc ?? MipChainHelpers.DefaultMipResolution), format)
         { }
 
         /// <summary>
@@ -93,7 +102,7 @@ namespace Rayforge.Core.Rendering.Collections
         /// </summary>
         /// <param name="mipChainLayout"><see cref="MipChainLayout"/> defining the mip chain.</param>
         /// <param name="format">Render texture format to use for all descriptors.</param>
-        public DescriptorMipChain(MipChainLayout mipChainLayout, RenderTextureFormat format = RenderTextureFormat.Default)
+        private DescriptorMipChain(MipChainLayout mipChainLayout, RenderTextureFormat format = RenderTextureFormat.Default)
         {
             m_Layout = mipChainLayout;
             m_Format = format;
@@ -121,8 +130,12 @@ namespace Rayforge.Core.Rendering.Collections
         /// Updates the base resolution and recalculates all descriptors.
         /// </summary>
         /// <param name="newRes">New base resolution.</param>
+        /// <exception cref="ArgumentException">Thrown if width or height is less than or equal to 0.</exception>
         public void UpdateBaseResolution(Vector2Int newRes)
         {
+            if (newRes.x <= 0 || newRes.y <= 0)
+                throw new ArgumentException("Base resolution must be greater than 0", nameof(newRes));
+
             if (m_Layout.BaseResolution != newRes)
             {
                 m_Layout = new MipChainLayout(newRes, m_Layout.MipCount, m_Layout.MipFunc);
@@ -134,8 +147,12 @@ namespace Rayforge.Core.Rendering.Collections
         /// Updates the number of mip levels in the chain and refreshes all descriptors.
         /// </summary>
         /// <param name="newMipCount">New mip count.</param>
+        /// <exception cref="ArgumentException">Thrown if mip count is less than or equal to 0.</exception>
         public void UpdateMipCount(int newMipCount)
         {
+            if (newMipCount <= 0)
+                throw new ArgumentException("Mip count must be greater than 0", nameof(newMipCount));
+
             if (m_Layout.MipCount != newMipCount)
             {
                 m_Layout = new MipChainLayout(m_Layout.BaseResolution, newMipCount, m_Layout.MipFunc);
@@ -148,8 +165,12 @@ namespace Rayforge.Core.Rendering.Collections
         /// Updates the render texture format for all descriptors in the chain.
         /// </summary>
         /// <param name="newFormat">New <see cref="RenderTextureFormat"/>.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if the format is not defined.</exception>
         private void UpdateFormat(RenderTextureFormat newFormat)
         {
+            if (!Enum.IsDefined(typeof(RenderTextureFormat), newFormat))
+                throw new ArgumentOutOfRangeException(nameof(newFormat), "Invalid render texture format.");
+
             if (m_Format != newFormat)
             {
                 m_Format = newFormat;
@@ -173,10 +194,17 @@ namespace Rayforge.Core.Rendering.Collections
         /// </summary>
         /// <param name="start">Start index of the span.</param>
         /// <param name="length">Number of elements in the span.</param>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// Thrown if <paramref name="start"/> or <paramref name="length"/> is out of range.
+        /// </exception>
         public ReadOnlySpan<RenderTextureDescriptor> AsSpan(int start, int length)
         {
-            start = Math.Clamp(start, 0, MipCount);
-            length = Math.Clamp(length, 0, MipCount - start);
+            if (start < 0 || start > MipCount)
+                throw new ArgumentOutOfRangeException(nameof(start), "Start index is out of range.");
+
+            if (length < 0 || start + length > MipCount)
+                throw new ArgumentOutOfRangeException(nameof(length), "Length is out of range.");
+
             return m_Descriptors.AsSpan(start, length);
         }
 

@@ -4,24 +4,24 @@ using Rayforge.Core.Rendering.Collections.Helpers;
 
 namespace Rayforge.Core.Rendering.Collections
 {
+    #region Delegates
+
+    /// <summary>
+    /// Delegate to calculate the resolution of a given mip level from the base resolution.
+    /// </summary>
+    /// <param name="mipLevel">Mip level index (0 = full resolution).</param>
+    /// <param name="baseRes">Base resolution (mip 0).</param>
+    /// <returns>Resolution for the mip level.</returns>
+    public delegate Vector2Int MipCreateFunc(int mipLevel, Vector2Int baseRes);
+
+    #endregion
+
     /// <summary>
     /// Represents the layout of a mip chain, independent of any rendering backend.
     /// Provides resolution per mip level based on a base resolution and a mip calculation function.
     /// </summary>
     public readonly struct MipChainLayout
     {
-        #region Delegates
-
-        /// <summary>
-        /// Delegate to calculate the resolution of a given mip level from the base resolution.
-        /// </summary>
-        /// <param name="mipLevel">Mip level index (0 = full resolution).</param>
-        /// <param name="baseRes">Base resolution (mip 0).</param>
-        /// <returns>Resolution for the mip level.</returns>
-        public delegate Vector2Int MipCreateFunc(int mipLevel, Vector2Int baseRes);
-
-        #endregion
-
         #region Fields and Properties
 
         private readonly MipCreateFunc m_MipFunc;

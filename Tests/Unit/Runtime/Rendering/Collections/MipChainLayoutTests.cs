@@ -65,7 +65,7 @@ namespace Rayforge.Core.Rendering.Collections.Tests
         {
             // Arrange
             var baseRes = new Vector2Int(100, 100);
-            MipChainLayout.MipCreateFunc customFunc = (level, res) => new Vector2Int(res.x + level, res.y + level);
+            MipCreateFunc customFunc = (level, res) => new Vector2Int(res.x + level, res.y + level);
 
             // Act
             var layout = new MipChainLayout(baseRes, 2, customFunc);
@@ -109,7 +109,7 @@ namespace Rayforge.Core.Rendering.Collections.Tests
         {
             // Arrange
             var baseRes = new Vector2Int(256, 256);
-            MipChainLayout.MipCreateFunc expectedFunc = (level, res) => res;
+            MipCreateFunc expectedFunc = (level, res) => res;
             var layout = new MipChainLayout(baseRes, 3, expectedFunc);
 
             // Act & Assert
@@ -156,7 +156,7 @@ namespace Rayforge.Core.Rendering.Collections.Tests
         {
             // Arrange
             var baseRes = new Vector2Int(100, 100);
-            MipChainLayout.MipCreateFunc customFunc = (level, res) => new Vector2Int(res.x * (level + 1), res.y * (level + 1));
+            MipCreateFunc customFunc = (level, res) => new Vector2Int(res.x * (level + 1), res.y * (level + 1));
             var layout = new MipChainLayout(baseRes, 3, customFunc);
 
             // Act & Assert

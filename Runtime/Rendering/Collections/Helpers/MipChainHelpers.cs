@@ -15,9 +15,6 @@ namespace Rayforge.Core.Rendering.Collections.Helpers
         /// <returns>Resolution of the mip level, clamped to at least 1 in each dimension.</returns>
         public static Vector2Int DefaultMipResolution(int mipLevel, Vector2Int baseRes)
         {
-            Assertions.AtLeastZero(mipLevel, "Mipmap level must be >= 0.");
-            Assertions.IsTrue(baseRes.x > 0 && baseRes.y > 0, "Base resolution must be positive.");
-
             int x = Math.Max(1, baseRes.x >> mipLevel);
             int y = Math.Max(1, baseRes.y >> mipLevel);
             return new Vector2Int(x, y);
